@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { login, register, setToken } from "../api";
+import { ApiError, login, register, setToken } from "../api";
 
 export default function Login(props: { onAuthed: () => void }) {
   const [email, setEmail] = useState("demo@example.com");
@@ -17,7 +17,8 @@ export default function Login(props: { onAuthed: () => void }) {
       setToken(token.access_token);
       props.onAuthed();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof ApiError && e.status === 401) setError("账号或密码错误");
+      else setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -30,49 +31,58 @@ export default function Login(props: { onAuthed: () => void }) {
       await register(email, password);
       await onLogin();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof ApiError && e.status === 400) setError("该邮箱已注册");
+      else setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: "10vh auto" }} className="card">
-      <h2 style={{ marginTop: 0 }}>MercuryDesk</h2>
-      <p className="muted">统一信息聚合与智能摘要（MVP）</p>
-
-      <div style={{ marginTop: 12 }}>
-        <label>Email</label>
-        <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-      </div>
-      <div style={{ marginTop: 12 }}>
-        <label>Password</label>
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          autoComplete="current-password"
-        />
-      </div>
-
-      {error && (
-        <div style={{ marginTop: 12 }} className="error">
-          {error}
+    <div className="auth-shell">
+      <div className="auth-card">
+        <div className="auth-title">
+          <div className="logo">
+            <span className="logo-dot" />
+            <span className="logo-dot" />
+            <span className="logo-dot" />
+          </div>
+          <div>
+            <h1>MercuryDesk</h1>
+            <p className="muted">统一信息聚合 · 发信人视角 · 智能摘要（MVP）</p>
+          </div>
         </div>
-      )}
 
-      <div style={{ marginTop: 14 }} className="row">
-        <button className="btn" disabled={!canSubmit} onClick={onLogin}>
-          Login
-        </button>
-        <button className="btn" disabled={!canSubmit} onClick={onRegisterAndLogin}>
-          Register + Login
-        </button>
+        <div className="grid" style={{ gap: 12 }}>
+          <div>
+            <label>Email</label>
+            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+          </div>
+          <div>
+            <label>Password</label>
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              autoComplete="current-password"
+            />
+          </div>
+        </div>
+
+        {error && <div className="error">{error}</div>}
+
+        <div className="row" style={{ marginTop: 14 }}>
+          <button className="btn primary" disabled={!canSubmit} onClick={onLogin}>
+            Login
+          </button>
+          <button className="btn" disabled={!canSubmit} onClick={onRegisterAndLogin}>
+            Register + Login
+          </button>
+        </div>
+
+        <div className="auth-hint muted">
+          提示：先注册后点击 <span className="kbd">Sync</span> 拉取 mock 消息。
+        </div>
       </div>
-
-      <p className="muted" style={{ marginBottom: 0, marginTop: 12 }}>
-        提示：此示例默认使用后端的 mock 连接器进行演示。
-      </p>
     </div>
   );
 }
-

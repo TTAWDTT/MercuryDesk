@@ -1,30 +1,64 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --bg0: #070a0f;
+  --bg1: #0b1120;
+  --panel: rgba(10, 14, 20, 0.55);
+  --panel-subtle: rgba(10, 14, 20, 0.35);
+  --border: rgba(255, 255, 255, 0.12);
+  --text: rgba(255, 255, 255, 0.92);
+  --muted: rgba(255, 255, 255, 0.65);
+  --accent: #8af7d6;
+  --accent2: #f8c38a;
+  --danger: #ff5b6e;
+  --shadow: 0 20px 80px rgba(0, 0, 0, 0.55);
+  --radius: 16px;
+  --radius-sm: 12px;
+  --ring: 0 0 0 3px rgba(138, 247, 214, 0.12);
+
+  color-scheme: dark;
   line-height: 1.4;
+  text-rendering: geometricPrecision;
+}
+
+html,
+body {
+  height: 100%;
 }
 
 body {
   margin: 0;
-  background: Canvas;
-  color: CanvasText;
+  color: var(--text);
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  background:
+    radial-gradient(1200px 800px at 10% 0%, rgba(138, 247, 214, 0.16), transparent 55%),
+    radial-gradient(900px 700px at 100% 10%, rgba(248, 195, 138, 0.14), transparent 60%),
+    radial-gradient(1000px 700px at 55% 110%, rgba(110, 170, 255, 0.1), transparent 55%),
+    linear-gradient(180deg, var(--bg0), var(--bg1));
 }
 
-.app-shell {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100vh;
+button {
+  font: inherit;
+  color: inherit;
 }
 
-.sidebar {
-  border-right: 1px solid color-mix(in oklab, CanvasText 15%, Canvas);
-  padding: 16px;
-  overflow: auto;
+.btn:focus-visible,
+.contact:focus-visible,
+.message:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
 }
 
-.main {
-  padding: 16px;
-  overflow: auto;
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0px, rgba(255, 255, 255, 0.03) 1px, transparent 1px, transparent 13px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.02) 0px, rgba(255, 255, 255, 0.02) 1px, transparent 1px, transparent 13px);
+  opacity: 0.12;
+  mix-blend-mode: overlay;
 }
 
 .row {
@@ -37,23 +71,110 @@ body {
   justify-content: space-between;
 }
 
+.grid {
+  display: grid;
+}
+
+.cols-2 {
+  grid-template-columns: 380px 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 1020px) {
+  .cols-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.mono {
+  font-family:
+    "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    monospace;
+}
+
+.kbd {
+  font-family:
+    "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-bottom-color: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .btn {
   cursor: pointer;
-  border: 1px solid color-mix(in oklab, CanvasText 18%, Canvas);
-  background: color-mix(in oklab, CanvasText 6%, Canvas);
-  padding: 8px 12px;
-  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 9px 12px;
+  border-radius: 12px;
+  transition:
+    transform 120ms ease,
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0px);
 }
 
 .btn:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
+  transform: none;
+}
+
+.btn.primary {
+  border-color: rgba(138, 247, 214, 0.35);
+  background: linear-gradient(180deg, rgba(138, 247, 214, 0.18), rgba(138, 247, 214, 0.1));
 }
 
 .card {
-  border: 1px solid color-mix(in oklab, CanvasText 15%, Canvas);
-  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  backdrop-filter: blur(10px);
+  border-radius: var(--radius);
   padding: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.card.subtle {
+  background: var(--panel-subtle);
+}
+
+.card.danger {
+  border-color: rgba(255, 91, 110, 0.35);
+  background: rgba(255, 91, 110, 0.07);
 }
 
 .list {
@@ -62,28 +183,39 @@ body {
   margin-top: 12px;
 }
 
-.contact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  cursor: pointer;
+.contact,
+.message {
+  width: 100%;
+  text-align: left;
   border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+  border-radius: 14px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
 }
 
-.contact:hover {
-  background: color-mix(in oklab, CanvasText 5%, Canvas);
+.contact:hover,
+.message:hover {
+  background: rgba(255, 255, 255, 0.05);
 }
 
-.contact.active {
-  border-color: color-mix(in oklab, CanvasText 18%, Canvas);
-  background: color-mix(in oklab, CanvasText 6%, Canvas);
+.contact.active,
+.message.active {
+  border-color: rgba(138, 247, 214, 0.28);
+  background: rgba(138, 247, 214, 0.08);
 }
 
-.muted {
-  opacity: 0.75;
-  font-size: 12px;
+.message.unread .ellipsis {
+  text-shadow: 0 0 0.01px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .badge {
@@ -95,26 +227,286 @@ body {
   border-radius: 999px;
   padding: 0 6px;
   font-size: 12px;
-  background: color-mix(in oklab, CanvasText 16%, Canvas);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-input {
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.pill {
+  font-family:
+    "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 11px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+input:not([type]),
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="url"],
+input[type="number"],
+textarea,
+select {
   width: 100%;
+  box-sizing: border-box;
+  color: var(--text);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
   padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid color-mix(in oklab, CanvasText 18%, Canvas);
-  background: color-mix(in oklab, CanvasText 4%, Canvas);
+  outline: none;
+  font: inherit;
+}
+
+input:not([type]):focus,
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="url"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+select:focus {
+  box-shadow: var(--ring);
+  border-color: rgba(138, 247, 214, 0.35);
+}
+
+input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  accent-color: var(--accent);
 }
 
 label {
   display: block;
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--muted);
   margin-bottom: 6px;
 }
 
+.textarea {
+  resize: vertical;
+  margin-top: 8px;
+}
+
+.select {
+  width: auto;
+  padding: 8px 10px;
+}
+
 .error {
-  color: #b91c1c;
+  color: var(--danger);
+  margin-top: 12px;
   font-size: 13px;
 }
 
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(520px, 100%);
+  border: 1px solid var(--border);
+  background: rgba(10, 14, 20, 0.6);
+  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.auth-title {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.logo {
+  display: flex;
+  gap: 6px;
+}
+
+.logo-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(138, 247, 214, 0.85);
+  box-shadow: 0 0 0 4px rgba(138, 247, 214, 0.12);
+}
+
+.logo-dot:nth-child(2) {
+  background: rgba(248, 195, 138, 0.9);
+  box-shadow: 0 0 0 4px rgba(248, 195, 138, 0.12);
+}
+
+.logo-dot:nth-child(3) {
+  background: rgba(110, 170, 255, 0.9);
+  box-shadow: 0 0 0 4px rgba(110, 170, 255, 0.12);
+}
+
+.auth-title h1 {
+  font-family: "Fraunces", serif;
+  font-size: 34px;
+  margin: 0;
+  line-height: 1;
+}
+
+.auth-title p {
+  margin: 6px 0 0;
+}
+
+.auth-hint {
+  margin-top: 12px;
+}
+
+.desk {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 10, 14, 0.4);
+  backdrop-filter: blur(12px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: conic-gradient(from 180deg, var(--accent), rgba(248, 195, 138, 0.95), rgba(110, 170, 255, 0.9), var(--accent));
+  box-shadow: 0 0 0 4px rgba(138, 247, 214, 0.1);
+}
+
+.brand-name {
+  font-family: "Fraunces", serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.desk-shell {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  gap: 14px;
+  padding: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar,
+.main {
+  min-height: 0;
+  overflow: auto;
+}
+
+@media (max-width: 980px) {
+  .desk-shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+.h2 {
+  font-family: "Fraunces", serif;
+  font-size: 20px;
+  margin: 10px 0 0;
+}
+
+.pre {
+  white-space: pre-wrap;
+  margin: 0;
+  font-family:
+    "IBM Plex Mono",
+    ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  user-select: none;
+}
+
+.toggle input {
+  width: 16px;
+  height: 16px;
+}
+
+.toast-stack {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  gap: 10px;
+  z-index: 50;
+}
+
+.toast {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(10, 14, 20, 0.62);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.4);
+  max-width: 360px;
+}
+
+.toast.success {
+  border-color: rgba(138, 247, 214, 0.35);
+}
+
+.toast.error {
+  border-color: rgba(255, 91, 110, 0.35);
+}
+
+.vlist-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 60px;
+}
