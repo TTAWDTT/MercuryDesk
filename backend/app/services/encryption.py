@@ -29,5 +29,6 @@ def decrypt_optional(value: str | None) -> str | None:
     try:
         return f.decrypt(value.encode("utf-8")).decode("utf-8")
     except InvalidToken:
-        return None
-
+        # Backward compatibility: if a secret was stored before FERNET was enabled
+        # (or the key was rotated), fall back to treating it as plaintext.
+        return value
