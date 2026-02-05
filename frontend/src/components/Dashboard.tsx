@@ -79,7 +79,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         <Paper 
           elevation={0}
           sx={{ 
-            borderRadius: '24px', 
+            borderRadius: '20px', 
             bgcolor: 'background.paper',
             minHeight: '70vh',
             border: '1px solid',

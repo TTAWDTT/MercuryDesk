@@ -53,7 +53,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             width: { xs: '100%', sm: 600, md: 700 },
             m: { xs: 0, md: 2 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
-            borderRadius: { xs: 0, md: 6 },
+            borderRadius: { xs: 0, md: 4 },
             boxShadow: '-8px 0 24px rgba(0,0,0,0.15)',
             overflow: 'hidden',
             border: 'none',
@@ -123,22 +123,22 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: i * 0.05 }}
               >
-              <Paper 
-                elevation={0}
-                sx={{ 
-                    p: 3, 
-                    borderRadius: 3,
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper',
-                    transition: 'box-shadow 0.2s',
-                    position: 'relative',
-                    overflow: 'hidden',
-                    '&:hover': {
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-                    }
-                }}
-              >
+               <Paper 
+                 elevation={0}
+                 sx={{ 
+                     p: { xs: 3, md: 3.5 }, 
+                     borderRadius: 4,
+                     border: '1px solid',
+                     borderColor: 'divider',
+                     bgcolor: 'background.paper',
+                     transition: 'box-shadow 0.2s',
+                     position: 'relative',
+                     overflow: 'hidden',
+                     '&:hover': {
+                         boxShadow: '0 8px 20px rgba(0,0,0,0.08)'
+                     }
+                 }}
+               >
                 <Box 
                     sx={{
                         position: 'absolute',

@@ -18,10 +18,12 @@ interface ContactCardProps {
   contact: Contact;
   onClick: (contact: Contact) => void;
   index: number;
+  variant?: 'standard' | 'feature';
 }
 
-export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, index }) => {
+export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, index, variant = 'standard' }) => {
   const theme = useTheme();
+  const isFeature = variant === 'feature';
 
   const getSourceIcon = (source?: string | null) => {
     if (!source) return <EmailIcon fontSize="small" />;
@@ -47,12 +49,11 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
           height: '100%',
           position: 'relative',
           overflow: 'hidden',
-          borderRadius: '16px', // "Normal" rounded rectangle
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           border: '1px solid',
           borderColor: 'divider',
           '&:hover': {
-            transform: 'translateY(-4px)',
+            transform: isFeature ? 'translateY(-3px)' : 'translateY(-4px)',
             borderColor: 'primary.main',
             boxShadow: theme.shadows[4]
           }
@@ -74,26 +75,43 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
             />
         )}
 
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
+        <CardContent
+          sx={{
+            p: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 },
+            '&:last-child': { pb: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 } }
+          }}
+        >
           <Box display="flex" alignItems="center" mb={2}>
             <Avatar 
               src={contact.avatar_url || undefined} 
               sx={{ 
                   bgcolor: alpha(theme.palette.primary.main, 0.1), 
                   color: theme.palette.primary.main,
-                  width: 56, 
-                  height: 56,
+                  width: isFeature ? 72 : 60, 
+                  height: isFeature ? 72 : 60,
                   fontWeight: 600,
-                  borderRadius: '12px'
+                  borderRadius: isFeature ? '16px' : '14px'
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
             </Avatar>
             <Box ml={2} overflow="hidden">
-              <Typography variant="h6" noWrap sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+              <Typography
+                variant={isFeature ? 'h5' : 'h6'}
+                noWrap
+                sx={{
+                  fontSize: isFeature ? { xs: '1.25rem', md: '1.4rem' } : { xs: '1.1rem', md: '1.18rem' },
+                  fontWeight: 700,
+                }}
+              >
                 {contact.display_name}
               </Typography>
-              <Typography variant="body2" color="textSecondary" noWrap sx={{ fontSize: '0.85rem' }}>
+              <Typography
+                variant="body2"
+                color="textSecondary"
+                noWrap
+                sx={{ fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem' }}
+              >
                 {contact.handle}
               </Typography>
             </Box>
@@ -101,29 +119,41 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
 
           <Box 
             sx={{ 
-                p: 2, 
+                p: isFeature ? { xs: 2.25, md: 2.75 } : 2, 
                 bgcolor: alpha(theme.palette.action.hover, 0.5), 
-                borderRadius: '12px',
-                mb: 2,
+                borderRadius: '14px',
+                mb: isFeature ? 2.5 : 2,
             }}
           >
-            <Typography variant="subtitle2" fontWeight="600" noWrap gutterBottom>
+            <Typography
+              variant={isFeature ? 'h6' : 'subtitle2'}
+              fontWeight={700}
+              gutterBottom
+              sx={{
+                display: '-webkit-box',
+                WebkitLineClamp: isFeature ? 2 : 1,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                lineHeight: 1.25,
+              }}
+            >
               {contact.latest_subject || 'No messages'}
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{
               display: '-webkit-box',
-              WebkitLineClamp: 2,
+              WebkitLineClamp: isFeature ? 3 : 2,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              fontSize: '0.85rem',
+              fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
               lineHeight: 1.5
             }}>
               {contact.latest_preview || '...'}
             </Typography>
           </Box>
 
-          <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
             <Chip 
               icon={getSourceIcon(contact.latest_source)} 
               label={contact.latest_source || 'email'} 

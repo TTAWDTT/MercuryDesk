@@ -66,7 +66,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       body1: { lineHeight: 1.6 },
       button: { fontWeight: 600, textTransform: 'none' },
     },
-    shape: { borderRadius: 16 },
+    // Keep a small base radius so sx values like `borderRadius: 3` stay reasonable.
+    shape: { borderRadius: 4 },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
@@ -85,7 +86,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 20,
+            borderRadius: 16,
             backgroundImage: 'none', // Disable default elevation gradient in dark mode
             boxShadow: mode === 'light' 
                 ? '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)'

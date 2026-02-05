@@ -1,5 +1,4 @@
 import React from 'react';
-import Grid from '@mui/material/Grid';
 import { Contact } from '../api';
 import { ContactCard } from './ContactCard';
 import { ContactSkeleton } from './ContactSkeleton';
@@ -14,16 +13,49 @@ interface ContactGridProps {
 }
 
 export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactClick, loading }) => {
+  const layoutForIndex = (index: number) => {
+    // Editorial / magazine-like grid rhythm.
+    if (index === 0) {
+      return {
+        gridColumn: { xs: '1 / -1', sm: '1 / -1', md: 'span 12', lg: 'span 8' },
+      };
+    }
+    if (index === 1) {
+      return {
+        gridColumn: { xs: '1 / -1', sm: 'span 1', md: 'span 6', lg: 'span 4' },
+      };
+    }
+    if (index === 5 || index === 6) {
+      return {
+        gridColumn: { xs: '1 / -1', sm: '1 / -1', md: 'span 12', lg: 'span 6' },
+      };
+    }
+    return {
+      gridColumn: { xs: '1 / -1', sm: 'span 1', md: 'span 6', lg: 'span 4' },
+    };
+  };
+
   if (loading || !contacts) {
       return (
-        <Box p={{ xs: 2, md: 4 }}>
-            <Grid container spacing={3}>
-                {Array.from({ length: 8 }).map((_, i) => (
-                    <Grid item xs={12} sm={6} md={4} lg={3} xl={2.4} key={i}>
-                        <ContactSkeleton />
-                    </Grid>
-                ))}
-            </Grid>
+        <Box p={{ xs: 2, md: 5 }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: 'repeat(2, minmax(0, 1fr))',
+                  md: 'repeat(12, minmax(0, 1fr))',
+                },
+                gap: { xs: 2, md: 3 },
+                alignItems: 'start',
+              }}
+            >
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Box key={i} sx={layoutForIndex(i)}>
+                  <ContactSkeleton variant={i === 0 ? 'feature' : 'standard'} />
+                </Box>
+              ))}
+            </Box>
         </Box>
       );
   }
@@ -55,15 +87,32 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.5 }}
-        p={{ xs: 2, md: 4 }}
+        p={{ xs: 2, md: 5 }}
     >
-        <Grid container spacing={3}>
-            {contacts.map((contact, index) => (
-            <Grid item xs={12} sm={12} md={6} lg={4} xl={3} key={contact.id}>
-                <ContactCard contact={contact} onClick={onContactClick} index={index} />
-            </Grid>
-            ))}
-        </Grid>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: {
+              xs: '1fr',
+              sm: 'repeat(2, minmax(0, 1fr))',
+              md: 'repeat(12, minmax(0, 1fr))',
+            },
+            gap: { xs: 2, md: 3 },
+            gridAutoFlow: { md: 'row dense' },
+            alignItems: 'start',
+          }}
+        >
+          {contacts.map((contact, index) => (
+            <Box key={contact.id} sx={layoutForIndex(index)}>
+              <ContactCard
+                contact={contact}
+                onClick={onContactClick}
+                index={index}
+                variant={index === 0 ? 'feature' : 'standard'}
+              />
+            </Box>
+          ))}
+        </Box>
     </Box>
   );
 };
