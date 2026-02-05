@@ -3,7 +3,6 @@ import Drawer from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
-import Divider from '@mui/material/Divider';
 import CloseIcon from '@mui/icons-material/Close';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
@@ -12,7 +11,7 @@ import { Contact, Message, listMessages, markContactRead } from '../api';
 import { format } from 'date-fns';
 import { useTheme, alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import Tooltip from '@mui/material/Tooltip';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ConversationDrawerProps {
   open: boolean;
@@ -68,6 +67,8 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             zIndex: 10,
             borderBottom: '1px solid',
             borderColor: 'divider',
+            backdropFilter: 'blur(10px)',
+            background: alpha(theme.palette.background.paper, 0.8),
         }}
       >
         <Box display="flex" alignItems="center">
@@ -109,9 +110,15 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
           </Box>
         ) : (
           <Box display="flex" flexDirection="column" gap={3}>
-            {messages.map((msg) => (
+            <AnimatePresence>
+            {messages.map((msg, i) => (
+              <motion.div
+                key={msg.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.05 }}
+              >
               <Paper 
-                key={msg.id} 
                 elevation={0}
                 sx={{ 
                     p: 3, 
@@ -120,11 +127,23 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                     borderColor: 'divider',
                     bgcolor: 'background.paper',
                     transition: 'box-shadow 0.2s',
+                    position: 'relative',
+                    overflow: 'hidden',
                     '&:hover': {
                         boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
                     }
                 }}
               >
+                <Box 
+                    sx={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: 4,
+                        bgcolor: msg.is_read ? 'transparent' : 'primary.main'
+                    }} 
+                />
                 <Box display="flex" justifyContent="space-between" mb={1.5} alignItems="flex-start">
                     <Typography variant="subtitle2" fontWeight="bold" color="textPrimary">
                         {msg.sender}
@@ -164,7 +183,9 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                   </Box>
                 )}
               </Paper>
+              </motion.div>
             ))}
+            </AnimatePresence>
           </Box>
         )}
       </Box>

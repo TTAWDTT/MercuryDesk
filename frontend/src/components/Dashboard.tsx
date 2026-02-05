@@ -8,6 +8,7 @@ import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, syncAccount } from '../api';
+import { motion } from 'framer-motion';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -57,7 +58,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: 'background.default' }}>
+    <Box 
+        component={motion.div}
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 20 }}
+        transition={{ duration: 0.3 }}
+        sx={{ minHeight: '100vh', bgcolor: 'background.default' }}
+    >
       <TopBar 
         onLogout={onLogout} 
         onRefresh={handleSyncDemo} 
@@ -67,7 +75,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       
       <Box component="main">
         <ContactGrid 
-          contacts={contacts || []} 
+          contacts={contacts} 
+          loading={!contacts}
           onContactClick={setSelectedContact} 
         />
       </Box>
