@@ -104,7 +104,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     throw new Error('IMAP requires host, username and password');
                 }
                 const port = Number(imapPort || 993);
-                await createAccount({
+                const account = await createAccount({
                     provider,
                     identifier: identifier || username,
                     imap_host: host,
@@ -114,14 +114,23 @@ export default function Settings({ onLogout }: SettingsProps) {
                     imap_password: imapPassword,
                     imap_mailbox: (imapMailbox || 'INBOX').trim(),
                 });
+                try {
+                    const res = await syncAccount(account.id);
+                    setToast({ message: `IMAP connected — synced +${res.inserted} items`, severity: 'success' });
+                } catch (e) {
+                    setToast({
+                        message: e instanceof Error ? `IMAP connected, but sync failed: ${e.message}` : 'IMAP connected, but sync failed',
+                        severity: 'error',
+                    });
+                }
             } else {
                 await createAccount({
                     provider,
                     identifier,
                     access_token: provider === 'github' ? newToken : 'x'
                 });
+                setToast({ message: 'Account connected', severity: 'success' });
             }
-            setToast({ message: 'Account connected', severity: 'success' });
             mutateAccounts();
             setNewIdentifier('');
             setNewToken('');
@@ -151,7 +160,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             setToast({ message: `Synced +${res.inserted} items`, severity: 'success' });
             mutateAccounts(); // Update last synced time
         } catch (e) {
-            setToast({ message: 'Sync failed', severity: 'error' });
+            setToast({ message: e instanceof Error ? e.message : 'Sync failed', severity: 'error' });
         } finally {
             setSyncing(null);
         }

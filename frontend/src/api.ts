@@ -81,9 +81,23 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const resp = await fetch(path, { ...init, headers });
+  if (resp.status === 401) {
+    setToken(null);
+    if (typeof window !== "undefined") window.dispatchEvent(new Event("mercurydesk:unauthorized"));
+  }
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
-    throw new ApiError(text || `HTTP ${resp.status}`, resp.status);
+    let message = text || `HTTP ${resp.status}`;
+    if (text) {
+      try {
+        const parsed = JSON.parse(text) as any;
+        const detail = parsed?.detail;
+        if (typeof detail === "string" && detail.trim()) message = detail;
+      } catch {
+        // ignore JSON parse errors
+      }
+    }
+    throw new ApiError(message, resp.status);
   }
   return resp;
 }

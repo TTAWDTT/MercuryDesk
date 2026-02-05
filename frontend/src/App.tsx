@@ -35,6 +35,15 @@ export default function App() {
     setAuthed(!!getToken());
   }, []);
 
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setToken(null);
+      setAuthed(false);
+    };
+    window.addEventListener("mercurydesk:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("mercurydesk:unauthorized", onUnauthorized);
+  }, []);
+
   function logout() {
     setToken(null);
     setAuthed(false);
