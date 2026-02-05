@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { SWRConfig } from "swr";
-import { ThemeProvider, CssBaseline } from "@mui/material";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
+import Settings from "./components/Settings";
 import { fetchJson, getToken, setToken } from "./api";
-import theme from "./theme";
+import { ThemeProvider } from "./theme";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false);
@@ -19,8 +20,7 @@ export default function App() {
   }
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProvider>
       <SWRConfig
         value={{
           fetcher: (key: string) => fetchJson(key),
@@ -28,11 +28,19 @@ export default function App() {
           revalidateOnFocus: false
         }}
       >
-        {!authed ? (
-          <Login onAuthed={() => setAuthed(true)} />
-        ) : (
-          <Dashboard onLogout={logout} />
-        )}
+        <BrowserRouter>
+          <Routes>
+            {!authed ? (
+              <Route path="*" element={<Login onAuthed={() => setAuthed(true)} />} />
+            ) : (
+              <>
+                <Route path="/" element={<Dashboard onLogout={logout} />} />
+                <Route path="/settings" element={<Settings onLogout={logout} />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </>
+            )}
+          </Routes>
+        </BrowserRouter>
       </SWRConfig>
     </ThemeProvider>
   );
