@@ -19,9 +19,18 @@ interface ContactCardProps {
   onClick: (contact: Contact) => void;
   index: number;
   variant?: 'standard' | 'feature';
+  disabled?: boolean;
+  tag?: string;
 }
 
-export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, index, variant = 'standard' }) => {
+export const ContactCard: React.FC<ContactCardProps> = ({
+  contact,
+  onClick,
+  index,
+  variant = 'standard',
+  disabled = false,
+  tag,
+}) => {
   const theme = useTheme();
   const isFeature = variant === 'feature';
 
@@ -43,9 +52,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
       style={{ height: '100%' }}
     >
       <Card 
-        onClick={() => onClick(contact)}
+        onClick={disabled ? undefined : () => onClick(contact)}
         sx={{ 
-          cursor: 'pointer', 
+          cursor: disabled ? 'default' : 'pointer', 
           height: '100%',
           position: 'relative',
           overflow: 'hidden',
@@ -53,12 +62,39 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
           border: '1px solid',
           borderColor: 'divider',
           '&:hover': {
-            transform: isFeature ? 'translateY(-3px)' : 'translateY(-4px)',
-            borderColor: 'primary.main',
-            boxShadow: theme.shadows[4]
+            ...(disabled
+              ? {}
+              : {
+                  transform: isFeature ? 'translateY(-3px)' : 'translateY(-4px)',
+                  borderColor: 'primary.main',
+                  boxShadow: theme.shadows[4],
+                }),
           }
         }}
       >
+        {tag && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 14,
+              left: 14,
+              zIndex: 1,
+            }}
+          >
+            <Chip
+              label={tag}
+              size="small"
+              variant="outlined"
+              sx={{
+                borderRadius: '999px',
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                bgcolor: alpha(theme.palette.background.paper, 0.85),
+                backdropFilter: 'blur(10px)',
+              }}
+            />
+          </Box>
+        )}
         {contact.unread_count > 0 && (
             <Box 
                 sx={{

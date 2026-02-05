@@ -130,7 +130,7 @@ export async function createAccount(payload: {
 }
 
 export async function deleteAccount(accountId: number): Promise<void> {
-  await fetchJson(`/api/v1/accounts/${accountId}`, { method: "DELETE" });
+  await apiFetch(`/api/v1/accounts/${accountId}`, { method: "DELETE" });
 }
 
 export async function getProfile(): Promise<User> {
