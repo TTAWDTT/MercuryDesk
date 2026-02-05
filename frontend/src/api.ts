@@ -1,5 +1,12 @@
 export type TokenResponse = { access_token: string; token_type: string };
 
+export type User = {
+  id: number;
+  email: string;
+  avatar_url?: string | null;
+  created_at: string;
+};
+
 export type ConnectedAccount = {
   id: number;
   provider: string;
@@ -108,15 +115,6 @@ export async function login(email: string, password: string): Promise<TokenRespo
 export async function listAccounts(): Promise<ConnectedAccount[]> {
   return await fetchJson<ConnectedAccount[]>("/api/v1/accounts");
 }
-
-export type User = {
-  id: number;
-  email: string;
-  avatar_url?: string | null;
-  created_at: string;
-};
-
-// ... existing types ...
 
 export async function createAccount(payload: {
   provider: string;
