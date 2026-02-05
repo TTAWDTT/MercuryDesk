@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    created_at: datetime
+
+
+class ConnectedAccountCreate(BaseModel):
+    provider: str = Field(min_length=2, max_length=50)
+    identifier: str = Field(min_length=1, max_length=255)
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+
+
+class ConnectedAccountOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    provider: str
+    identifier: str
+    last_synced_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class ContactOut(BaseModel):
+    id: int
+    display_name: str
+    handle: str
+    avatar_url: Optional[str] = None
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
+
+
+class MessageOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    contact_id: int
+    source: str
+    sender: str
+    subject: str
+    body_preview: str
+    received_at: datetime
+    is_read: bool
+    summary: Optional[str] = None
+
+
+class MessageDetail(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    contact_id: int
+    source: str
+    sender: str
+    subject: str
+    body: str
+    received_at: datetime
+    is_read: bool
+    summary: Optional[str] = None
+
+
+class AgentSummarizeRequest(BaseModel):
+    text: str
+
+
+class AgentSummarizeResponse(BaseModel):
+    summary: str
+
+
+class DraftReplyRequest(BaseModel):
+    text: str
+    tone: str = "friendly"
+
+
+class DraftReplyResponse(BaseModel):
+    draft: str

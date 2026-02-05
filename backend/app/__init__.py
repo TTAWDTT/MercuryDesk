@@ -1,0 +1,2 @@
+"""MercuryDesk backend application package."""
+
