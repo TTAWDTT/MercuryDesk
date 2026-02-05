@@ -121,6 +121,12 @@ export async function createAccount(payload: {
   identifier: string;
   access_token?: string | null;
   refresh_token?: string | null;
+  imap_host?: string | null;
+  imap_port?: number | null;
+  imap_use_ssl?: boolean | null;
+  imap_username?: string | null;
+  imap_password?: string | null;
+  imap_mailbox?: string | null;
 }): Promise<ConnectedAccount> {
   return await fetchJson<ConnectedAccount>("/api/v1/accounts", {
     method: "POST",
@@ -147,6 +153,13 @@ export async function updateProfile(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
+}
+
+export async function uploadAvatar(file: File): Promise<User> {
+  const body = new FormData();
+  body.set("file", file);
+  const resp = await apiFetch("/api/v1/auth/me/avatar", { method: "POST", body });
+  return (await resp.json()) as User;
 }
 
 export async function syncAccount(accountId: number) {

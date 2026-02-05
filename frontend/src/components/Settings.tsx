@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
@@ -28,9 +28,8 @@ import {
     User, 
     createAccount, 
     deleteAccount, 
-    listAccounts, 
     syncAccount, 
-    updateProfile 
+    uploadAvatar
 } from '../api';
 import CircularProgress from '@mui/material/CircularProgress';
 import Snackbar from '@mui/material/Snackbar';
@@ -51,25 +50,42 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [syncing, setSyncing] = useState<number | null>(null);
     
     // Profile State
-    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarFile, setAvatarFile] = useState<File | null>(null);
+    const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
     const [updatingProfile, setUpdatingProfile] = useState(false);
 
     // Account State
     const [newIdentifier, setNewIdentifier] = useState('');
-    const [newProvider, setNewProvider] = useState<'mock' | 'github'>('mock');
+    const [newProvider, setNewProvider] = useState<'mock' | 'github' | 'imap'>('mock');
     const [newToken, setNewToken] = useState('');
+    const [imapHost, setImapHost] = useState('');
+    const [imapPort, setImapPort] = useState('993');
+    const [imapUseSsl, setImapUseSsl] = useState(true);
+    const [imapUsername, setImapUsername] = useState('');
+    const [imapPassword, setImapPassword] = useState('');
+    const [imapMailbox, setImapMailbox] = useState('INBOX');
     const [addingAccount, setAddingAccount] = useState(false);
 
-    const handleUpdateAvatar = async () => {
-        if (!avatarUrl) return;
+    useEffect(() => {
+        if (!avatarFile) {
+            setAvatarPreview(null);
+            return;
+        }
+        const url = URL.createObjectURL(avatarFile);
+        setAvatarPreview(url);
+        return () => URL.revokeObjectURL(url);
+    }, [avatarFile]);
+
+    const handleUploadAvatar = async () => {
+        if (!avatarFile) return;
         setUpdatingProfile(true);
         try {
-            await updateProfile({ avatar_url: avatarUrl });
-            setToast({ message: 'Avatar updated', severity: 'success' });
-            mutateUser();
-            setAvatarUrl('');
+            const updated = await uploadAvatar(avatarFile);
+            setToast({ message: 'Avatar uploaded', severity: 'success' });
+            mutateUser(updated, { revalidate: false });
+            setAvatarFile(null);
         } catch (e) {
-            setToast({ message: 'Failed to update avatar', severity: 'error' });
+            setToast({ message: e instanceof Error ? e.message : 'Failed to upload avatar', severity: 'error' });
         } finally {
             setUpdatingProfile(false);
         }
@@ -78,18 +94,40 @@ export default function Settings({ onLogout }: SettingsProps) {
     const handleAddAccount = async () => {
         setAddingAccount(true);
         try {
-            const identifier = newIdentifier.trim() || (newProvider === 'mock' ? 'demo' : 'me');
-            await createAccount({
-                provider: newProvider,
-                identifier,
-                access_token: newProvider === 'github' ? newToken : 'x'
-            });
+            const provider = newProvider;
+            const identifier = newIdentifier.trim() || (provider === 'mock' ? 'demo' : provider === 'github' ? 'me' : imapUsername.trim());
+
+            if (provider === 'imap') {
+                const host = imapHost.trim();
+                const username = imapUsername.trim() || identifier;
+                if (!host || !username || !imapPassword) {
+                    throw new Error('IMAP requires host, username and password');
+                }
+                const port = Number(imapPort || 993);
+                await createAccount({
+                    provider,
+                    identifier: identifier || username,
+                    imap_host: host,
+                    imap_port: Number.isFinite(port) ? port : 993,
+                    imap_use_ssl: imapUseSsl,
+                    imap_username: username,
+                    imap_password: imapPassword,
+                    imap_mailbox: (imapMailbox || 'INBOX').trim(),
+                });
+            } else {
+                await createAccount({
+                    provider,
+                    identifier,
+                    access_token: provider === 'github' ? newToken : 'x'
+                });
+            }
             setToast({ message: 'Account connected', severity: 'success' });
             mutateAccounts();
             setNewIdentifier('');
             setNewToken('');
+            setImapPassword('');
         } catch (e) {
-            setToast({ message: 'Failed to connect account', severity: 'error' });
+            setToast({ message: e instanceof Error ? e.message : 'Failed to connect account', severity: 'error' });
         } finally {
             setAddingAccount(false);
         }
@@ -150,7 +188,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                             <Typography variant="h6" gutterBottom>Profile</Typography>
                             <Box display="flex" alignItems="center" gap={3} mb={3}>
                                 <Avatar 
-                                    src={user?.avatar_url || undefined} 
+                                    src={avatarPreview || user?.avatar_url || undefined} 
                                     sx={{ width: 80, height: 80, bgcolor: 'primary.main', fontSize: 32 }}
                                 >
                                     {user?.email?.[0]?.toUpperCase()}
@@ -162,21 +200,25 @@ export default function Settings({ onLogout }: SettingsProps) {
                                     </Typography>
                                 </Box>
                             </Box>
-                            <Box display="flex" gap={2}>
-                                <TextField 
-                                    size="small" 
-                                    fullWidth 
-                                    label="New Avatar URL" 
-                                    value={avatarUrl}
-                                    onChange={(e) => setAvatarUrl(e.target.value)}
-                                    placeholder="https://..."
-                                />
+                            <Box display="flex" gap={2} alignItems="center" flexWrap="wrap">
+                                <Button variant="outlined" component="label" disabled={updatingProfile}>
+                                    Choose image
+                                    <input
+                                        hidden
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => setAvatarFile(e.target.files?.[0] ?? null)}
+                                    />
+                                </Button>
+                                <Typography variant="body2" color="textSecondary" sx={{ flexGrow: 1, minWidth: 180 }}>
+                                    {avatarFile ? avatarFile.name : 'No file selected'}
+                                </Typography>
                                 <Button 
                                     variant="contained" 
-                                    disabled={!avatarUrl || updatingProfile}
-                                    onClick={handleUpdateAvatar}
+                                    disabled={!avatarFile || updatingProfile}
+                                    onClick={handleUploadAvatar}
                                 >
-                                    Update
+                                    Upload
                                 </Button>
                             </Box>
                         </Paper>
@@ -204,7 +246,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>Connected Accounts</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
-                                Manage your message sources. We currently support Mock (Demo) and GitHub.
+                                Manage your message sources. We currently support Mock (Demo), GitHub, and IMAP.
                             </Typography>
                             
                             <List>
@@ -257,17 +299,84 @@ export default function Settings({ onLogout }: SettingsProps) {
                                         >
                                             <option value="mock">Mock (Demo)</option>
                                             <option value="github">GitHub</option>
+                                            <option value="imap">IMAP (Email)</option>
                                         </TextField>
                                     </Grid>
                                     <Grid size={{ xs: 12, sm: 4 }}>
                                         <TextField 
                                             fullWidth 
                                             size="small" 
-                                            label="Identifier (Email/User)" 
+                                            label={newProvider === 'imap' ? 'Account Email' : 'Identifier (Email/User)'} 
                                             value={newIdentifier}
                                             onChange={(e) => setNewIdentifier(e.target.value)}
                                         />
                                     </Grid>
+                                    {newProvider === 'imap' && (
+                                        <>
+                                            <Grid size={{ xs: 12, sm: 5 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="IMAP Host"
+                                                    placeholder="imap.gmail.com"
+                                                    value={imapHost}
+                                                    onChange={(e) => setImapHost(e.target.value)}
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, sm: 2 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Port"
+                                                    value={imapPort}
+                                                    onChange={(e) => setImapPort(e.target.value)}
+                                                    inputProps={{ inputMode: 'numeric' }}
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, sm: 1 }}>
+                                                <Box display="flex" alignItems="center" justifyContent="space-between">
+                                                    <Typography variant="caption" color="textSecondary">
+                                                        SSL
+                                                    </Typography>
+                                                    <Switch
+                                                        checked={imapUseSsl}
+                                                        onChange={(e) => setImapUseSsl(e.target.checked)}
+                                                        size="small"
+                                                    />
+                                                </Box>
+                                            </Grid>
+                                            <Grid size={{ xs: 12, sm: 5 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="IMAP Username"
+                                                    placeholder="your@email.com"
+                                                    value={imapUsername}
+                                                    onChange={(e) => setImapUsername(e.target.value)}
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, sm: 4 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="IMAP Password"
+                                                    type="password"
+                                                    value={imapPassword}
+                                                    onChange={(e) => setImapPassword(e.target.value)}
+                                                />
+                                            </Grid>
+                                            <Grid size={{ xs: 12, sm: 3 }}>
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="Mailbox"
+                                                    placeholder="INBOX"
+                                                    value={imapMailbox}
+                                                    onChange={(e) => setImapMailbox(e.target.value)}
+                                                />
+                                            </Grid>
+                                        </>
+                                    )}
                                     {newProvider === 'github' && (
                                         <Grid size={{ xs: 12, sm: 3 }}>
                                             <TextField 
