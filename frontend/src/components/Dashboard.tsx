@@ -3,6 +3,8 @@ import useSWR from 'swr';
 import Box from '@mui/material/Box';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import Container from '@mui/material/Container';
+import Paper from '@mui/material/Paper';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
@@ -60,11 +62,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   return (
     <Box 
         component={motion.div}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: 20 }}
-        transition={{ duration: 0.3 }}
-        sx={{ minHeight: '100vh', bgcolor: 'background.default' }}
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -10 }}
+        transition={{ duration: 0.4 }}
+        sx={{ minHeight: '100vh', bgcolor: 'background.default', pb: 8 }}
     >
       <TopBar 
         onLogout={onLogout} 
@@ -73,13 +75,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         loading={syncing}
       />
       
-      <Box component="main">
-        <ContactGrid 
-          contacts={contacts} 
-          loading={!contacts}
-          onContactClick={setSelectedContact} 
-        />
-      </Box>
+      <Container maxWidth="xl" sx={{ mt: 4 }}>
+        <Paper 
+          elevation={0}
+          sx={{ 
+            borderRadius: '24px', 
+            bgcolor: 'background.paper',
+            minHeight: '70vh',
+            border: '1px solid',
+            borderColor: 'divider',
+            overflow: 'hidden'
+          }}
+        >
+          <Box p={{ xs: 1, md: 2 }}>
+            <ContactGrid 
+              contacts={contacts} 
+              loading={!contacts}
+              onContactClick={setSelectedContact} 
+            />
+          </Box>
+        </Paper>
+      </Container>
 
       <ConversationDrawer 
         open={!!selectedContact} 
