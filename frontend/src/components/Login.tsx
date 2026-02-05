@@ -1,9 +1,24 @@
-import { useMemo, useState } from "react";
-import { ApiError, login, register, setToken } from "../api";
+import React, { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { ApiError, login, register, setToken } from '../api';
+import Container from '@mui/material/Container';
+import Paper from '@mui/material/Paper';
+import Typography from '@mui/material/Typography';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Box from '@mui/material/Box';
+import Alert from '@mui/material/Alert';
+import Stack from '@mui/material/Stack';
+import InputAdornment from '@mui/material/InputAdornment';
+import EmailIcon from '@mui/icons-material/EmailOutlined';
+import LockIcon from '@mui/icons-material/LockOutlined';
+import CircularProgress from '@mui/material/CircularProgress';
+import { alpha, useTheme } from '@mui/material/styles';
 
 export default function Login(props: { onAuthed: () => void }) {
-  const [email, setEmail] = useState("demo@example.com");
-  const [password, setPassword] = useState("password123");
+  const theme = useTheme();
+  const [email, setEmail] = useState('demo@example.com');
+  const [password, setPassword] = useState('password123');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +32,7 @@ export default function Login(props: { onAuthed: () => void }) {
       setToken(token.access_token);
       props.onAuthed();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) setError("账号或密码错误");
+      if (e instanceof ApiError && e.status === 401) setError('Invalid email or password');
       else setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -31,58 +46,168 @@ export default function Login(props: { onAuthed: () => void }) {
       await register(email, password);
       await onLogin();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 400) setError("该邮箱已注册");
+      if (e instanceof ApiError && e.status === 400) setError('Email already registered');
       else setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
   }
 
   return (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <div className="auth-title">
-          <div className="logo">
-            <span className="logo-dot" />
-            <span className="logo-dot" />
-            <span className="logo-dot" />
-          </div>
-          <div>
-            <h1>MercuryDesk</h1>
-            <p className="muted">统一信息聚合 · 发信人视角 · 智能摘要（MVP）</p>
-          </div>
-        </div>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `radial-gradient(circle at 50% 50%, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${theme.palette.background.default} 50%)`,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Decorative background elements */}
+      <Box 
+        component={motion.div}
+        animate={{ 
+          scale: [1, 1.2, 1],
+          rotate: [0, 90, 0],
+          opacity: [0.3, 0.5, 0.3] 
+        }}
+        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+        sx={{
+          position: 'absolute',
+          top: '-10%',
+          right: '-5%',
+          width: '500px',
+          height: '500px',
+          borderRadius: '50%',
+          background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.2)} 0%, transparent 70%)`,
+          filter: 'blur(60px)',
+          zIndex: 0,
+        }} 
+      />
+      
+      <Container maxWidth="xs" sx={{ zIndex: 1 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: "easeOut" }}
+        >
+          <Paper 
+            elevation={0} 
+            sx={{ 
+              p: 5, 
+              width: '100%', 
+              borderRadius: 4,
+              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+              backdropFilter: 'blur(20px)',
+              background: alpha(theme.palette.background.paper, 0.8),
+              boxShadow: '0 20px 40px -10px rgba(0,0,0,0.1)',
+            }}
+          >
+            <Box textAlign="center" mb={4}>
+              <Box 
+                sx={{ 
+                  width: 48, 
+                  height: 48, 
+                  borderRadius: 3, 
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                  margin: '0 auto 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  fontSize: '24px'
+                }}
+              >
+                M
+              </Box>
+              <Typography variant="h4" fontWeight="800" color="textPrimary" gutterBottom>
+                MercuryDesk
+              </Typography>
+              <Typography variant="body1" color="textSecondary">
+                Your unified, intelligent inbox.
+              </Typography>
+            </Box>
 
-        <div className="grid" style={{ gap: 12 }}>
-          <div>
-            <label>Email</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
-          </div>
-          <div>
-            <label>Password</label>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              autoComplete="current-password"
-            />
-          </div>
-        </div>
+            <Stack spacing={3}>
+              <TextField
+                label="Email Address"
+                variant="outlined"
+                fullWidth
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={busy}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <EmailIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <TextField
+                label="Password"
+                type="password"
+                variant="outlined"
+                fullWidth
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={busy}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <LockIcon color="action" />
+                    </InputAdornment>
+                  ),
+                }}
+              />
 
-        {error && <div className="error">{error}</div>}
+              {error && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                  <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>
+                </motion.div>
+              )}
 
-        <div className="row" style={{ marginTop: 14 }}>
-          <button className="btn primary" disabled={!canSubmit} onClick={onLogin}>
-            Login
-          </button>
-          <button className="btn" disabled={!canSubmit} onClick={onRegisterAndLogin}>
-            Register + Login
-          </button>
-        </div>
+              <Button 
+                variant="contained" 
+                color="primary" 
+                fullWidth 
+                size="large"
+                disabled={!canSubmit}
+                onClick={onLogin}
+                sx={{ height: 48, fontSize: '1rem' }}
+              >
+                {busy ? <CircularProgress size={24} color="inherit" /> : 'Log In'}
+              </Button>
+              
+              <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', my: 2 }}>
+                  <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider' }} />
+                  <Typography variant="caption" sx={{ px: 2, color: 'text.secondary' }}>OR</Typography>
+                  <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider' }} />
+              </Box>
 
-        <div className="auth-hint muted">
-          提示：先注册后点击 <span className="kbd">Sync</span> 拉取 mock 消息。
-        </div>
-      </div>
-    </div>
+              <Button 
+                variant="outlined" 
+                color="inherit" 
+                fullWidth 
+                size="large"
+                disabled={!canSubmit}
+                onClick={onRegisterAndLogin}
+                sx={{ height: 48, borderColor: 'divider', color: 'text.secondary' }}
+              >
+                Create Account
+              </Button>
+            </Stack>
+          </Paper>
+        </motion.div>
+        
+        <Box textAlign="center" mt={4}>
+          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6 }}>
+             © 2026 MercuryDesk Inc. • Sender-Centric MVP
+          </Typography>
+        </Box>
+      </Container>
+    </Box>
   );
 }

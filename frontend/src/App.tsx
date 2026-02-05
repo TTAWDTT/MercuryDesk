@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { SWRConfig } from "swr";
+import { ThemeProvider, CssBaseline } from "@mui/material";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 import { fetchJson, getToken, setToken } from "./api";
+import theme from "./theme";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false);
@@ -16,19 +18,22 @@ export default function App() {
     setAuthed(false);
   }
 
-  if (!authed) {
-    return <Login onAuthed={() => setAuthed(true)} />;
-  }
-
   return (
-    <SWRConfig
-      value={{
-        fetcher: (key: string) => fetchJson(key),
-        shouldRetryOnError: false,
-        revalidateOnFocus: false
-      }}
-    >
-      <Dashboard onLogout={logout} />
-    </SWRConfig>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <SWRConfig
+        value={{
+          fetcher: (key: string) => fetchJson(key),
+          shouldRetryOnError: false,
+          revalidateOnFocus: false
+        }}
+      >
+        {!authed ? (
+          <Login onAuthed={() => setAuthed(true)} />
+        ) : (
+          <Dashboard onLogout={logout} />
+        )}
+      </SWRConfig>
+    </ThemeProvider>
   );
 }
