@@ -38,6 +38,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05, duration: 0.4 }}
+      style={{ height: '100%' }}
     >
       <Card 
         onClick={() => onClick(contact)}
@@ -46,10 +47,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
           height: '100%',
           position: 'relative',
           overflow: 'hidden',
+          borderRadius: 6, // Increased border radius (approx 24px-32px depending on theme scaling)
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           '&:hover': {
+            transform: 'translateY(-4px)',
             borderColor: theme.palette.primary.light,
-            // Subtle "glow" effect
-            boxShadow: `0 10px 15px -3px ${alpha(theme.palette.primary.main, 0.1)}, 0 4px 6px -2px ${alpha(theme.palette.primary.main, 0.05)}`
+            boxShadow: `0 12px 24px -4px ${alpha(theme.palette.primary.main, 0.15)}, 0 8px 16px -4px ${alpha(theme.palette.primary.main, 0.1)}`
           }
         }}
       >
@@ -57,36 +60,39 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
             <Box 
                 sx={{
                     position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    width: 8,
-                    height: 8,
+                    top: 20,
+                    right: 20,
+                    width: 12,
+                    height: 12,
                     borderRadius: '50%',
                     bgcolor: 'error.main',
-                    m: 2
+                    boxShadow: '0 0 0 4px ' + theme.palette.background.paper,
+                    zIndex: 1
                 }}
             />
         )}
 
-        <CardContent sx={{ p: 3, '&:last-child': { pb: 3 } }}>
-          <Box display="flex" alignItems="center" mb={2.5}>
+        <CardContent sx={{ p: 4, '&:last-child': { pb: 4 }, display: 'flex', flexDirection: 'column', height: '100%' }}>
+          <Box display="flex" alignItems="center" mb={3}>
             <Avatar 
               src={contact.avatar_url || undefined} 
               sx={{ 
                   bgcolor: alpha(theme.palette.primary.main, 0.1), 
                   color: theme.palette.primary.main,
-                  width: 52, 
-                  height: 52,
-                  fontWeight: 600
+                  width: 64, 
+                  height: 64,
+                  fontWeight: 600,
+                  fontSize: '1.5rem',
+                  borderRadius: 3
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
             </Avatar>
-            <Box ml={2} overflow="hidden">
-              <Typography variant="h6" noWrap title={contact.display_name} sx={{ fontSize: '1.05rem' }}>
+            <Box ml={2.5} overflow="hidden">
+              <Typography variant="h6" noWrap title={contact.display_name} sx={{ fontSize: '1.15rem', fontWeight: 700 }}>
                 {contact.display_name}
               </Typography>
-              <Typography variant="body2" color="textSecondary" noWrap title={contact.handle} sx={{ fontSize: '0.85rem' }}>
+              <Typography variant="body2" color="textSecondary" noWrap title={contact.handle} sx={{ fontSize: '0.9rem' }}>
                 {contact.handle}
               </Typography>
             </Box>
@@ -94,44 +100,47 @@ export const ContactCard: React.FC<ContactCardProps> = ({ contact, onClick, inde
 
           <Box 
             sx={{ 
-                minHeight: 64, 
-                p: 1.5, 
-                bgcolor: alpha(theme.palette.background.default, 0.5), 
-                borderRadius: 2,
-                mb: 2
+                flexGrow: 1,
+                p: 2, 
+                bgcolor: alpha(theme.palette.background.default, 0.6), 
+                borderRadius: 4,
+                mb: 3,
+                border: '1px solid',
+                borderColor: 'divider'
             }}
           >
-            <Typography variant="subtitle2" fontWeight="600" noWrap gutterBottom sx={{ fontSize: '0.9rem' }}>
+            <Typography variant="subtitle1" fontWeight="600" noWrap gutterBottom sx={{ fontSize: '1rem' }}>
               {contact.latest_subject || 'No messages'}
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{
               display: '-webkit-box',
-              WebkitLineClamp: 2,
+              WebkitLineClamp: 3,
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              fontSize: '0.85rem',
-              lineHeight: 1.4
+              fontSize: '0.9rem',
+              lineHeight: 1.6
             }}>
               {contact.latest_preview || '...'}
             </Typography>
           </Box>
 
-          <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Box display="flex" justifyContent="space-between" alignItems="center" mt="auto">
             <Chip 
               icon={getSourceIcon(contact.latest_source)} 
               label={contact.latest_source || 'email'} 
-              size="small" 
+              size="medium" 
               sx={{ 
-                  borderRadius: 1.5, 
-                  bgcolor: alpha(theme.palette.secondary.main, 0.05),
+                  height: 32,
+                  borderRadius: 99, 
+                  bgcolor: alpha(theme.palette.secondary.main, 0.08),
                   color: theme.palette.secondary.dark,
-                  fontWeight: 500,
+                  fontWeight: 600,
                   border: 'none',
                   '& .MuiChip-icon': { color: 'inherit' }
               }} 
             />
-            <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500 }}>
+            <Typography variant="caption" color="textSecondary" sx={{ fontWeight: 500, fontSize: '0.8rem' }}>
               {formattedDate}
             </Typography>
           </Box>

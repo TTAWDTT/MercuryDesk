@@ -51,7 +51,12 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
       PaperProps={{
         sx: { 
             width: { xs: '100%', sm: 600, md: 700 },
-            boxShadow: '-8px 0 24px rgba(0,0,0,0.08)',
+            m: { xs: 0, md: 2 },
+            height: { xs: '100%', md: 'calc(100% - 32px)' },
+            borderRadius: { xs: 0, md: 6 },
+            boxShadow: '-8px 0 24px rgba(0,0,0,0.15)',
+            overflow: 'hidden',
+            border: 'none',
         },
       }}
     >

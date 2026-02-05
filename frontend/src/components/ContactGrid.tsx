@@ -59,7 +59,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     >
         <Grid container spacing={3}>
             {contacts.map((contact, index) => (
-            <Grid item xs={12} sm={6} md={4} lg={3} xl={2.4} key={contact.id}>
+            <Grid item xs={12} sm={12} md={6} lg={4} xl={3} key={contact.id}>
                 <ContactCard contact={contact} onClick={onContactClick} index={index} />
             </Grid>
             ))}
