@@ -52,6 +52,14 @@ export type MessageDetail = {
   summary?: string | null;
 };
 
+export type AgentConfig = {
+  provider: string;
+  base_url: string;
+  model: string;
+  temperature: number;
+  has_api_key: boolean;
+};
+
 const TOKEN_KEY = "mercurydesk_token";
 let tokenCache: string | null | undefined;
 
@@ -226,5 +234,29 @@ export async function agentDraftReply(text: string, tone: string): Promise<{ dra
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, tone })
+  });
+}
+
+export async function getAgentConfig(): Promise<AgentConfig> {
+  return await fetchJson<AgentConfig>("/api/v1/agent/config");
+}
+
+export async function updateAgentConfig(payload: {
+  provider?: string;
+  base_url?: string;
+  model?: string;
+  temperature?: number;
+  api_key?: string;
+}): Promise<AgentConfig> {
+  return await fetchJson<AgentConfig>("/api/v1/agent/config", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function testAgent(): Promise<{ ok: boolean; provider: string; message: string }> {
+  return await fetchJson<{ ok: boolean; provider: string; message: string }>("/api/v1/agent/test", {
+    method: "POST"
   });
 }
