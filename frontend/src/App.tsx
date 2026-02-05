@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { SWRConfig } from "swr";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
-import { getToken, setToken } from "./api";
+import { fetchJson, getToken, setToken } from "./api";
 
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(false);
@@ -20,15 +21,14 @@ export default function App() {
   }
 
   return (
-    <div>
-      <div style={{ padding: 10, borderBottom: "1px solid color-mix(in oklab, CanvasText 15%, Canvas)" }} className="row space-between">
-        <div style={{ fontWeight: 700 }}>MercuryDesk</div>
-        <button className="btn" onClick={logout}>
-          Logout
-        </button>
-      </div>
-      <Dashboard />
-    </div>
+    <SWRConfig
+      value={{
+        fetcher: (key: string) => fetchJson(key),
+        shouldRetryOnError: false,
+        revalidateOnFocus: false
+      }}
+    >
+      <Dashboard onLogout={logout} />
+    </SWRConfig>
   );
 }
-

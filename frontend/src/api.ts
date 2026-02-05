@@ -15,6 +15,10 @@ export type Contact = {
   avatar_url?: string | null;
   last_message_at?: string | null;
   unread_count: number;
+  latest_subject?: string | null;
+  latest_preview?: string | null;
+  latest_source?: string | null;
+  latest_received_at?: string | null;
 };
 
 export type Message = {
@@ -42,14 +46,25 @@ export type MessageDetail = {
 };
 
 const TOKEN_KEY = "mercurydesk_token";
+let tokenCache: string | null | undefined;
 
 export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  if (tokenCache === undefined) tokenCache = localStorage.getItem(TOKEN_KEY);
+  return tokenCache;
 }
 
 export function setToken(token: string | null) {
+  tokenCache = token;
   if (!token) localStorage.removeItem(TOKEN_KEY);
   else localStorage.setItem(TOKEN_KEY, token);
+}
+
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 async function apiFetch(path: string, init: RequestInit = {}) {
@@ -60,14 +75,19 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 
   const resp = await fetch(path, { ...init, headers });
   if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(text || `HTTP ${resp.status}`);
+    const text = await resp.text().catch(() => "");
+    throw new ApiError(text || `HTTP ${resp.status}`, resp.status);
   }
   return resp;
 }
 
+export async function fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const resp = await apiFetch(path, init);
+  return (await resp.json()) as T;
+}
+
 export async function register(email: string, password: string) {
-  await apiFetch("/api/v1/auth/register", {
+  await fetchJson("/api/v1/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
@@ -78,45 +98,79 @@ export async function login(email: string, password: string): Promise<TokenRespo
   const body = new URLSearchParams();
   body.set("username", email);
   body.set("password", password);
-  const resp = await apiFetch("/api/v1/auth/token", {
+  return await fetchJson<TokenResponse>("/api/v1/auth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body
   });
-  return (await resp.json()) as TokenResponse;
 }
 
 export async function listAccounts(): Promise<ConnectedAccount[]> {
-  const resp = await apiFetch("/api/v1/accounts");
-  return (await resp.json()) as ConnectedAccount[];
+  return await fetchJson<ConnectedAccount[]>("/api/v1/accounts");
 }
 
-export async function createMockAccount(): Promise<ConnectedAccount> {
-  const resp = await apiFetch("/api/v1/accounts", {
+export async function createAccount(payload: {
+  provider: string;
+  identifier: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+}): Promise<ConnectedAccount> {
+  return await fetchJson<ConnectedAccount>("/api/v1/accounts", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ provider: "mock", identifier: "demo", access_token: "x" })
+    body: JSON.stringify(payload)
   });
-  return (await resp.json()) as ConnectedAccount;
 }
 
 export async function syncAccount(accountId: number) {
-  const resp = await apiFetch(`/api/v1/accounts/${accountId}/sync`, { method: "POST" });
-  return (await resp.json()) as { inserted: number; account_id: number };
+  return await fetchJson<{ inserted: number; account_id: number }>(`/api/v1/accounts/${accountId}/sync`, {
+    method: "POST"
+  });
 }
 
-export async function listContacts(): Promise<Contact[]> {
-  const resp = await apiFetch("/api/v1/contacts");
-  return (await resp.json()) as Contact[];
+export async function listContacts(params?: { q?: string; limit?: number; offset?: number }): Promise<Contact[]> {
+  const qs = new URLSearchParams();
+  if (params?.q) qs.set("q", params.q);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.offset) qs.set("offset", String(params.offset));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return await fetchJson<Contact[]>(`/api/v1/contacts${suffix}`);
 }
 
-export async function listMessages(contactId: number): Promise<Message[]> {
-  const resp = await apiFetch(`/api/v1/contacts/${contactId}/messages`);
-  return (await resp.json()) as Message[];
+export async function listMessages(params: {
+  contactId: number;
+  limit?: number;
+  before_id?: number;
+}): Promise<Message[]> {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.before_id) qs.set("before_id", String(params.before_id));
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return await fetchJson<Message[]>(`/api/v1/contacts/${params.contactId}/messages${suffix}`);
 }
 
 export async function getMessage(messageId: number): Promise<MessageDetail> {
-  const resp = await apiFetch(`/api/v1/messages/${messageId}`);
-  return (await resp.json()) as MessageDetail;
+  return await fetchJson<MessageDetail>(`/api/v1/messages/${messageId}`);
 }
 
+export async function markContactRead(contactId: number): Promise<{ marked: number; contact_id: number }> {
+  return await fetchJson<{ marked: number; contact_id: number }>(`/api/v1/contacts/${contactId}/mark-read`, {
+    method: "POST"
+  });
+}
+
+export async function agentSummarize(text: string): Promise<{ summary: string }> {
+  return await fetchJson<{ summary: string }>("/api/v1/agent/summarize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+}
+
+export async function agentDraftReply(text: string, tone: string): Promise<{ draft: string }> {
+  return await fetchJson<{ draft: string }>("/api/v1/agent/draft-reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, tone })
+  });
+}
