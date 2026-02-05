@@ -9,12 +9,34 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.db import get_session
 from app.models import User
-from app.schemas import Token, UserCreate, UserOut
+from app.schemas import Token, UserCreate, UserOut, UserUpdate
 from app.security import ALGORITHM, create_access_token
 from app.settings import settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: UserUpdate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    # If email is being changed, check for uniqueness
+    if payload.email is not None and payload.email != current_user.email:
+        existing = db.scalar(select(User).where(User.email == payload.email))
+        if existing is not None:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+    updated_user = crud.update_user(
+        db,
+        user=current_user,
+        email=payload.email,
+        password=payload.password,
+        avatar_url=payload.avatar_url,
+    )
+    return updated_user
 
 
 @router.post("/register", response_model=UserOut)

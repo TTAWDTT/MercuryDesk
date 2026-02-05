@@ -51,3 +51,15 @@ def sync_connected_account(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"inserted": inserted, "account_id": account.id}
+
+
+@router.delete("/{account_id}", status_code=204)
+def delete_connected_account(
+    account_id: int,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    success = crud.delete_connected_account(db, user_id=current_user.id, account_id=account_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Account not found")
+

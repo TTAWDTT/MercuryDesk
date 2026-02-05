@@ -16,11 +16,18 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=8)
 
 
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    password: Optional[str] = Field(None, min_length=8)
+    avatar_url: Optional[str] = None
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     email: EmailStr
+    avatar_url: Optional[str] = None
     created_at: datetime
 
 

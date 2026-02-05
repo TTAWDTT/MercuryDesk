@@ -224,6 +224,30 @@ def mark_contact_read(db: Session, *, user_id: int, contact_id: int) -> int:
     return int(result.rowcount or 0)
 
 
+def delete_connected_account(db: Session, *, user_id: int, account_id: int) -> bool:
+    account = get_account(db, user_id=user_id, account_id=account_id)
+    if account is None:
+        return False
+    db.delete(account)
+    db.commit()
+    return True
+
+
+def update_user(
+    db: Session, *, user: User, email: str | None = None, password: str | None = None, avatar_url: str | None = None
+) -> User:
+    if email is not None:
+        user.email = email
+    if password is not None:
+        user.hashed_password = get_password_hash(password)
+    if avatar_url is not None:
+        user.avatar_url = avatar_url
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 def decrypt_account_tokens(account: ConnectedAccount) -> tuple[str | None, str | None]:
     return decrypt_optional(account.access_token), decrypt_optional(account.refresh_token)
 
