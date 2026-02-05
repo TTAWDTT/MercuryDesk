@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     media_dir: str = "./media"
 
-    # Optional Fernet key used to encrypt stored OAuth tokens.
+    # Optional Fernet key used to encrypt stored secrets (OAuth tokens, IMAP passwords).
     # Generate one via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: str | None = None
 

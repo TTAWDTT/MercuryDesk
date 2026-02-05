@@ -15,6 +15,6 @@ Optional env vars:
 
 - `MERCURYDESK_DATABASE_URL` (e.g. `postgresql+psycopg://...`)
 - `MERCURYDESK_SECRET_KEY` (JWT signing key)
-- `MERCURYDESK_FERNET_KEY` (encrypt stored OAuth tokens)
+- `MERCURYDESK_FERNET_KEY` (encrypt stored secrets: OAuth tokens / IMAP passwords)
 - `MERCURYDESK_CORS_ORIGINS` (comma-separated)
-
+- `MERCURYDESK_MEDIA_DIR` (where uploaded avatars are stored; default `./media`)
