@@ -5,18 +5,22 @@ import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
+import Divider from '@mui/material/Divider';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
+import { GuideCards } from './GuideCards';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, syncAccount } from '../api';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -34,23 +38,27 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const { data: contacts, mutate: mutateContacts } = useSWR<Contact[]>(contactsKey);
   const { data: accounts, mutate: mutateAccounts } = useSWR<ConnectedAccount[]>('/api/v1/accounts');
 
-  const handleSyncDemo = async () => {
+  const handleSyncAll = async () => {
     if (syncing) return;
     setSyncing(true);
     try {
-      const list = accounts ?? [];
-      let mockAccount = list.find((a) => a.provider === 'mock');
-      
-      if (!mockAccount) {
-        mockAccount = await createAccount({
+      let list = accounts ?? [];
+      if (list.length === 0) {
+        const mockAccount = await createAccount({
           provider: 'mock',
           identifier: 'demo',
           access_token: 'x',
         });
+        list = [mockAccount];
       }
 
-      const result = await syncAccount(mockAccount.id);
-      setToast({ message: `Synced ${result.inserted} new messages`, severity: 'success' });
+      const results = await Promise.allSettled(list.map((a) => syncAccount(a.id)));
+      const inserted = results.reduce((sum, r) => (r.status === 'fulfilled' ? sum + r.value.inserted : sum), 0);
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      const message =
+        failed === 0 ? `Synced +${inserted} items` : `Synced +${inserted} items (${failed} failed)`;
+      setToast({ message, severity: failed === 0 ? 'success' : 'error' });
+
       await Promise.all([mutateContacts(), mutateAccounts()]);
     } catch (e) {
       setToast({ message: e instanceof Error ? e.message : 'Sync failed', severity: 'error' });
@@ -70,7 +78,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     >
       <TopBar 
         onLogout={onLogout} 
-        onRefresh={handleSyncDemo} 
+        onRefresh={handleSyncAll} 
         onSearch={setSearchQuery} 
         loading={syncing}
       />
@@ -87,13 +95,20 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             overflow: 'hidden'
           }}
         >
-          <Box p={{ xs: 1, md: 2 }}>
-            <ContactGrid 
-              contacts={contacts} 
-              loading={!contacts}
-              onContactClick={setSelectedContact} 
+          <Box p={{ xs: 2, md: 2.5 }}>
+            <GuideCards
+              hasAccounts={!!accounts?.length}
+              syncing={syncing}
+              onOpenSettings={() => navigate('/settings')}
+              onSync={handleSyncAll}
             />
           </Box>
+          <Divider />
+          <ContactGrid 
+            contacts={contacts} 
+            loading={!contacts}
+            onContactClick={setSelectedContact} 
+          />
         </Paper>
       </Container>
 
