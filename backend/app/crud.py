@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import ConnectedAccount, Contact, Message, User
+from app.models import ConnectedAccount, Contact, ImapAccountConfig, Message, User
 from app.security import get_password_hash, verify_password
 from app.services.encryption import decrypt_optional, encrypt_optional
 
@@ -28,16 +28,44 @@ def authenticate_user(db: Session, *, email: str, password: str) -> User | None:
 
 
 def create_connected_account(
-    db: Session, *, user_id: int, provider: str, identifier: str, access_token: str | None, refresh_token: str | None
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+    identifier: str,
+    access_token: str | None,
+    refresh_token: str | None,
+    imap_host: str | None = None,
+    imap_port: int | None = None,
+    imap_use_ssl: bool | None = None,
+    imap_username: str | None = None,
+    imap_password: str | None = None,
+    imap_mailbox: str | None = None,
 ) -> ConnectedAccount:
+    provider_norm = provider.lower().strip()
     account = ConnectedAccount(
         user_id=user_id,
-        provider=provider,
+        provider=provider_norm,
         identifier=identifier,
         access_token=encrypt_optional(access_token),
         refresh_token=encrypt_optional(refresh_token),
     )
     db.add(account)
+    db.flush()
+
+    if provider_norm == "imap":
+        if not (imap_host and imap_username and imap_password):
+            raise ValueError("IMAP account requires host/username/password")
+        config = ImapAccountConfig(
+            account_id=account.id,
+            host=imap_host,
+            port=imap_port or 993,
+            use_ssl=True if imap_use_ssl is None else bool(imap_use_ssl),
+            username=imap_username,
+            password=encrypt_optional(imap_password) or "",
+            mailbox=imap_mailbox or "INBOX",
+        )
+        db.add(config)
     db.commit()
     db.refresh(account)
     return account

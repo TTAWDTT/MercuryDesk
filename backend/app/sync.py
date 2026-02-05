@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.connectors.github import GitHubNotificationsConnector
+from app.connectors.imap import ImapConnector
 from app.connectors.mock import MockConnector
 from app.crud import (
     create_message,
@@ -13,11 +14,12 @@ from app.crud import (
     touch_account_sync,
     touch_contact_last_message,
 )
-from app.models import ConnectedAccount, Contact, Message
+from app.models import ConnectedAccount, Contact, ImapAccountConfig, Message
+from app.services.encryption import decrypt_optional
 from app.services.summarizer import RuleBasedSummarizer
 
 
-def _connector_for(account: ConnectedAccount):
+def _connector_for(db: Session, account: ConnectedAccount):
     access_token, _refresh = decrypt_account_tokens(account)
     provider = account.provider.lower()
 
@@ -28,12 +30,28 @@ def _connector_for(account: ConnectedAccount):
             raise ValueError("GitHub account requires access_token")
         return GitHubNotificationsConnector(access_token)
     if provider == "imap":
-        raise ValueError("IMAP connector requires host/username configuration (not yet wired to ConnectedAccount)")
+        config = db.get(ImapAccountConfig, account.id)
+        if config is None:
+            raise ValueError("IMAP account requires configuration")
+
+        password = decrypt_optional(config.password)
+        if not password:
+            raise ValueError("IMAP account requires password")
+
+        return ImapConnector(
+            host=config.host,
+            port=int(config.port),
+            use_ssl=bool(config.use_ssl),
+            username=config.username,
+            password=password,
+            mailbox=config.mailbox or "INBOX",
+            external_id_prefix=f"imap:{account.id}",
+        )
     raise ValueError(f"Unknown provider: {account.provider}")
 
 
 def sync_account(db: Session, *, account: ConnectedAccount) -> int:
-    connector = _connector_for(account)
+    connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
     since = account.last_synced_at
 

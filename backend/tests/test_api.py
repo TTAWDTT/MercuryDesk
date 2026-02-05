@@ -54,10 +54,39 @@ def test_register_login_sync_and_list():
     assert acct.status_code == 200, acct.text
     account_id = acct.json()["id"]
 
+    # IMAP accounts should require configuration.
+    bad_imap = client.post(
+        "/api/v1/accounts",
+        json={"provider": "imap", "identifier": "demo@example.com"},
+        headers=headers,
+    )
+    assert bad_imap.status_code == 400, bad_imap.text
+
+    # Create an IMAP connected account (config stored; sync not exercised in tests).
+    imap_acct = client.post(
+        "/api/v1/accounts",
+        json={
+            "provider": "imap",
+            "identifier": "demo@example.com",
+            "imap_host": "imap.example.com",
+            "imap_port": 993,
+            "imap_use_ssl": True,
+            "imap_username": "demo@example.com",
+            "imap_password": "password",
+            "imap_mailbox": "INBOX",
+        },
+        headers=headers,
+    )
+    assert imap_acct.status_code == 200, imap_acct.text
+
     # Sync it
     sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
     assert sync.status_code == 200, sync.text
     assert sync.json()["inserted"] >= 1
+
+    accounts = client.get("/api/v1/accounts", headers=headers)
+    assert accounts.status_code == 200, accounts.text
+    assert any(a["provider"] == "imap" for a in accounts.json())
 
     # List contacts
     contacts = client.get("/api/v1/contacts", headers=headers)

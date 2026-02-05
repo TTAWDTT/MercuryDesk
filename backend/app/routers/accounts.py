@@ -26,14 +26,24 @@ def add_connected_account(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    account = crud.create_connected_account(
-        db,
-        user_id=current_user.id,
-        provider=payload.provider,
-        identifier=payload.identifier,
-        access_token=payload.access_token,
-        refresh_token=payload.refresh_token,
-    )
+    provider = payload.provider.lower().strip()
+    try:
+        account = crud.create_connected_account(
+            db,
+            user_id=current_user.id,
+            provider=provider,
+            identifier=payload.identifier,
+            access_token=payload.access_token,
+            refresh_token=payload.refresh_token,
+            imap_host=payload.imap_host,
+            imap_port=payload.imap_port,
+            imap_use_ssl=payload.imap_use_ssl,
+            imap_username=payload.imap_username,
+            imap_password=payload.imap_password,
+            imap_mailbox=payload.imap_mailbox,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return account
 
 
@@ -62,4 +72,3 @@ def delete_connected_account(
     success = crud.delete_connected_account(db, user_id=current_user.id, account_id=account_id)
     if not success:
         raise HTTPException(status_code=404, detail="Account not found")
-

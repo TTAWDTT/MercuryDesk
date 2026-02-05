@@ -42,6 +42,31 @@ class ConnectedAccount(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="accounts")
+    imap_config: Mapped[Optional["ImapAccountConfig"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+
+
+class ImapAccountConfig(Base):
+    __tablename__ = "imap_account_configs"
+
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("connected_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    host: Mapped[str] = mapped_column(String(255))
+    port: Mapped[int] = mapped_column(Integer, default=993)
+    use_ssl: Mapped[bool] = mapped_column(Boolean, default=True)
+    username: Mapped[str] = mapped_column(String(255))
+    password: Mapped[str] = mapped_column(Text)  # stored encrypted if FERNET_KEY is configured
+    mailbox: Mapped[str] = mapped_column(String(255), default="INBOX")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    account: Mapped["ConnectedAccount"] = relationship(back_populates="imap_config")
 
 
 class Contact(Base):

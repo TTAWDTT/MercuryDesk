@@ -37,6 +37,14 @@ class ConnectedAccountCreate(BaseModel):
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
 
+    # Optional provider-specific fields (used when provider == "imap").
+    imap_host: Optional[str] = Field(None, min_length=1, max_length=255)
+    imap_port: Optional[int] = Field(None, ge=1, le=65535)
+    imap_use_ssl: Optional[bool] = None
+    imap_username: Optional[str] = Field(None, min_length=1, max_length=255)
+    imap_password: Optional[str] = Field(None, min_length=1, max_length=2048)
+    imap_mailbox: Optional[str] = Field(None, min_length=1, max_length=255)
+
 
 class ConnectedAccountOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
