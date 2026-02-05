@@ -112,3 +112,25 @@ class DraftReplyRequest(BaseModel):
 
 class DraftReplyResponse(BaseModel):
     draft: str
+
+
+class AgentConfigOut(BaseModel):
+    provider: str
+    base_url: str
+    model: str
+    temperature: float
+    has_api_key: bool = False
+
+
+class AgentConfigUpdate(BaseModel):
+    provider: Optional[str] = None
+    base_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    model: Optional[str] = Field(None, min_length=1, max_length=255)
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
+    api_key: Optional[str] = Field(None, min_length=1, max_length=4096)
+
+
+class AgentTestResponse(BaseModel):
+    ok: bool
+    provider: str
+    message: str

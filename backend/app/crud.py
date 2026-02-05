@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import ConnectedAccount, Contact, ImapAccountConfig, Message, User
+from app.models import AgentConfig, ConnectedAccount, Contact, ImapAccountConfig, Message, User
 from app.security import get_password_hash, verify_password
 from app.services.encryption import decrypt_optional, encrypt_optional
 
@@ -278,6 +278,41 @@ def update_user(
 
 def decrypt_account_tokens(account: ConnectedAccount) -> tuple[str | None, str | None]:
     return decrypt_optional(account.access_token), decrypt_optional(account.refresh_token)
+
+
+def get_agent_config(db: Session, *, user_id: int) -> AgentConfig | None:
+    return db.get(AgentConfig, user_id)
+
+
+def upsert_agent_config(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    temperature: float | None = None,
+    api_key: str | None = None,
+) -> AgentConfig:
+    config = db.get(AgentConfig, user_id)
+    if config is None:
+        config = AgentConfig(user_id=user_id)
+        db.add(config)
+
+    if provider is not None:
+        config.provider = provider.lower().strip()
+    if base_url is not None:
+        config.base_url = base_url.strip()
+    if model is not None:
+        config.model = model.strip()
+    if temperature is not None:
+        config.temperature = float(temperature)
+    if api_key is not None:
+        config.api_key = encrypt_optional(api_key.strip())
+
+    db.commit()
+    db.refresh(config)
+    return config
 
 
 def touch_contact_last_message(db: Session, *, contact: Contact, received_at: datetime) -> None:

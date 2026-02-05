@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -23,6 +23,11 @@ class User(Base):
     accounts: Mapped[list["ConnectedAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     contacts: Mapped[list["Contact"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    agent_config: Mapped[Optional["AgentConfig"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class ConnectedAccount(Base):
@@ -67,6 +72,23 @@ class ImapAccountConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped["ConnectedAccount"] = relationship(back_populates="imap_config")
+
+
+class AgentConfig(Base):
+    __tablename__ = "agent_configs"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+    provider: Mapped[str] = mapped_column(String(50), default="rule_based")  # rule_based/openai
+    base_url: Mapped[str] = mapped_column(String(2048), default="https://api.openai.com/v1")
+    model: Mapped[str] = mapped_column(String(255), default="gpt-4o-mini")
+    temperature: Mapped[float] = mapped_column(Float, default=0.2)
+    api_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # stored encrypted if FERNET_KEY is configured
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="agent_config")
 
 
 class Contact(Base):

@@ -139,3 +139,23 @@ def test_register_login_sync_and_list():
         assert contacts2.status_code == 200, contacts2.text
         updated = [c for c in contacts2.json() if c["id"] == contact_id][0]
         assert updated["unread_count"] == 0
+
+        # Agent config defaults to rule_based and summarize works with auth.
+        cfg = client.get("/api/v1/agent/config", headers=headers)
+        assert cfg.status_code == 200, cfg.text
+        assert cfg.json()["provider"] == "rule_based"
+        assert cfg.json()["has_api_key"] is False
+
+        sm = client.post("/api/v1/agent/summarize", json={"text": "这是一封很长的邮件内容，用于测试摘要功能。"}, headers=headers)
+        assert sm.status_code == 200, sm.text
+        assert isinstance(sm.json().get("summary"), str)
+
+        # Updating config should persist (no external call performed here).
+        upd = client.patch(
+            "/api/v1/agent/config",
+            json={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini", "temperature": 0.2},
+            headers=headers,
+        )
+        assert upd.status_code == 200, upd.text
+        assert upd.json()["provider"] == "openai"
+        assert upd.json()["has_api_key"] is True
