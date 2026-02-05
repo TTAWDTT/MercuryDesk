@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy import select
@@ -80,4 +83,69 @@ def update_me(
         password=payload.password,
         avatar_url=payload.avatar_url,
     )
+    return updated_user
+
+
+@router.post("/me/avatar", response_model=UserOut)
+async def upload_my_avatar(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    content_type = (file.content_type or "").lower()
+    allowed = {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
+    if content_type not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported avatar type")
+
+    media_dir = Path(settings.media_dir)
+    avatars_dir = media_dir / "avatars"
+    avatars_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"user-{current_user.id}-{uuid4().hex}{allowed[content_type]}"
+    dest_path = avatars_dir / filename
+
+    max_bytes = 5 * 1024 * 1024  # 5MB
+    written = 0
+    old_avatar_url = current_user.avatar_url
+    try:
+        with dest_path.open("wb") as f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(status_code=413, detail="Avatar too large (max 5MB)")
+                f.write(chunk)
+    except HTTPException:
+        try:
+            dest_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    except Exception as e:
+        try:
+            dest_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(status_code=400, detail=f"Failed to upload avatar: {e}") from e
+    finally:
+        await file.close()
+
+    avatar_url = f"/media/avatars/{filename}"
+    updated_user = crud.update_user(db, user=current_user, avatar_url=avatar_url)
+
+    if old_avatar_url and old_avatar_url.startswith("/media/avatars/"):
+        old_name = old_avatar_url.rsplit("/", 1)[-1]
+        if old_name and old_name != filename:
+            try:
+                (avatars_dir / old_name).unlink(missing_ok=True)
+            except OSError:
+                pass
     return updated_user

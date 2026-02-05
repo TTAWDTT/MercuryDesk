@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import tempfile
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -8,6 +11,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import init_engine
 from app.main import create_app
 from app.models import Base
+from app.settings import settings
 
 
 def test_register_login_sync_and_list():
@@ -28,93 +32,110 @@ def test_register_login_sync_and_list():
     db_module._engine = engine  # type: ignore[attr-defined]
     db_module._SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)  # type: ignore[attr-defined]
 
-    app = create_app()
-    client = TestClient(app)
+    with tempfile.TemporaryDirectory() as tmp_media:
+        settings.media_dir = tmp_media
+        app = create_app()
+        client = TestClient(app)
 
-    # Register
-    reg = client.post("/api/v1/auth/register", json={"email": "demo@example.com", "password": "password123"})
-    assert reg.status_code == 200, reg.text
+        # Register
+        reg = client.post("/api/v1/auth/register", json={"email": "demo@example.com", "password": "password123"})
+        assert reg.status_code == 200, reg.text
 
-    # Login
-    token = client.post(
-        "/api/v1/auth/token",
-        data={"username": "demo@example.com", "password": "password123"},
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    assert token.status_code == 200, token.text
-    access_token = token.json()["access_token"]
-    headers = {"Authorization": f"Bearer {access_token}"}
+        # Login
+        token = client.post(
+            "/api/v1/auth/token",
+            data={"username": "demo@example.com", "password": "password123"},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert token.status_code == 200, token.text
+        access_token = token.json()["access_token"]
+        headers = {"Authorization": f"Bearer {access_token}"}
 
-    # Create a mock connected account
-    acct = client.post(
-        "/api/v1/accounts",
-        json={"provider": "mock", "identifier": "demo", "access_token": "x"},
-        headers=headers,
-    )
-    assert acct.status_code == 200, acct.text
-    account_id = acct.json()["id"]
+        # Upload avatar (multipart) and ensure it was saved.
+        avatar = client.post(
+            "/api/v1/auth/me/avatar",
+            files={"file": ("avatar.png", b"\x89PNG\r\n\x1a\nfake", "image/png")},
+            headers=headers,
+        )
+        assert avatar.status_code == 200, avatar.text
+        avatar_url = avatar.json().get("avatar_url")
+        assert isinstance(avatar_url, str) and avatar_url.startswith("/media/avatars/")
+        stored = Path(tmp_media) / "avatars" / avatar_url.rsplit("/", 1)[-1]
+        assert stored.exists()
 
-    # IMAP accounts should require configuration.
-    bad_imap = client.post(
-        "/api/v1/accounts",
-        json={"provider": "imap", "identifier": "demo@example.com"},
-        headers=headers,
-    )
-    assert bad_imap.status_code == 400, bad_imap.text
+        # Create a mock connected account
+        acct = client.post(
+            "/api/v1/accounts",
+            json={"provider": "mock", "identifier": "demo", "access_token": "x"},
+            headers=headers,
+        )
+        assert acct.status_code == 200, acct.text
+        account_id = acct.json()["id"]
 
-    # Create an IMAP connected account (config stored; sync not exercised in tests).
-    imap_acct = client.post(
-        "/api/v1/accounts",
-        json={
-            "provider": "imap",
-            "identifier": "demo@example.com",
-            "imap_host": "imap.example.com",
-            "imap_port": 993,
-            "imap_use_ssl": True,
-            "imap_username": "demo@example.com",
-            "imap_password": "password",
-            "imap_mailbox": "INBOX",
-        },
-        headers=headers,
-    )
-    assert imap_acct.status_code == 200, imap_acct.text
+        # IMAP accounts should require configuration.
+        bad_imap = client.post(
+            "/api/v1/accounts",
+            json={"provider": "imap", "identifier": "demo@example.com"},
+            headers=headers,
+        )
+        assert bad_imap.status_code == 400, bad_imap.text
 
-    # Sync it
-    sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
-    assert sync.status_code == 200, sync.text
-    assert sync.json()["inserted"] >= 1
+        # Create an IMAP connected account (config stored; sync not exercised in tests).
+        imap_acct = client.post(
+            "/api/v1/accounts",
+            json={
+                "provider": "imap",
+                "identifier": "demo@example.com",
+                "imap_host": "imap.example.com",
+                "imap_port": 993,
+                "imap_use_ssl": True,
+                "imap_username": "demo@example.com",
+                "imap_password": "password",
+                "imap_mailbox": "INBOX",
+            },
+            headers=headers,
+        )
+        assert imap_acct.status_code == 200, imap_acct.text
 
-    accounts = client.get("/api/v1/accounts", headers=headers)
-    assert accounts.status_code == 200, accounts.text
-    assert any(a["provider"] == "imap" for a in accounts.json())
+        # Sync it
+        sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
+        assert sync.status_code == 200, sync.text
+        assert sync.json()["inserted"] >= 1
 
-    # List contacts
-    contacts = client.get("/api/v1/contacts", headers=headers)
-    assert contacts.status_code == 200, contacts.text
-    contacts_data = contacts.json()
-    assert len(contacts_data) >= 1
+        accounts = client.get("/api/v1/accounts", headers=headers)
+        assert accounts.status_code == 200, accounts.text
+        assert any(a["provider"] == "imap" for a in accounts.json())
 
-    contact_id = contacts_data[0]["id"]
-    assert contacts_data[0]["unread_count"] >= 1
-    assert "latest_preview" in contacts_data[0]
+        # List contacts
+        contacts = client.get("/api/v1/contacts", headers=headers)
+        assert contacts.status_code == 200, contacts.text
+        contacts_data = contacts.json()
+        assert len(contacts_data) >= 1
 
-    messages = client.get(f"/api/v1/contacts/{contact_id}/messages", headers=headers)
-    assert messages.status_code == 200, messages.text
-    msgs = messages.json()
-    assert len(msgs) >= 1
-    assert msgs[0]["summary"] is not None
+        contact_id = contacts_data[0]["id"]
+        assert contacts_data[0]["unread_count"] >= 1
+        assert "latest_preview" in contacts_data[0]
 
-    # Pagination via before_id should work (one message per sender in mock data).
-    before = client.get(f"/api/v1/contacts/{contact_id}/messages?limit=50&before_id={msgs[0]['id']}", headers=headers)
-    assert before.status_code == 200, before.text
-    assert before.json() == []
+        messages = client.get(f"/api/v1/contacts/{contact_id}/messages", headers=headers)
+        assert messages.status_code == 200, messages.text
+        msgs = messages.json()
+        assert len(msgs) >= 1
+        assert msgs[0]["summary"] is not None
 
-    # Mark-read should bulk update and drop unread count to 0.
-    mark = client.post(f"/api/v1/contacts/{contact_id}/mark-read", headers=headers)
-    assert mark.status_code == 200, mark.text
-    assert mark.json()["marked"] >= 1
+        # Pagination via before_id should work (one message per sender in mock data).
+        before = client.get(
+            f"/api/v1/contacts/{contact_id}/messages?limit=50&before_id={msgs[0]['id']}",
+            headers=headers,
+        )
+        assert before.status_code == 200, before.text
+        assert before.json() == []
 
-    contacts2 = client.get("/api/v1/contacts", headers=headers)
-    assert contacts2.status_code == 200, contacts2.text
-    updated = [c for c in contacts2.json() if c["id"] == contact_id][0]
-    assert updated["unread_count"] == 0
+        # Mark-read should bulk update and drop unread count to 0.
+        mark = client.post(f"/api/v1/contacts/{contact_id}/mark-read", headers=headers)
+        assert mark.status_code == 200, mark.text
+        assert mark.json()["marked"] >= 1
+
+        contacts2 = client.get("/api/v1/contacts", headers=headers)
+        assert contacts2.status_code == 200, contacts2.text
+        updated = [c for c in contacts2.json() if c["id"] == contact_id][0]
+        assert updated["unread_count"] == 0

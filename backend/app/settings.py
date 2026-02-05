@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     secret_key: str = "dev-secret-change-me"
     access_token_expire_minutes: int = 60 * 24
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    media_dir: str = "./media"
 
     # Optional Fernet key used to encrypt stored OAuth tokens.
     # Generate one via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
@@ -17,4 +18,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

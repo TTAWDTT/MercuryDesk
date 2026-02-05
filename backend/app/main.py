@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.db import get_engine
 from app.models import Base
@@ -30,6 +31,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    app.mount("/media", StaticFiles(directory=settings.media_dir, check_dir=False), name="media")
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
@@ -44,4 +47,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

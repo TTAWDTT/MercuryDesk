@@ -6,6 +6,7 @@ backend/__pycache__/
 backend/.pytest_cache/
 backend/**/__pycache__/
 backend/**/.pytest_cache/
+backend/media/
 
 frontend/node_modules/
 frontend/dist/
