@@ -37,6 +37,15 @@ npm run dev
 
 `Settings → Profile` 支持直接选择图片上传头像（后端通过 `/media` 提供静态访问，前端开发环境已代理 `/media`）。
 
+## AI 助手（可选）
+
+在 `Settings → AI 助手` 中可选择：
+
+- `内置规则`：默认模式，不调用外部 API
+- `OpenAI / 兼容接口`：填写 `API Key`（可选改 `Base URL / Model / Temperature`），保存后可点击“测试连接”
+
+如需加密保存 API Key，请在后端配置 `MERCURYDESK_FERNET_KEY`。
+
 ## 测试
 
 ### 后端测试
