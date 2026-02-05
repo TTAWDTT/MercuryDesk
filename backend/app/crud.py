@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Select, func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.models import ConnectedAccount, Contact, Message, User
@@ -77,8 +77,9 @@ def create_message(
     body: str,
     received_at: datetime,
     summary: str | None,
+    skip_external_id_check: bool = False,
 ) -> Message | None:
-    if external_id is not None:
+    if external_id is not None and not skip_external_id_check:
         existing = db.scalar(
             select(Message).where(Message.user_id == user_id, Message.source == source, Message.external_id == external_id)
         )
@@ -103,36 +104,110 @@ def create_message(
     return msg
 
 
-def contact_unread_count(db: Session, *, user_id: int, contact_id: int) -> int:
-    return int(
-        db.scalar(
-            select(func.count(Message.id)).where(
-                Message.user_id == user_id, Message.contact_id == contact_id, Message.is_read.is_(False)
-            )
+def list_contacts(
+    db: Session,
+    *,
+    user_id: int,
+    q: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[tuple[Contact, int, str | None, str | None, str | None, datetime | None]]:
+    unread_subq = (
+        select(
+            Message.contact_id.label("contact_id"),
+            func.count(Message.id).label("unread_count"),
         )
-        or 0
+        .where(Message.user_id == user_id, Message.is_read.is_(False))
+        .group_by(Message.contact_id)
+        .subquery()
     )
 
-
-def list_contacts(db: Session, *, user_id: int) -> list[tuple[Contact, int]]:
-    contacts = list(
-        db.scalars(
-            select(Contact)
-            .where(Contact.user_id == user_id)
-            .order_by(Contact.last_message_at.desc().nullslast(), Contact.id.desc())
+    ranked_subq = (
+        select(
+            Message.contact_id.label("contact_id"),
+            Message.subject.label("subject"),
+            Message.summary.label("summary"),
+            Message.body_preview.label("body_preview"),
+            Message.source.label("source"),
+            Message.received_at.label("received_at"),
+            func.row_number()
+            .over(partition_by=Message.contact_id, order_by=(Message.received_at.desc(), Message.id.desc()))
+            .label("rn"),
         )
+        .where(Message.user_id == user_id)
+        .subquery()
     )
-    return [(c, contact_unread_count(db, user_id=user_id, contact_id=c.id)) for c in contacts]
+
+    latest_subq = (
+        select(
+            ranked_subq.c.contact_id.label("contact_id"),
+            ranked_subq.c.subject.label("subject"),
+            func.coalesce(ranked_subq.c.summary, ranked_subq.c.body_preview).label("preview"),
+            ranked_subq.c.source.label("source"),
+            ranked_subq.c.received_at.label("received_at"),
+        )
+        .where(ranked_subq.c.rn == 1)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Contact,
+            func.coalesce(unread_subq.c.unread_count, 0).label("unread_count"),
+            latest_subq.c.subject.label("latest_subject"),
+            latest_subq.c.preview.label("latest_preview"),
+            latest_subq.c.source.label("latest_source"),
+            latest_subq.c.received_at.label("latest_received_at"),
+        )
+        .where(Contact.user_id == user_id)
+        .outerjoin(unread_subq, unread_subq.c.contact_id == Contact.id)
+        .outerjoin(latest_subq, latest_subq.c.contact_id == Contact.id)
+    )
+
+    if q:
+        q_like = f"%{q.lower()}%"
+        query = query.where(
+            func.lower(Contact.display_name).like(q_like) | func.lower(Contact.handle).like(q_like)
+        )
+
+    query = (
+        query.order_by(Contact.last_message_at.desc().nullslast(), Contact.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    rows = db.execute(query).all()
+    return [
+        (
+            row[0],
+            int(row.unread_count or 0),
+            row.latest_subject,
+            row.latest_preview,
+            row.latest_source,
+            row.latest_received_at,
+        )
+        for row in rows
+    ]
 
 
-def list_messages(db: Session, *, user_id: int, contact_id: int, limit: int = 50) -> list[Message]:
+def list_messages(
+    db: Session,
+    *,
+    user_id: int,
+    contact_id: int,
+    limit: int = 50,
+    before: tuple[datetime, int] | None = None,
+) -> list[Message]:
+    query = select(Message).where(Message.user_id == user_id, Message.contact_id == contact_id)
+    if before is not None:
+        before_received_at, before_id = before
+        query = query.where(
+            (Message.received_at < before_received_at)
+            | ((Message.received_at == before_received_at) & (Message.id < before_id))
+        )
+
     return list(
-        db.scalars(
-            select(Message)
-            .where(Message.user_id == user_id, Message.contact_id == contact_id)
-            .order_by(Message.received_at.desc(), Message.id.desc())
-            .limit(limit)
-        )
+        db.scalars(query.order_by(Message.received_at.desc(), Message.id.desc()).limit(limit))
     )
 
 
@@ -141,14 +216,12 @@ def get_message(db: Session, *, user_id: int, message_id: int) -> Message | None
 
 
 def mark_contact_read(db: Session, *, user_id: int, contact_id: int) -> int:
-    messages = list(
-        db.scalars(
-            select(Message).where(Message.user_id == user_id, Message.contact_id == contact_id, Message.is_read.is_(False))
-        )
+    result = db.execute(
+        update(Message)
+        .where(Message.user_id == user_id, Message.contact_id == contact_id, Message.is_read.is_(False))
+        .values(is_read=True)
     )
-    for m in messages:
-        m.is_read = True
-    return len(messages)
+    return int(result.rowcount or 0)
 
 
 def decrypt_account_tokens(account: ConnectedAccount) -> tuple[str | None, str | None]:
@@ -162,4 +235,3 @@ def touch_contact_last_message(db: Session, *, contact: Contact, received_at: da
 
 def touch_account_sync(db: Session, *, account: ConnectedAccount) -> None:
     account.last_synced_at = datetime.now(timezone.utc)
-

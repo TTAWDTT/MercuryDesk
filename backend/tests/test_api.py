@@ -66,8 +66,26 @@ def test_register_login_sync_and_list():
     assert len(contacts_data) >= 1
 
     contact_id = contacts_data[0]["id"]
+    assert contacts_data[0]["unread_count"] >= 1
+    assert "latest_preview" in contacts_data[0]
+
     messages = client.get(f"/api/v1/contacts/{contact_id}/messages", headers=headers)
     assert messages.status_code == 200, messages.text
     msgs = messages.json()
     assert len(msgs) >= 1
     assert msgs[0]["summary"] is not None
+
+    # Pagination via before_id should work (one message per sender in mock data).
+    before = client.get(f"/api/v1/contacts/{contact_id}/messages?limit=50&before_id={msgs[0]['id']}", headers=headers)
+    assert before.status_code == 200, before.text
+    assert before.json() == []
+
+    # Mark-read should bulk update and drop unread count to 0.
+    mark = client.post(f"/api/v1/contacts/{contact_id}/mark-read", headers=headers)
+    assert mark.status_code == 200, mark.text
+    assert mark.json()["marked"] >= 1
+
+    contacts2 = client.get("/api/v1/contacts", headers=headers)
+    assert contacts2.status_code == 200, contacts2.text
+    updated = [c for c in contacts2.json() if c["id"] == contact_id][0]
+    assert updated["unread_count"] == 0

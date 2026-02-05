@@ -46,6 +46,8 @@ def sync_connected_account(
     account = crud.get_account(db, user_id=current_user.id, account_id=account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
-    inserted = sync_account(db, account=account)
+    try:
+        inserted = sync_account(db, account=account)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return {"inserted": inserted, "account_id": account.id}
-

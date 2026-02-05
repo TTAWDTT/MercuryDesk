@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -45,7 +45,10 @@ class ConnectedAccount(Base):
 
 class Contact(Base):
     __tablename__ = "contacts"
-    __table_args__ = (UniqueConstraint("user_id", "handle", name="uq_contact_handle"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "handle", name="uq_contact_handle"),
+        Index("ix_contacts_user_last_message_at", "user_id", "last_message_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
@@ -65,6 +68,8 @@ class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         UniqueConstraint("user_id", "source", "external_id", name="uq_message_external"),
+        Index("ix_messages_user_contact_received", "user_id", "contact_id", "received_at", "id"),
+        Index("ix_messages_user_contact_is_read", "user_id", "contact_id", "is_read"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -87,4 +92,3 @@ class Message(Base):
 
     user: Mapped["User"] = relationship(back_populates="messages")
     contact: Mapped["Contact"] = relationship(back_populates="messages")
-

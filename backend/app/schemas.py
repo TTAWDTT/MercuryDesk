@@ -48,6 +48,10 @@ class ContactOut(BaseModel):
     avatar_url: Optional[str] = None
     last_message_at: Optional[datetime] = None
     unread_count: int = 0
+    latest_subject: Optional[str] = None
+    latest_preview: Optional[str] = None
+    latest_source: Optional[str] = None
+    latest_received_at: Optional[datetime] = None
 
 
 class MessageOut(BaseModel):
