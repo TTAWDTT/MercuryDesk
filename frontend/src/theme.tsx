@@ -58,7 +58,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       },
     },
     typography: {
-      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+      fontFamily:
+        '"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei","WenQuanYi Micro Hei",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
       h4: { fontWeight: 700, letterSpacing: '-0.02em' },
       h5: { fontWeight: 600, letterSpacing: '-0.01em' },
       h6: { fontWeight: 600, letterSpacing: '-0.01em' },

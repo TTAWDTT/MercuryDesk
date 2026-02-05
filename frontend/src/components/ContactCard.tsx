@@ -10,6 +10,7 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import EmailIcon from '@mui/icons-material/Email';
 import PersonIcon from '@mui/icons-material/Person';
 import { formatDistanceToNow } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
 import { motion } from 'framer-motion';
 import { useTheme, alpha } from '@mui/material/styles';
@@ -41,8 +42,15 @@ export const ContactCard: React.FC<ContactCardProps> = ({
   };
 
   const formattedDate = contact.last_message_at
-    ? formatDistanceToNow(new Date(contact.last_message_at), { addSuffix: true })
+    ? formatDistanceToNow(new Date(contact.last_message_at), { addSuffix: true, locale: zhCN })
     : '';
+
+  const sourceLabel = (() => {
+    const src = (contact.latest_source || 'email').toLowerCase();
+    if (src.includes('github')) return 'GitHub';
+    if (src.includes('mock')) return '演示';
+    return '邮件';
+  })();
 
   return (
     <motion.div
@@ -174,7 +182,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 lineHeight: 1.25,
               }}
             >
-              {contact.latest_subject || 'No messages'}
+              {contact.latest_subject || '暂无消息'}
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{
               display: '-webkit-box',
@@ -192,7 +200,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
             <Chip 
               icon={getSourceIcon(contact.latest_source)} 
-              label={contact.latest_source || 'email'} 
+              label={sourceLabel} 
               size="small" 
               sx={{ 
                   borderRadius: '8px', 

@@ -64,9 +64,11 @@ interface TopBarProps {
   onRefresh: () => void;
   onSearch: (query: string) => void;
   loading: boolean;
+  hideSearch?: boolean;
+  hideSync?: boolean;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, loading }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, loading, hideSearch = false, hideSync = false }) => {
   const theme = useTheme();
   const navigate = useNavigate();
 
@@ -108,35 +110,39 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
           MercuryDesk
         </Typography>
         
-        <Search>
-          <SearchIconWrapper>
-            <SearchIcon />
-          </SearchIconWrapper>
-          <StyledInputBase
-            placeholder="Search contacts, emails..."
-            inputProps={{ 'aria-label': 'search' }}
-            onChange={(e) => onSearch(e.target.value)}
-          />
-        </Search>
+        {!hideSearch && (
+          <Search>
+            <SearchIconWrapper>
+              <SearchIcon />
+            </SearchIconWrapper>
+            <StyledInputBase
+              placeholder="搜索联系人 / 邮件..."
+              inputProps={{ 'aria-label': 'search' }}
+              onChange={(e) => onSearch(e.target.value)}
+            />
+          </Search>
+        )}
         
         <Box sx={{ flexGrow: 1 }} />
         
-        <Tooltip title="Sync Accounts">
-          <IconButton
-            size="large"
-            onClick={onRefresh}
-            disabled={loading}
-            sx={{ 
-                mr: 1, 
-                color: 'text.secondary',
-                '&:hover': { color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) } 
-            }}
-          >
-            {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
-          </IconButton>
-        </Tooltip>
+        {!hideSync && (
+          <Tooltip title="同步账户">
+            <IconButton
+              size="large"
+              onClick={onRefresh}
+              disabled={loading}
+              sx={{ 
+                  mr: 1, 
+                  color: 'text.secondary',
+                  '&:hover': { color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) } 
+              }}
+            >
+              {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
+            </IconButton>
+          </Tooltip>
+        )}
 
-        <Tooltip title="Settings">
+        <Tooltip title="设置">
           <IconButton
             size="large"
             onClick={() => navigate('/settings')}
@@ -150,7 +156,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="Logout">
+        <Tooltip title="退出登录">
           <IconButton 
             size="large" 
             onClick={onLogout}

@@ -9,6 +9,7 @@ import Paper from '@mui/material/Paper';
 import Avatar from '@mui/material/Avatar';
 import { Contact, Message, listMessages, markContactRead } from '../api';
 import { format } from 'date-fns';
+import { zhCN } from 'date-fns/locale';
 import { useTheme, alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -111,7 +112,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
           </Box>
         ) : messages.length === 0 ? (
           <Box textAlign="center" mt={8}>
-              <Typography variant="body1" color="textSecondary">No messages yet.</Typography>
+              <Typography variant="body1" color="textSecondary">暂无消息</Typography>
           </Box>
         ) : (
           <Box display="flex" flexDirection="column" gap={3}>
@@ -154,7 +155,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                         {msg.sender}
                     </Typography>
                     <Typography variant="caption" color="textSecondary" sx={{ whiteSpace: 'nowrap', ml: 1 }}>
-                        {format(new Date(msg.received_at), 'MMM d, p')}
+                        {format(new Date(msg.received_at), 'M月d日 HH:mm', { locale: zhCN })}
                     </Typography>
                 </Box>
                 
@@ -179,7 +180,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                      <AutoAwesomeIcon sx={{ color: theme.palette.secondary.main, fontSize: 20, mt: 0.3 }} />
                      <Box>
                          <Typography variant="caption" fontWeight="bold" color="secondary" gutterBottom display="block">
-                             AI Summary
+                             AI 摘要
                          </Typography>
                          <Typography variant="body2" fontSize="0.875rem" color="textPrimary">
                              {msg.summary}

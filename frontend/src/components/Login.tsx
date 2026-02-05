@@ -32,7 +32,7 @@ export default function Login(props: { onAuthed: () => void }) {
       setToken(token.access_token);
       props.onAuthed();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 401) setError('Invalid email or password');
+      if (e instanceof ApiError && e.status === 401) setError('邮箱或密码不正确');
       else setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
@@ -46,7 +46,7 @@ export default function Login(props: { onAuthed: () => void }) {
       await register(email, password);
       await onLogin();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 400) setError('Email already registered');
+      if (e instanceof ApiError && e.status === 400) setError('该邮箱已注册');
       else setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
@@ -127,13 +127,13 @@ export default function Login(props: { onAuthed: () => void }) {
                 MercuryDesk
               </Typography>
               <Typography variant="body1" color="textSecondary">
-                Your unified, intelligent inbox.
+                统一收件箱（按发信人聚合）。
               </Typography>
             </Box>
 
             <Stack spacing={3}>
               <TextField
-                label="Email Address"
+                label="邮箱"
                 variant="outlined"
                 fullWidth
                 value={email}
@@ -148,7 +148,7 @@ export default function Login(props: { onAuthed: () => void }) {
                 }}
               />
               <TextField
-                label="Password"
+                label="密码"
                 type="password"
                 variant="outlined"
                 fullWidth
@@ -179,12 +179,12 @@ export default function Login(props: { onAuthed: () => void }) {
                 onClick={onLogin}
                 sx={{ height: 48, fontSize: '1rem' }}
               >
-                {busy ? <CircularProgress size={24} color="inherit" /> : 'Log In'}
+                {busy ? <CircularProgress size={24} color="inherit" /> : '登录'}
               </Button>
               
               <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center', my: 2 }}>
                   <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider' }} />
-                  <Typography variant="caption" sx={{ px: 2, color: 'text.secondary' }}>OR</Typography>
+                  <Typography variant="caption" sx={{ px: 2, color: 'text.secondary' }}>或</Typography>
                   <Box sx={{ flex: 1, height: '1px', bgcolor: 'divider' }} />
               </Box>
 
@@ -197,7 +197,7 @@ export default function Login(props: { onAuthed: () => void }) {
                 onClick={onRegisterAndLogin}
                 sx={{ height: 48, borderColor: 'divider', color: 'text.secondary' }}
               >
-                Create Account
+                创建账号
               </Button>
             </Stack>
           </Paper>
@@ -205,7 +205,7 @@ export default function Login(props: { onAuthed: () => void }) {
         
         <Box textAlign="center" mt={4}>
           <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6 }}>
-             © 2026 MercuryDesk Inc. • Sender-Centric MVP
+             © 2026 MercuryDesk • Sender‑Centric MVP
           </Typography>
         </Box>
       </Container>

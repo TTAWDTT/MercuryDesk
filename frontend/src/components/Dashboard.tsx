@@ -56,12 +56,12 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const inserted = results.reduce((sum, r) => (r.status === 'fulfilled' ? sum + r.value.inserted : sum), 0);
       const failed = results.filter((r) => r.status === 'rejected').length;
       const message =
-        failed === 0 ? `Synced +${inserted} items` : `Synced +${inserted} items (${failed} failed)`;
+        failed === 0 ? `同步完成：+${inserted}` : `同步完成：+${inserted}（失败 ${failed} 个）`;
       setToast({ message, severity: failed === 0 ? 'success' : 'error' });
 
       await Promise.all([mutateContacts(), mutateAccounts()]);
     } catch (e) {
-      setToast({ message: e instanceof Error ? e.message : 'Sync failed', severity: 'error' });
+      setToast({ message: e instanceof Error ? e.message : '同步失败', severity: 'error' });
     } finally {
       setSyncing(false);
     }

@@ -65,14 +65,14 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     const sampleContacts: Contact[] = [
       {
         id: -1,
-        display_name: 'The Editorial Desk',
+        display_name: 'MercuryDesk 编辑台',
         handle: 'editorial@mercurydesk',
         avatar_url: null,
         last_message_at: now.toISOString(),
         unread_count: 0,
-        latest_subject: 'Welcome to a sender‑centric inbox',
+        latest_subject: '欢迎来到「按发信人聚合」收件箱',
         latest_preview:
-          'Sync your accounts to pull real messages. This card is a sample layout showing how a “feature” sender looks in the magazine grid.',
+          '连接你的真实邮箱后即可同步邮件。这张卡片是样例，用来展示“重点发信人（大卡）”在杂志式布局中的效果。',
         latest_source: 'email',
         latest_received_at: now.toISOString(),
       },
@@ -83,9 +83,9 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         avatar_url: null,
         last_message_at: new Date(now.getTime() - 1000 * 60 * 42).toISOString(),
         unread_count: 0,
-        latest_subject: 'PR review requested: “Polish the dashboard”',
+        latest_subject: '请求你 Review：优化主面板交互',
         latest_preview:
-          'A compact card variant — still readable, still spacious. Try adding GitHub later to see real notifications aggregated by sender.',
+          '这是一张“标准卡片”样例——信息更密但依然清晰。你也可以连接 GitHub 来同步真实通知。',
         latest_source: 'github',
         latest_received_at: new Date(now.getTime() - 1000 * 60 * 42).toISOString(),
       },
@@ -105,22 +105,22 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
             variant="overline"
             sx={{ letterSpacing: '0.22em', opacity: 0.75 }}
           >
-            SAMPLE LAYOUT
+            样例布局
           </Typography>
           <Typography
             variant="h4"
             fontWeight={900}
             sx={{ letterSpacing: '-0.03em', mt: 0.5 }}
           >
-            Your inbox is empty (for now).
+            你的收件箱还没有内容。
           </Typography>
           <Typography
             variant="body1"
             color="textSecondary"
             sx={{ maxWidth: 760, mt: 1.25 }}
           >
-            Click <b>Sync</b> to pull demo messages, or connect your real accounts. Meanwhile, here are two sample cards
-            to preview the magazine-style layout.
+            点击顶部 <b>同步</b> 拉取演示消息，或先到设置里连接真实邮箱/GitHub。
+            下面两张样例卡片用来预览“杂志式”排布效果。
           </Typography>
         </Box>
 
@@ -145,7 +145,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
                 index={index}
                 variant={index === 0 ? 'feature' : 'standard'}
                 disabled
-                tag="Sample"
+                tag="样例"
               />
             </Box>
           ))}

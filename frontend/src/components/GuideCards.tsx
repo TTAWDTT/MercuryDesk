@@ -60,7 +60,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
         >
           <Box sx={{ position: 'absolute', top: 14, left: 14, zIndex: 1 }}>
             <Chip
-              label="Guide"
+              label="新手引导"
               size="small"
               variant="outlined"
               sx={{
@@ -91,10 +91,10 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
               </Box>
               <Box>
                 <Typography variant="h5" fontWeight={900} sx={{ letterSpacing: '-0.02em' }}>
-                  Connect your inbox
+                  连接你的邮箱
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
-                  Add IMAP (Gmail / Outlook app password) and start syncing real messages by sender.
+                  通过 IMAP（Gmail / Outlook 授权码）同步真实邮件，并按发信人自动聚合。
                 </Typography>
               </Box>
             </Box>
@@ -107,22 +107,21 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
               }}
             >
               <Typography variant="subtitle2" fontWeight={800} gutterBottom>
-                {hasAccounts ? 'Tip' : 'First step'}
+                {hasAccounts ? '小贴士' : '第一步'}
               </Typography>
               <Typography variant="body2" color="textSecondary" sx={{ lineHeight: 1.6 }}>
-                Open Settings → Connected Accounts → select <b>IMAP</b>, then enter host/username/password. When
-                you&apos;re ready, hit <b>Sync</b>.
+                打开 设置 → 已连接账户 → 选择 <b>IMAP</b>，填入主机/用户名/授权码（或密码）。完成后点击顶部 <b>同步</b>。
               </Typography>
             </Box>
           </CardContent>
 
           <CardActions sx={{ px: { xs: 3, md: 3.5 }, pb: { xs: 3, md: 3.5 } }}>
             <Button startIcon={<SettingsIcon />} variant="contained" onClick={onOpenSettings}>
-              Open Settings
+              打开设置
             </Button>
             {!hasAccounts && (
               <Button startIcon={<SyncOutlinedIcon />} variant="outlined" onClick={onSync} disabled={syncing}>
-                Sync demo
+                同步演示数据
               </Button>
             )}
           </CardActions>
@@ -150,17 +149,16 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             <Box display="flex" alignItems="center" gap={1.5} mb={1.5}>
               <SearchIcon color="action" />
               <Typography variant="h6" fontWeight={900} sx={{ letterSpacing: '-0.02em' }}>
-                Sync & search
+                同步与搜索
               </Typography>
             </Box>
             <Typography variant="body2" color="textSecondary" sx={{ lineHeight: 1.6 }}>
-              Use the top bar to <b>Sync Accounts</b>, then search senders instantly. Cards are arranged in a
-              magazine-style grid for fast scanning.
+              用顶部栏一键 <b>同步</b>，然后直接搜索发信人。卡片采用“杂志式”网格排布，方便快速浏览。
             </Typography>
           </CardContent>
           <CardActions sx={{ px: { xs: 3, md: 3.5 }, pb: { xs: 3, md: 3.5 } }}>
             <Button startIcon={<SyncOutlinedIcon />} variant="outlined" onClick={onSync} disabled={syncing}>
-              Sync now
+              立即同步
             </Button>
           </CardActions>
         </Card>
@@ -168,4 +166,3 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
     </Box>
   );
 }
-
