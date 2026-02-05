@@ -109,6 +109,15 @@ export async function listAccounts(): Promise<ConnectedAccount[]> {
   return await fetchJson<ConnectedAccount[]>("/api/v1/accounts");
 }
 
+export type User = {
+  id: number;
+  email: string;
+  avatar_url?: string | null;
+  created_at: string;
+};
+
+// ... existing types ...
+
 export async function createAccount(payload: {
   provider: string;
   identifier: string;
@@ -117,6 +126,26 @@ export async function createAccount(payload: {
 }): Promise<ConnectedAccount> {
   return await fetchJson<ConnectedAccount>("/api/v1/accounts", {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteAccount(accountId: number): Promise<void> {
+  await fetchJson(`/api/v1/accounts/${accountId}`, { method: "DELETE" });
+}
+
+export async function getProfile(): Promise<User> {
+  return await fetchJson<User>("/api/v1/auth/me");
+}
+
+export async function updateProfile(payload: {
+  email?: string;
+  password?: string;
+  avatar_url?: string;
+}): Promise<User> {
+  return await fetchJson<User>("/api/v1/auth/me", {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
