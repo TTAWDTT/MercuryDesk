@@ -145,7 +145,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                 <Grid container spacing={4}>
                     {/* Profile Section */}
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>Profile</Typography>
                             <Box display="flex" alignItems="center" gap={3} mb={3}>
@@ -183,7 +183,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     </Grid>
 
                     {/* Appearance */}
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                         <Paper sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <Box>
                                 <Typography variant="h6">Appearance</Typography>
@@ -200,7 +200,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     </Grid>
 
                     {/* Connected Accounts */}
-                    <Grid item xs={12}>
+                    <Grid size={{ xs: 12 }}>
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>Connected Accounts</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
@@ -245,7 +245,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                             <Box mt={4} p={3} bgcolor="action.hover" borderRadius={4}>
                                 <Typography variant="subtitle2" fontWeight="bold" mb={2}>Connect New Account</Typography>
                                 <Grid container spacing={2} alignItems="center">
-                                    <Grid item xs={12} sm={3}>
+                                    <Grid size={{ xs: 12, sm: 3 }}>
                                         <TextField
                                             select
                                             fullWidth
@@ -259,7 +259,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             <option value="github">GitHub</option>
                                         </TextField>
                                     </Grid>
-                                    <Grid item xs={12} sm={4}>
+                                    <Grid size={{ xs: 12, sm: 4 }}>
                                         <TextField 
                                             fullWidth 
                                             size="small" 
@@ -269,7 +269,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                         />
                                     </Grid>
                                     {newProvider === 'github' && (
-                                        <Grid item xs={12} sm={3}>
+                                        <Grid size={{ xs: 12, sm: 3 }}>
                                             <TextField 
                                                 fullWidth 
                                                 size="small" 
@@ -280,7 +280,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             />
                                         </Grid>
                                     )}
-                                    <Grid item xs={12} sm={2}>
+                                    <Grid size={{ xs: 12, sm: 2 }}>
                                         <Button 
                                             fullWidth 
                                             variant="contained" 
