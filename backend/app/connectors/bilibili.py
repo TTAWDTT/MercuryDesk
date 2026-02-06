@@ -221,6 +221,13 @@ class BilibiliConnector:
                 detail = self._fetch_video_detail(client=client, bvid=bvid)
                 if not detail:
                     continue
+
+                # 如果主头像获取失败，尝试从第一个视频详情中提取 UP 主头像作为补充
+                owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
+                owner_face = normalize_http_avatar_url(owner.get("face"))
+                if not primary_avatar and owner_face:
+                    primary_avatar = owner_face
+
                 received_at = _to_datetime(detail.get("pubdate"))
                 if since_utc is not None and received_at <= since_utc:
                     continue
@@ -231,9 +238,8 @@ class BilibiliConnector:
                     description = f"UP 主发布了新视频：{title}"
                 link = f"https://www.bilibili.com/video/{bvid}/"
                 cover = normalize_http_avatar_url(detail.get("pic"))
-                owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
                 sender = str(owner.get("name") or primary_name or self._default_sender).strip() or self._default_sender
-                sender_avatar_url = normalize_http_avatar_url(owner.get("face")) or primary_avatar
+                sender_avatar_url = owner_face or primary_avatar
 
                 messages.append(
                     IncomingMessage(

@@ -15,12 +15,13 @@ from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
 
 _NITTER_INSTANCES = [
+    "https://nitter.uni-sonia.com",
     "https://nitter.moomoo.me",
     "https://nitter.soopy.moe",
-    "https://nitter.uni-sonia.com",
     "https://nitter.privacydev.net",
     "https://nitter.poast.org",
     "https://nitter.lucabased.xyz",
+    "https://nitter.net",
 ]
 
 _DEFAULT_USER_AGENT = (
@@ -540,14 +541,14 @@ class XConnector:
             raise ValueError("RSSHub 回退需要有效用户名")
         base = os.environ.get("MERCURYDESK_RSSHUB_BASE_URL", "https://rsshub.app").rstrip("/")
         feed_url = f"{base}/twitter/user/{self._username}"
-        messages = FeedConnector(
+        # RSSHub 返回的是按时间排序的 Feed，无需进行 strict stale 检查 (那是针对 Guest Token 的乱序问题)
+        return FeedConnector(
             feed_url=feed_url,
             source="x",
             default_sender=self._default_sender,
             timeout_seconds=self._timeout_seconds,
             max_entries=self._max_items,
         ).fetch_new_messages(since=since)
-        return self._check_stale_data(messages, "RSSHub")
 
     def _fetch_via_nitter(self, *, since: datetime | None) -> list[IncomingMessage]:
         """通过 Nitter 实例的 RSS 获取用户推文（第三优先级回退）"""
@@ -557,14 +558,14 @@ class XConnector:
         for instance in _NITTER_INSTANCES:
             feed_url = f"{instance.rstrip('/')}/{self._username}/rss"
             try:
-                messages = FeedConnector(
+                # Nitter 返回的是按时间排序的 Feed，无需进行 strict stale 检查
+                return FeedConnector(
                     feed_url=feed_url,
                     source="x",
                     default_sender=self._default_sender,
                     timeout_seconds=self._timeout_seconds,
                     max_entries=self._max_items,
                 ).fetch_new_messages(since=since)
-                return self._check_stale_data(messages, f"Nitter({instance})")
             except Exception as e:
                 errors.append(f"{instance}: {e}")
         raise ValueError(f"所有 Nitter 实例均失败: {'; '.join(errors)}")
