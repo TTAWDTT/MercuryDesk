@@ -36,24 +36,42 @@ def _rsshub_url(path: str) -> str:
 
 def _oauth_popup_html(payload: dict[str, object]) -> HTMLResponse:
     payload_json = json.dumps(payload, ensure_ascii=False)
+    settings_url_json = json.dumps(settings.frontend_url.rstrip("/") + "/settings")
     html = f"""<!doctype html>
 <html lang="zh-CN">
   <head><meta charset="utf-8"><title>MercuryDesk OAuth</title></head>
   <body style="font-family: system-ui, sans-serif; padding: 24px;">
-    <p>授权完成，窗口即将关闭…</p>
+    <div id="status">授权处理中…</div>
     <script>
       (function () {{
         var payload = {payload_json};
+        var settingsUrl = {settings_url_json};
+        var isOk = !!payload.ok;
+        var title = isOk ? "授权完成" : "授权失败";
+        var message = payload.error ? String(payload.error) : (isOk ? "你可以返回 MercuryDesk 继续操作。" : "请返回 MercuryDesk 重试。");
         try {{
-          if (window.opener) {{
+          if (window.opener && !window.opener.closed) {{
             window.opener.postMessage(payload, "*");
             window.close();
-          }} else {{
-            window.location.href = {json.dumps(settings.frontend_url.rstrip("/") + "/settings")};
+            return;
           }}
         }} catch (_e) {{
-          window.location.href = {json.dumps(settings.frontend_url.rstrip("/") + "/settings")};
+          // ignore and fallback to inline message
         }}
+        var root = document.getElementById("status");
+        if (!root) return;
+        var color = isOk ? "#065f46" : "#b91c1c";
+        var background = isOk ? "#ecfdf5" : "#fef2f2";
+        var border = isOk ? "#a7f3d0" : "#fecaca";
+        root.innerHTML =
+          '<div style="max-width:640px;border:1px solid ' + border + ';background:' + background + ';color:' + color + ';padding:16px;border-radius:12px;line-height:1.6;">' +
+            '<h3 style="margin:0 0 8px;">' + title + '</h3>' +
+            '<div style="margin:0 0 12px;word-break:break-word;">' + message + '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+              '<a href="' + settingsUrl + '" style="display:inline-block;padding:8px 12px;border-radius:8px;border:1px solid ' + border + ';text-decoration:none;color:inherit;background:#fff;">返回设置页</a>' +
+              '<button onclick="window.close()" style="padding:8px 12px;border-radius:8px;border:1px solid ' + border + ';background:#fff;cursor:pointer;">关闭窗口</button>' +
+            '</div>' +
+          '</div>';
       }})();
     </script>
   </body>
