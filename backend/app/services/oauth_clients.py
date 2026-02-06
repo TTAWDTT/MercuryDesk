@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlencode
@@ -64,8 +65,8 @@ def _client_credentials(provider: str) -> tuple[str, str]:
     provider_norm = provider.lower().strip()
     missing_hint = ""
     if provider_norm == "gmail":
-        client_id = (settings.gmail_client_id or "").strip()
-        client_secret = (settings.gmail_client_secret or "").strip()
+        client_id = (settings.gmail_client_id or os.getenv("GOOGLE_CLIENT_ID") or "").strip()
+        client_secret = (settings.gmail_client_secret or os.getenv("GOOGLE_CLIENT_SECRET") or "").strip()
         missing_hint = "请设置 MERCURYDESK_GMAIL_CLIENT_ID 和 MERCURYDESK_GMAIL_CLIENT_SECRET"
     elif provider_norm == "outlook":
         client_id = (settings.outlook_client_id or "").strip()
@@ -74,7 +75,10 @@ def _client_credentials(provider: str) -> tuple[str, str]:
     else:
         raise ValueError(f"不支持的 OAuth provider: {provider}")
     if not client_id or not client_secret:
-        raise ValueError(f"{provider_norm} OAuth 未配置 client_id/client_secret。{missing_hint}")
+        raise ValueError(
+            f"{provider_norm} OAuth 未配置 client_id/client_secret。{missing_hint}；"
+            "并确认后端已读取到环境变量（建议在 backend 目录启动，或使用系统环境变量）。"
+        )
     return client_id, client_secret
 
 

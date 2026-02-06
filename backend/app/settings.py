@@ -4,7 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="MERCURYDESK_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="MERCURYDESK_",
+        env_file=(".env", "backend/.env"),
+        extra="ignore",
+    )
 
     database_url: str = "sqlite+pysqlite:///./mercurydesk.db"
     secret_key: str = "dev-secret-change-me"

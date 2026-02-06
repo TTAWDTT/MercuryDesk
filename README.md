@@ -55,6 +55,13 @@ npm run dev
    - `MERCURYDESK_OUTLOOK_CLIENT_SECRET`
 4. 重启后端服务后，在设置页选择 Gmail/Outlook 一键授权。
 
+常见报错：`gmail OAuth 未配置 client_id/client_secret`
+
+- 确认已在 `backend/.env`（或系统环境变量）设置：
+  - `MERCURYDESK_GMAIL_CLIENT_ID`
+  - `MERCURYDESK_GMAIL_CLIENT_SECRET`
+- 确认后端进程重启后生效，并且使用与回调地址一致的启动方式（推荐在 `backend` 目录启动）。
+
 ### 连接真实邮箱（IMAP）
 
 1. 进入 `设置 -> 已连接来源 -> 选择邮箱（IMAP）`
