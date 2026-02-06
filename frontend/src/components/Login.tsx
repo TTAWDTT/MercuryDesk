@@ -81,7 +81,7 @@ export default function Login(props: { onAuthed: () => void }) {
               borderColor: 'divider',
               backdropFilter: 'blur(10px)',
               background: alpha(theme.palette.background.paper, theme.palette.mode === 'light' ? 0.88 : 0.92),
-              boxShadow: theme.palette.mode === 'light' ? '0 20px 40px -10px rgba(58,32,12,0.12)' : 'none',
+              boxShadow: theme.palette.mode === 'light' ? '0 20px 40px -10px rgba(54,95,181,0.18)' : 'none',
             }}
           >
             <Box textAlign="center" mb={4}>
@@ -90,12 +90,12 @@ export default function Login(props: { onAuthed: () => void }) {
                   width: 48, 
                   height: 48, 
                   borderRadius: 3, 
-                  background: theme.palette.mode === 'light' ? '#2F2115' : '#EFE3CF',
+                  background: theme.palette.mode === 'light' ? theme.palette.primary.dark : theme.palette.primary.main,
                   margin: '0 auto 16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: theme.palette.mode === 'light' ? '#F6EADA' : '#1A140E',
+                  color: theme.palette.primary.contrastText,
                   fontWeight: 'bold',
                   fontSize: '24px'
                 }}

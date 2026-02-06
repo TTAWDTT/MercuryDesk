@@ -32,11 +32,15 @@ import { useColorMode } from '../theme';
 import { 
     AgentConfig,
     ConnectedAccount, 
+    ForwardAccountInfo,
     ModelCatalogResponse,
     User, 
     createAccount, 
     deleteAccount, 
     getAgentCatalog,
+    getForwardAccountInfo,
+    listAccounts,
+    startAccountOAuth,
     testAgent,
     updateAgentConfig,
     syncAccount, 
@@ -51,7 +55,7 @@ interface SettingsProps {
     onLogout: () => void;
 }
 
-type SourceProvider = 'mock' | 'github' | 'imap' | 'rss' | 'bilibili' | 'x';
+type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x';
 
 function accountIcon(provider: string) {
     const normalized = provider.toLowerCase();
@@ -59,6 +63,7 @@ function accountIcon(provider: string) {
     if (normalized === 'rss') return <RssFeedIcon />;
     if (normalized === 'bilibili') return <PersonIcon />;
     if (normalized === 'x') return <AlternateEmailIcon />;
+    if (normalized === 'forward') return <SyncIcon />;
     return <EmailIcon />;
 }
 
@@ -73,7 +78,7 @@ export default function Settings({ onLogout }: SettingsProps) {
         () => getAgentCatalog(false)
     );
     
-    const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
+    const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
     const [syncing, setSyncing] = useState<number | null>(null);
     const [refreshingCatalog, setRefreshingCatalog] = useState(false);
     
@@ -84,7 +89,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
     // Account State
     const [newIdentifier, setNewIdentifier] = useState('');
-    const [newProvider, setNewProvider] = useState<SourceProvider>('imap');
+    const [newProvider, setNewProvider] = useState<SourceProvider>('gmail');
     const [newToken, setNewToken] = useState('');
     const [imapPreset, setImapPreset] = useState<'gmail' | 'outlook' | 'icloud' | 'qq' | '163' | 'custom'>('gmail');
     const [showImapAdvanced, setShowImapAdvanced] = useState(false);
@@ -99,7 +104,10 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [rssDisplayName, setRssDisplayName] = useState('');
     const [bilibiliUid, setBilibiliUid] = useState('');
     const [xUsername, setXUsername] = useState('');
+    const [forwardSourceEmail, setForwardSourceEmail] = useState('');
     const [addingAccount, setAddingAccount] = useState(false);
+    const [oauthConnecting, setOauthConnecting] = useState<null | 'gmail' | 'outlook'>(null);
+    const [latestForwardInfo, setLatestForwardInfo] = useState<ForwardAccountInfo | null>(null);
 
     // Agent State
     const [agentProvider, setAgentProvider] = useState('rule_based');
@@ -149,6 +157,12 @@ export default function Settings({ onLogout }: SettingsProps) {
         setImapPort(String(preset.port));
         setImapUseSsl(preset.ssl);
     }, [newProvider, imapPreset]);
+
+    useEffect(() => {
+        if (newProvider !== 'forward') {
+            setLatestForwardInfo(null);
+        }
+    }, [newProvider]);
 
     useEffect(() => {
         if (!agentConfig) return;
@@ -241,23 +255,153 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
-    const connectAndSync = async (payload: Parameters<typeof createAccount>[0], connectedLabel: string) => {
-        const account = await createAccount(payload);
+    const postConnectSync = async (accountId: number, connectedLabel: string) => {
         try {
-            const res = await syncAccount(account.id);
+            const res = await syncAccount(accountId);
             setToast({ message: `${connectedLabel}已连接并同步：+${res.inserted}`, severity: 'success' });
         } catch (e) {
             setToast({
-                message: e instanceof Error ? `${connectedLabel}已连接，但同步失败：${e.message}` : `${connectedLabel}已连接，但同步失败`,
-                severity: 'error',
+                message: e instanceof Error
+                    ? `${connectedLabel}已连接，首次同步失败（${e.message}）。可稍后手动点“同步”重试。`
+                    : `${connectedLabel}已连接，首次同步失败。可稍后手动点“同步”重试。`,
+                severity: 'warning',
             });
+        }
+    };
+
+    const connectAndSync = async (payload: Parameters<typeof createAccount>[0], connectedLabel: string) => {
+        const account = await createAccount(payload);
+        await postConnectSync(account.id, connectedLabel);
+        return account;
+    };
+
+    const findNewOAuthAccount = async (
+        provider: 'gmail' | 'outlook',
+        knownAccountIds: Set<number>
+    ): Promise<ConnectedAccount | null> => {
+        try {
+            const latest = await listAccounts();
+            mutateAccounts(latest, { revalidate: false });
+            return (
+                latest
+                    .filter((item) => item.provider.toLowerCase() === provider && !knownAccountIds.has(item.id))
+                    .sort((a, b) => b.id - a.id)[0] ?? null
+            );
+        } catch {
+            return null;
+        }
+    };
+
+    const connectOAuth = async (provider: 'gmail' | 'outlook') => {
+        setOauthConnecting(provider);
+        const knownAccountIds = new Set<number>();
+        let allowFallback = false;
+        try {
+            const baselineAccounts = await listAccounts().catch(() => accounts ?? []);
+            baselineAccounts
+                .filter((item) => item.provider.toLowerCase() === provider)
+                .forEach((item) => knownAccountIds.add(item.id));
+
+            const started = await startAccountOAuth(provider);
+            const popup = window.open(
+                started.auth_url,
+                `oauth-${provider}`,
+                'width=560,height=760,menubar=no,toolbar=no,status=no'
+            );
+            if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
+            allowFallback = true;
+
+            const result = await new Promise<{ ok: boolean; account_id?: number; identifier?: string; error?: string }>(
+                (resolve, reject) => {
+                    let onMessage: (event: MessageEvent) => void;
+                    let settled = false;
+                    const finish = (
+                        fn: (value: { ok: boolean; account_id?: number; identifier?: string; error?: string } | Error) => void,
+                        value: { ok: boolean; account_id?: number; identifier?: string; error?: string } | Error
+                    ) => {
+                        if (settled) return;
+                        settled = true;
+                        window.clearInterval(watcher);
+                        window.clearTimeout(timeout);
+                        window.removeEventListener('message', onMessage);
+                        fn(value);
+                    };
+                    const timeout = window.setTimeout(() => {
+                        finish(reject, new Error('授权超时，请重试'));
+                    }, 180000);
+                    const watcher = window.setInterval(() => {
+                        if (popup.closed) {
+                            window.setTimeout(() => {
+                                if (!settled) {
+                                    finish(reject, new Error('授权窗口已关闭'));
+                                }
+                            }, 450);
+                        }
+                    }, 500);
+
+                    onMessage = (event: MessageEvent) => {
+                        const data = event.data as {
+                            source?: string;
+                            ok?: boolean;
+                            account_id?: number;
+                            identifier?: string;
+                            error?: string;
+                        };
+                        if (data?.source !== 'mercurydesk-oauth') return;
+                        finish(resolve, { ok: !!data.ok, account_id: data.account_id, identifier: data.identifier, error: data.error });
+                    };
+                    window.addEventListener('message', onMessage);
+                }
+            );
+
+            if (!result.ok || !result.account_id) {
+                throw new Error(result.error || '授权失败');
+            }
+            await postConnectSync(result.account_id, provider === 'gmail' ? 'Gmail' : 'Outlook');
+            mutateAccounts();
+        } catch (error) {
+            if (allowFallback) {
+                const fallbackAccount = await findNewOAuthAccount(provider, knownAccountIds);
+                if (fallbackAccount) {
+                    await postConnectSync(fallbackAccount.id, provider === 'gmail' ? 'Gmail' : 'Outlook');
+                    return;
+                }
+            }
+            throw error;
+        } finally {
+            setOauthConnecting(null);
+        }
+    };
+
+    const copyText = async (text: string) => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setToast({ message: '已复制到剪贴板', severity: 'success' });
+        } catch {
+            setToast({ message: '复制失败，请手动复制', severity: 'error' });
         }
     };
 
     const handleAddAccount = async () => {
         setAddingAccount(true);
         try {
-            if (newProvider === 'imap') {
+            if (newProvider === 'gmail' || newProvider === 'outlook') {
+                await connectOAuth(newProvider);
+            } else if (newProvider === 'forward') {
+                const sourceEmail = forwardSourceEmail.trim().toLowerCase();
+                if (!sourceEmail) throw new Error('请填写要接入的邮箱地址');
+                if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sourceEmail)) {
+                    throw new Error('请输入有效的邮箱地址');
+                }
+                const created = await createAccount({
+                    provider: 'forward',
+                    identifier: sourceEmail,
+                    forward_source_email: sourceEmail,
+                });
+                const info = await getForwardAccountInfo(created.id);
+                setLatestForwardInfo(info);
+                setToast({ message: '转发地址已生成，请在邮箱里设置自动转发', severity: 'success' });
+            } else if (newProvider === 'imap') {
                 const email = imapUsername.trim();
                 const host = imapHost.trim();
                 const mailbox = (imapMailbox || 'INBOX').trim();
@@ -343,6 +487,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             setNewIdentifier('');
             setNewToken('');
             setImapPassword('');
+            setForwardSourceEmail('');
             setRssFeedUrl('');
             setRssHomepageUrl('');
             setRssDisplayName('');
@@ -454,7 +599,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                             <Box>
                                 <Typography variant="h6">外观</Typography>
                                 <Typography variant="body2" color="textSecondary">
-                                    浅色：牛皮纸；深色：纯黑
+                                    浅色：浅蓝色系；深色：纯黑底 + 深蓝强调
                                 </Typography>
                             </Box>
                             <Box display="flex" alignItems="center" gap={1}>
@@ -470,7 +615,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>已连接账户</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
-                                管理你的消息来源。目前支持：邮箱（IMAP）、GitHub、RSS/Blog、Bilibili、X、演示数据。
+                                管理你的消息来源。推荐先用 Gmail/Outlook 一键授权；也支持转发接入、IMAP 高级接入、GitHub、RSS、Bilibili、X。
                             </Typography>
                             
                             <List>
@@ -526,6 +671,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 onChange={(e) => setNewProvider(e.target.value as SourceProvider)}
                                                 SelectProps={{ native: true }}
                                             >
+                                                <option value="gmail">Gmail（一键授权，推荐）</option>
+                                                <option value="outlook">Outlook（一键授权，推荐）</option>
+                                                <option value="forward">邮箱转发接入（更简）</option>
                                                 <option value="imap">邮箱（IMAP）</option>
                                                 <option value="github">GitHub 通知</option>
                                                 <option value="rss">RSS / Blog</option>
@@ -534,6 +682,16 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 <option value="mock">演示数据</option>
                                             </TextField>
                                         </Grid>
+
+                                        {(newProvider === 'gmail' || newProvider === 'outlook') && (
+                                            <>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="success" sx={{ borderRadius: 3 }}>
+                                                        推荐方式：点击下方按钮，跳转到 {newProvider === 'gmail' ? 'Google' : 'Microsoft'} 官方授权页，一次授权即可读取邮件。
+                                                    </Alert>
+                                                </Grid>
+                                            </>
+                                        )}
 
                                         {newProvider === 'github' && (
                                             <>
@@ -558,6 +716,47 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                         placeholder="ghp_..."
                                                     />
                                                 </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'forward' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="要接入的邮箱地址"
+                                                        value={forwardSourceEmail}
+                                                        onChange={(e) => setForwardSourceEmail(e.target.value)}
+                                                        placeholder="you@example.com"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        创建后会生成一个专属转发地址。去你的邮箱设置里添加“自动转发到该地址”即可接入，无需再配置 Webhook。
+                                                    </Alert>
+                                                </Grid>
+                                                {latestForwardInfo && (
+                                                    <Grid size={{ xs: 12 }}>
+                                                        <Alert severity="success" sx={{ borderRadius: 3 }}>
+                                                            <Box display="flex" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
+                                                                <Typography variant="body2">
+                                                                    专属转发地址：{latestForwardInfo.forward_address}
+                                                                </Typography>
+                                                                <Button
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    onClick={() => copyText(latestForwardInfo.forward_address)}
+                                                                >
+                                                                    复制地址
+                                                                </Button>
+                                                            </Box>
+                                                            <Typography variant="caption" display="block" sx={{ mt: 0.8 }}>
+                                                                已绑定邮箱：{latestForwardInfo.source_email}。完成邮箱端自动转发后，新邮件会自动进入 MercuryDesk。
+                                                            </Typography>
+                                                        </Alert>
+                                                    </Grid>
+                                                )}
                                             </>
                                         )}
 
@@ -605,7 +804,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="info" sx={{ borderRadius: 3 }}>
-                                                        三步完成：① 开启 IMAP；② 生成授权码；③ 填写邮箱 + 授权码。连接失败时再展开高级设置核对主机与端口。
+                                                        高级接入（兜底方案）：三步完成 ① 开启 IMAP ② 生成授权码 ③ 填写邮箱+授权码。优先推荐 Gmail/Outlook 一键授权。
                                                     </Alert>
                                                 </Grid>
 
@@ -772,9 +971,17 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 fullWidth 
                                                 variant="contained" 
                                                 onClick={handleAddAccount}
-                                                disabled={addingAccount}
+                                                disabled={addingAccount || oauthConnecting !== null}
                                             >
-                                                {addingAccount ? '连接中…' : '连接并同步'}
+                                                {addingAccount
+                                                    ? '连接中…'
+                                                    : oauthConnecting
+                                                        ? '授权中…'
+                                                        : (newProvider === 'gmail' || newProvider === 'outlook')
+                                                            ? '开始授权连接'
+                                                            : newProvider === 'forward'
+                                                                ? '生成转发地址'
+                                                                : '连接并同步'}
                                             </Button>
                                         </Grid>
                                     </Grid>

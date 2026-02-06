@@ -85,6 +85,20 @@ export type ModelCatalogResponse = {
   providers: ModelProviderInfo[];
 };
 
+export type AccountOAuthStart = {
+  provider: string;
+  auth_url: string;
+};
+
+export type ForwardAccountInfo = {
+  account_id: number;
+  provider: string;
+  identifier: string;
+  source_email: string;
+  forward_address: string;
+  inbound_url: string;
+};
+
 const TOKEN_KEY = "mercurydesk_token";
 let tokenCache: string | null | undefined;
 
@@ -179,6 +193,8 @@ export async function createAccount(payload: {
   feed_display_name?: string | null;
   bilibili_uid?: string | null;
   x_username?: string | null;
+  forward_display_name?: string | null;
+  forward_source_email?: string | null;
 }): Promise<ConnectedAccount> {
   return await fetchJson<ConnectedAccount>("/api/v1/accounts", {
     method: "POST",
@@ -189,6 +205,14 @@ export async function createAccount(payload: {
 
 export async function deleteAccount(accountId: number): Promise<void> {
   await apiFetch(`/api/v1/accounts/${accountId}`, { method: "DELETE" });
+}
+
+export async function startAccountOAuth(provider: "gmail" | "outlook"): Promise<AccountOAuthStart> {
+  return await fetchJson<AccountOAuthStart>(`/api/v1/accounts/oauth/${provider}/start`);
+}
+
+export async function getForwardAccountInfo(accountId: number): Promise<ForwardAccountInfo> {
+  return await fetchJson<ForwardAccountInfo>(`/api/v1/accounts/${accountId}/forward-info`);
 }
 
 export async function getProfile(): Promise<User> {

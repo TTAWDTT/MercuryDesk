@@ -31,42 +31,46 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const lightPalette = {
-    primary: '#7A4B2A',
-    secondary: '#B68457',
-    background: '#ECE2CF',
-    paper: '#F4E8D5',
-    textPrimary: '#2A1F14',
-    textSecondary: '#6B5845',
-    divider: '#D4C3AB',
-    hover: '#8B5E3C',
+    primary: '#4C8DFF',
+    secondary: '#7AB2FF',
+    background: '#F2F7FF',
+    paper: '#F8FBFF',
+    textPrimary: '#0E1B33',
+    textSecondary: '#4F6282',
+    divider: '#DCE6FA',
+    hover: '#CFE1FF',
   };
 
   const darkPalette = {
-    primary: '#E8D9C2',
-    secondary: '#B7A48D',
+    primary: '#4A7BEA',
+    secondary: '#7CA6FF',
     background: '#000000',
     paper: '#000000',
-    textPrimary: '#F5EFE5',
-    textSecondary: '#A89E91',
-    divider: '#1A1A1A',
-    hover: '#E8D9C2',
+    textPrimary: '#EAF1FF',
+    textSecondary: '#98ABD1',
+    divider: '#1A2742',
+    hover: '#10203A',
   };
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
+  const headingFont =
+    '"Poppins","Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif';
+  const bodyFont =
+    '"Lora","Noto Serif SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Georgia,serif';
 
   const theme = useMemo(() => createTheme({
     palette: {
       mode,
       primary: {
         main: colors.primary,
-        light: mode === 'light' ? '#9A6A46' : '#F1E5D2',
-        dark: mode === 'light' ? '#60391D' : '#D1BFA7',
-        contrastText: mode === 'light' ? '#fffaf2' : '#101010',
+        light: '#78A7FF',
+        dark: '#2E63D8',
+        contrastText: '#F7FBFF',
       },
       secondary: {
         main: colors.secondary,
-        light: mode === 'light' ? '#CCA37F' : '#CCBCA7',
-        dark: mode === 'light' ? '#9D6E44' : '#9E8B73',
+        light: '#A5C8FF',
+        dark: '#5A8DE6',
       },
       background: {
         default: colors.background,
@@ -83,14 +87,17 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       },
     },
     typography: {
-      fontFamily:
-        '"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei","WenQuanYi Micro Hei",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
-      h4: { fontWeight: 700, letterSpacing: '-0.02em' },
-      h5: { fontWeight: 600, letterSpacing: '-0.01em' },
-      h6: { fontWeight: 600, letterSpacing: '-0.01em' },
-      subtitle1: { fontWeight: 500, lineHeight: 1.5 },
-      body1: { lineHeight: 1.6 },
-      button: { fontWeight: 600, textTransform: 'none' },
+      fontFamily: bodyFont,
+      h1: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
+      h2: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
+      h3: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
+      h4: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
+      h5: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.01em' },
+      h6: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.01em' },
+      subtitle1: { fontFamily: bodyFont, fontWeight: 500, lineHeight: 1.5 },
+      body1: { fontFamily: bodyFont, lineHeight: 1.6 },
+      body2: { fontFamily: bodyFont, lineHeight: 1.6 },
+      button: { fontFamily: headingFont, fontWeight: 600, textTransform: 'none' },
     },
     shape: { borderRadius: 10 },
     components: {
@@ -99,11 +106,11 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           body: {
             backgroundColor: colors.background,
             color: colors.textPrimary,
-            scrollbarColor: mode === 'light' ? '#A98D6F #E7DCC9' : '#585858 #000000',
+            scrollbarColor: mode === 'light' ? '#9EB8E8 #EAF2FF' : '#3A4D73 #000000',
             '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { backgroundColor: mode === 'light' ? '#E7DCC9' : '#000000' },
+            '&::-webkit-scrollbar-track': { backgroundColor: mode === 'light' ? '#EAF2FF' : '#000000' },
             '&::-webkit-scrollbar-thumb': { 
-                backgroundColor: mode === 'light' ? '#A98D6F' : '#585858',
+                backgroundColor: mode === 'light' ? '#9EB8E8' : '#3A4D73',
                 borderRadius: '4px',
             },
           },
@@ -115,9 +122,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             borderRadius: 18,
             backgroundImage: 'none',
             boxShadow: mode === 'light' 
-                ? '0 8px 20px rgba(66, 40, 16, 0.08)'
-                : 'none',
-            border: `1px solid ${mode === 'light' ? alpha('#C8B396', 0.8) : '#1A1A1A'}`,
+                ? '0 8px 20px rgba(46, 99, 216, 0.08)'
+                : '0 4px 14px rgba(0, 0, 0, 0.28)',
+            border: `1px solid ${mode === 'light' ? alpha('#DCE6FA', 0.95) : '#1A2742'}`,
           },
         },
       },
@@ -128,15 +135,15 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             padding: '8px 16px',
             boxShadow: 'none',
             '&:hover': {
-              boxShadow: mode === 'light' ? `0 6px 14px ${alpha('#6B4C2F', 0.2)}` : 'none',
+              boxShadow: mode === 'light' ? `0 6px 14px ${alpha('#3C74D9', 0.25)}` : 'none',
               transform: 'translateY(-1px)',
             },
           },
           containedPrimary: {
-            background: mode === 'light' ? '#6F4527' : '#E8D9C2',
-            color: mode === 'light' ? '#FFF8ED' : '#121212',
+            background: mode === 'light' ? '#3F7DF0' : '#365FB5',
+            color: '#F7FBFF',
             '&:hover': {
-              background: mode === 'light' ? '#5F3A20' : '#E1D1B8',
+              background: mode === 'light' ? '#326BDD' : '#2E549F',
             },
           }
         },
@@ -148,9 +155,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           },
           elevation1: {
              boxShadow: mode === 'light'
-                ? '0 2px 6px rgba(57, 34, 14, 0.05)'
-                : 'none',
-            border: `1px solid ${mode === 'light' ? alpha('#CCB79A', 0.65) : '#1A1A1A'}`,
+                ? '0 2px 8px rgba(46, 99, 216, 0.05)'
+                : '0 3px 10px rgba(0, 0, 0, 0.2)',
+            border: `1px solid ${mode === 'light' ? alpha('#DCE6FA', 0.95) : '#1A2742'}`,
           }
         }
       },
@@ -158,9 +165,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             boxShadow: 'none',
-            borderBottom: `1px solid ${mode === 'light' ? '#D7C7B2' : '#1A1A1A'}`,
+            borderBottom: `1px solid ${mode === 'light' ? '#DCE6FA' : '#1A2742'}`,
             backdropFilter: 'blur(12px)',
-            backgroundColor: mode === 'light' ? alpha('#F4E8D5', 0.88) : alpha('#000000', 0.92),
+            backgroundColor: mode === 'light' ? alpha('#F8FBFF', 0.9) : alpha('#000000', 0.94),
             color: colors.textPrimary,
           },
         },
@@ -177,12 +184,12 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiOutlinedInput: {
           styleOverrides: {
               notchedOutline: {
-                  borderColor: mode === 'light' ? '#BDA688' : '#2B2B2B',
+                  borderColor: mode === 'light' ? '#C9DDFE' : '#2A3D60',
               }
           }
       }
     },
-  }), [colors.background, colors.divider, colors.hover, colors.paper, colors.primary, colors.secondary, colors.textPrimary, colors.textSecondary, mode]);
+  }), [bodyFont, colors.background, colors.divider, colors.hover, colors.paper, colors.primary, colors.secondary, colors.textPrimary, colors.textSecondary, headingFont, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

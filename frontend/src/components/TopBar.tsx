@@ -83,12 +83,12 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             alignItems: 'center', 
             mr: 2,
             cursor: 'pointer',
-            background: isLight ? '#2F2115' : '#EFE3CF',
+            background: isLight ? theme.palette.primary.dark : theme.palette.primary.main,
             borderRadius: 3,
             width: 36,
             height: 36,
             justifyContent: 'center',
-            color: isLight ? '#F6EADA' : '#1A140E',
+            color: theme.palette.primary.contrastText,
             fontWeight: 'bold',
             boxShadow: 'none'
           }}
