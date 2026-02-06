@@ -135,6 +135,11 @@ export default function Settings({ onLogout }: SettingsProps) {
         () => modelCatalog?.providers.find((provider) => provider.id === agentProvider) ?? null,
         [modelCatalog, agentProvider]
     );
+    const getDefaultBaseUrlForProvider = (providerId: string) => {
+        if (providerId === 'rule_based') return 'https://api.openai.com/v1';
+        const matched = modelCatalog?.providers.find((provider) => provider.id === providerId);
+        return (matched?.api || '').trim() || 'https://api.openai.com/v1';
+    };
 
     useEffect(() => {
         if (!avatarFile) {
@@ -196,16 +201,13 @@ export default function Settings({ onLogout }: SettingsProps) {
 
     useEffect(() => {
         if (agentProvider === 'rule_based' || !selectedModelProvider) return;
-        if (!agentBaseUrl.trim() && selectedModelProvider.api) {
-            setAgentBaseUrl(selectedModelProvider.api);
-        }
         if (
             selectedModelProvider.models.length > 0 &&
             !selectedModelProvider.models.some((model) => model.id === agentModel)
         ) {
             setAgentModel(selectedModelProvider.models[0].id);
         }
-    }, [agentBaseUrl, agentModel, agentProvider, selectedModelProvider]);
+    }, [agentModel, agentProvider, selectedModelProvider]);
 
     const handleUploadAvatar = async () => {
         if (!avatarFile) return;
@@ -1213,7 +1215,11 @@ export default function Settings({ onLogout }: SettingsProps) {
                                         size="small"
                                         label="服务商"
                                         value={agentProvider}
-                                        onChange={(e) => setAgentProvider(e.target.value)}
+                                        onChange={(e) => {
+                                            const nextProvider = e.target.value;
+                                            setAgentProvider(nextProvider);
+                                            setAgentBaseUrl(getDefaultBaseUrlForProvider(nextProvider));
+                                        }}
                                         SelectProps={{ native: true }}
                                     >
                                         <option value="rule_based">内置规则（免费）</option>
