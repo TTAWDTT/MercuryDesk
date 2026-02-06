@@ -90,6 +90,12 @@ export type AccountOAuthStart = {
   auth_url: string;
 };
 
+export type OAuthProviderConfig = {
+  provider: string;
+  configured: boolean;
+  client_id_hint?: string | null;
+};
+
 export type ForwardAccountInfo = {
   account_id: number;
   provider: string;
@@ -209,6 +215,21 @@ export async function deleteAccount(accountId: number): Promise<void> {
 
 export async function startAccountOAuth(provider: "gmail" | "outlook"): Promise<AccountOAuthStart> {
   return await fetchJson<AccountOAuthStart>(`/api/v1/accounts/oauth/${provider}/start`);
+}
+
+export async function getOAuthProviderConfig(provider: "gmail" | "outlook"): Promise<OAuthProviderConfig> {
+  return await fetchJson<OAuthProviderConfig>(`/api/v1/accounts/oauth/${provider}/config`);
+}
+
+export async function updateOAuthProviderConfig(
+  provider: "gmail" | "outlook",
+  payload: { client_id: string; client_secret: string }
+): Promise<OAuthProviderConfig> {
+  return await fetchJson<OAuthProviderConfig>(`/api/v1/accounts/oauth/${provider}/config`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function getForwardAccountInfo(accountId: number): Promise<ForwardAccountInfo> {

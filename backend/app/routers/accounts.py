@@ -17,6 +17,8 @@ from app.schemas import (
     ConnectedAccountCreate,
     ConnectedAccountOut,
     ForwardAccountInfo,
+    OAuthCredentialConfigOut,
+    OAuthCredentialConfigUpdate,
 )
 from app.services.forwarding import build_forward_address
 from app.services.oauth_clients import build_authorization_url, exchange_code_for_tokens, fetch_identifier
@@ -56,6 +58,26 @@ def _oauth_popup_html(payload: dict[str, object]) -> HTMLResponse:
   </body>
 </html>"""
     return HTMLResponse(content=html)
+
+
+def _provider_env_client_id(provider: str) -> str | None:
+    provider_norm = provider.lower().strip()
+    if provider_norm == "gmail":
+        value = (settings.gmail_client_id or "").strip()
+        return value or None
+    if provider_norm == "outlook":
+        value = (settings.outlook_client_id or "").strip()
+        return value or None
+    return None
+
+
+def _mask_client_id(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = value.strip()
+    if len(text) <= 10:
+        return f"{text[:2]}***"
+    return f"{text[:6]}***{text[-4:]}"
 
 
 @router.get("", response_model=list[ConnectedAccountOut])
@@ -164,13 +186,25 @@ def add_connected_account(
 @router.get("/oauth/{provider}/start", response_model=AccountOAuthStartResponse)
 def start_oauth(
     provider: str,
+    db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     provider_norm = provider.lower().strip()
     if provider_norm not in {"gmail", "outlook"}:
         raise HTTPException(status_code=404, detail="OAuth provider not supported")
+    credentials = crud.get_user_oauth_credentials(
+        db,
+        user_id=current_user.id,
+        provider=provider_norm,
+    )
+    client_id, client_secret = credentials if credentials else (None, None)
     try:
-        url = build_authorization_url(provider=provider_norm, user_id=current_user.id)
+        url = build_authorization_url(
+            provider=provider_norm,
+            user_id=current_user.id,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return AccountOAuthStartResponse(provider=provider_norm, auth_url=url)
@@ -194,7 +228,18 @@ def oauth_callback(
 
     try:
         user_id = consume_state(token=state, provider=provider_norm)
-        access_token, refresh_token = exchange_code_for_tokens(provider=provider_norm, code=code)
+        credentials = crud.get_user_oauth_credentials(
+            db,
+            user_id=user_id,
+            provider=provider_norm,
+        )
+        client_id, client_secret = credentials if credentials else (None, None)
+        access_token, refresh_token = exchange_code_for_tokens(
+            provider=provider_norm,
+            code=code,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
         identifier = fetch_identifier(provider=provider_norm, access_token=access_token)
         account = crud.upsert_oauth_account(
             db,
@@ -217,6 +262,59 @@ def oauth_callback(
             "account_id": account.id,
             "identifier": account.identifier,
         }
+    )
+
+
+@router.get("/oauth/{provider}/config", response_model=OAuthCredentialConfigOut)
+def get_oauth_config(
+    provider: str,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    provider_norm = provider.lower().strip()
+    if provider_norm not in {"gmail", "outlook"}:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+    credentials = crud.get_user_oauth_credentials(
+        db,
+        user_id=current_user.id,
+        provider=provider_norm,
+    )
+    if credentials is not None:
+        client_id, _client_secret = credentials
+        return OAuthCredentialConfigOut(
+            provider=provider_norm,
+            configured=True,
+            client_id_hint=_mask_client_id(client_id),
+        )
+    env_client_id = _provider_env_client_id(provider_norm)
+    return OAuthCredentialConfigOut(
+        provider=provider_norm,
+        configured=bool(env_client_id),
+        client_id_hint=_mask_client_id(env_client_id),
+    )
+
+
+@router.patch("/oauth/{provider}/config", response_model=OAuthCredentialConfigOut)
+def upsert_oauth_config(
+    provider: str,
+    payload: OAuthCredentialConfigUpdate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    provider_norm = provider.lower().strip()
+    if provider_norm not in {"gmail", "outlook"}:
+        raise HTTPException(status_code=404, detail="OAuth provider not supported")
+    config = crud.upsert_user_oauth_credentials(
+        db,
+        user_id=current_user.id,
+        provider=provider_norm,
+        client_id=payload.client_id,
+        client_secret=payload.client_secret,
+    )
+    return OAuthCredentialConfigOut(
+        provider=provider_norm,
+        configured=True,
+        client_id_hint=_mask_client_id(config.client_id),
     )
 
 

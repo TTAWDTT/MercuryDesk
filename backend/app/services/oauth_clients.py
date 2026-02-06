@@ -61,9 +61,19 @@ def _redirect_uri(provider: str) -> str:
     return f"{settings.oauth_redirect_base_url.rstrip('/')}/api/v1/accounts/oauth/{provider}/callback"
 
 
-def _client_credentials(provider: str) -> tuple[str, str]:
+def _client_credentials(
+    provider: str,
+    *,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> tuple[str, str]:
     provider_norm = provider.lower().strip()
     missing_hint = ""
+    explicit_client_id = (client_id or "").strip()
+    explicit_client_secret = (client_secret or "").strip()
+    if explicit_client_id and explicit_client_secret:
+        return explicit_client_id, explicit_client_secret
+
     if provider_norm == "gmail":
         client_id = (
             settings.gmail_client_id
@@ -87,14 +97,24 @@ def _client_credentials(provider: str) -> tuple[str, str]:
     if not client_id or not client_secret:
         raise ValueError(
             f"{provider_norm} OAuth 未配置 client_id/client_secret。{missing_hint}；"
-            "并确认后端已读取到环境变量（建议在 backend 目录启动，或使用系统环境变量）。"
+            "并确认后端已读取到环境变量（建议在 backend 目录启动，或在网页设置中保存 OAuth 凭据）。"
         )
     return client_id, client_secret
 
 
-def build_authorization_url(*, provider: str, user_id: int) -> str:
+def build_authorization_url(
+    *,
+    provider: str,
+    user_id: int,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> str:
     config = _provider_config(provider)
-    client_id, _client_secret = _client_credentials(config.provider)
+    client_id, _client_secret = _client_credentials(
+        config.provider,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
     state = issue_state(user_id=user_id, provider=config.provider)
     redirect_uri = _redirect_uri(config.provider)
 
@@ -115,9 +135,19 @@ def build_authorization_url(*, provider: str, user_id: int) -> str:
     return f"{config.authorize_url}?{urlencode(params)}"
 
 
-def exchange_code_for_tokens(*, provider: str, code: str) -> tuple[str, str | None]:
+def exchange_code_for_tokens(
+    *,
+    provider: str,
+    code: str,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> tuple[str, str | None]:
     config = _provider_config(provider)
-    client_id, client_secret = _client_credentials(config.provider)
+    client_id, client_secret = _client_credentials(
+        config.provider,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
     redirect_uri = _redirect_uri(config.provider)
     payload = {
         "grant_type": "authorization_code",
@@ -139,9 +169,19 @@ def exchange_code_for_tokens(*, provider: str, code: str) -> tuple[str, str | No
     return access_token, refresh_token
 
 
-def refresh_access_token(*, provider: str, refresh_token: str) -> tuple[str, str | None]:
+def refresh_access_token(
+    *,
+    provider: str,
+    refresh_token: str,
+    client_id: str | None = None,
+    client_secret: str | None = None,
+) -> tuple[str, str | None]:
     config = _provider_config(provider)
-    client_id, client_secret = _client_credentials(config.provider)
+    client_id, client_secret = _client_credentials(
+        config.provider,
+        client_id=client_id,
+        client_secret=client_secret,
+    )
     payload = {
         "grant_type": "refresh_token",
         "refresh_token": refresh_token,

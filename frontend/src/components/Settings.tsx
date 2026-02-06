@@ -34,14 +34,17 @@ import {
     ConnectedAccount, 
     ForwardAccountInfo,
     ModelCatalogResponse,
+    OAuthProviderConfig,
     User, 
     createAccount, 
     deleteAccount, 
     getAgentCatalog,
     getForwardAccountInfo,
+    getOAuthProviderConfig,
     listAccounts,
     startAccountOAuth,
     testAgent,
+    updateOAuthProviderConfig,
     updateAgentConfig,
     syncAccount, 
     uploadAvatar
@@ -77,7 +80,7 @@ export default function Settings({ onLogout }: SettingsProps) {
         'agent-catalog',
         () => getAgentCatalog(false)
     );
-    
+
     const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
     const [syncing, setSyncing] = useState<number | null>(null);
     const [refreshingCatalog, setRefreshingCatalog] = useState(false);
@@ -107,7 +110,15 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [forwardSourceEmail, setForwardSourceEmail] = useState('');
     const [addingAccount, setAddingAccount] = useState(false);
     const [oauthConnecting, setOauthConnecting] = useState<null | 'gmail' | 'outlook'>(null);
+    const [oauthClientIdInput, setOauthClientIdInput] = useState('');
+    const [oauthClientSecretInput, setOauthClientSecretInput] = useState('');
+    const [savingOAuthConfig, setSavingOAuthConfig] = useState(false);
     const [latestForwardInfo, setLatestForwardInfo] = useState<ForwardAccountInfo | null>(null);
+    const isOAuthProvider = newProvider === 'gmail' || newProvider === 'outlook';
+    const { data: oauthProviderConfig, mutate: mutateOAuthProviderConfig } = useSWR<OAuthProviderConfig>(
+        isOAuthProvider ? `oauth-config-${newProvider}` : null,
+        () => getOAuthProviderConfig(newProvider as 'gmail' | 'outlook')
+    );
 
     // Agent State
     const [agentProvider, setAgentProvider] = useState('rule_based');
@@ -163,6 +174,15 @@ export default function Settings({ onLogout }: SettingsProps) {
             setLatestForwardInfo(null);
         }
     }, [newProvider]);
+
+    useEffect(() => {
+        if (!isOAuthProvider) {
+            setOauthClientIdInput('');
+            setOauthClientSecretInput('');
+            return;
+        }
+        setOauthClientSecretInput('');
+    }, [isOAuthProvider, newProvider]);
 
     useEffect(() => {
         if (!agentConfig) return;
@@ -321,6 +341,9 @@ export default function Settings({ onLogout }: SettingsProps) {
         let allowFallback = false;
         let popup: Window | null = null;
         try {
+            if (newProvider === provider && oauthClientIdInput.trim() && oauthClientSecretInput.trim()) {
+                await saveOAuthConfig(provider, oauthClientIdInput, oauthClientSecretInput, { silent: true });
+            }
             popup = window.open(
                 'about:blank',
                 `oauth-${provider}`,
@@ -409,6 +432,64 @@ export default function Settings({ onLogout }: SettingsProps) {
             setToast({ message: '已复制到剪贴板', severity: 'success' });
         } catch {
             setToast({ message: '复制失败，请手动复制', severity: 'error' });
+        }
+    };
+
+    const saveOAuthConfig = async (
+        provider: 'gmail' | 'outlook',
+        clientId: string,
+        clientSecret: string,
+        options?: { silent?: boolean }
+    ) => {
+        const clientIdTrimmed = clientId.trim();
+        const clientSecretTrimmed = clientSecret.trim();
+        if (!clientIdTrimmed || !clientSecretTrimmed) {
+            throw new Error('请填写 client_id 和 client_secret，或导入 OAuth JSON');
+        }
+        setSavingOAuthConfig(true);
+        try {
+            const updated = await updateOAuthProviderConfig(provider, {
+                client_id: clientIdTrimmed,
+                client_secret: clientSecretTrimmed,
+            });
+            mutateOAuthProviderConfig(updated, { revalidate: false });
+            setOauthClientIdInput(clientIdTrimmed);
+            setOauthClientSecretInput('');
+            if (!options?.silent) {
+                setToast({
+                    message: `${provider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 凭据已保存`,
+                    severity: 'success',
+                });
+            }
+        } finally {
+            setSavingOAuthConfig(false);
+        }
+    };
+
+    const handleImportOAuthJson = async (
+        provider: 'gmail' | 'outlook',
+        event: React.ChangeEvent<HTMLInputElement>
+    ) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+        if (!file) return;
+        try {
+            const raw = await file.text();
+            const parsed = JSON.parse(raw) as any;
+            const candidate = parsed?.web || parsed?.installed || parsed;
+            const clientId = String(candidate?.client_id || '').trim();
+            const clientSecret = String(candidate?.client_secret || '').trim();
+            if (!clientId || !clientSecret) {
+                throw new Error('文件中未找到 client_id/client_secret');
+            }
+            setOauthClientIdInput(clientId);
+            setOauthClientSecretInput(clientSecret);
+            await saveOAuthConfig(provider, clientId, clientSecret);
+        } catch (e) {
+            setToast({
+                message: e instanceof Error ? `导入失败：${e.message}` : '导入失败',
+                severity: 'error',
+            });
         }
     };
 
@@ -718,7 +799,67 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="success" sx={{ borderRadius: 3 }}>
                                                         推荐方式：点击下方按钮，跳转到 {newProvider === 'gmail' ? 'Google' : 'Microsoft'} 官方授权页，一次授权即可读取邮件。
+                                                        {oauthProviderConfig?.configured ? '（当前已配置 OAuth 凭据）' : '（首次请先保存 OAuth 凭据，可在此页完成）'}
                                                     </Alert>
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity={oauthProviderConfig?.configured ? 'info' : 'warning'} sx={{ borderRadius: 3 }}>
+                                                        {oauthProviderConfig?.configured
+                                                            ? `已保存 ${newProvider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置：${oauthProviderConfig.client_id_hint || '已隐藏'}`
+                                                            : `尚未保存 ${newProvider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置。你可以直接在当前页面保存，无需改 .env。`}
+                                                    </Alert>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="OAuth Client ID"
+                                                        value={oauthClientIdInput}
+                                                        onChange={(e) => setOauthClientIdInput(e.target.value)}
+                                                        placeholder={newProvider === 'gmail' ? 'xxx.apps.googleusercontent.com' : '应用 Client ID'}
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        type="password"
+                                                        label="OAuth Client Secret"
+                                                        value={oauthClientSecretInput}
+                                                        onChange={(e) => setOauthClientSecretInput(e.target.value)}
+                                                        placeholder="输入后仅本次显示"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }} display="flex" gap={1.2} flexWrap="wrap">
+                                                    <Button
+                                                        variant="outlined"
+                                                        disabled={savingOAuthConfig}
+                                                        onClick={() =>
+                                                            saveOAuthConfig(
+                                                                newProvider as 'gmail' | 'outlook',
+                                                                oauthClientIdInput,
+                                                                oauthClientSecretInput
+                                                            ).catch((e) =>
+                                                                setToast({
+                                                                    message: e instanceof Error ? e.message : '保存 OAuth 配置失败',
+                                                                    severity: 'error',
+                                                                })
+                                                            )
+                                                        }
+                                                    >
+                                                        {savingOAuthConfig ? '保存中…' : '保存 OAuth 配置'}
+                                                    </Button>
+                                                    <Button variant="text" component="label" disabled={savingOAuthConfig}>
+                                                        导入 OAuth JSON 并保存
+                                                        <input
+                                                            hidden
+                                                            type="file"
+                                                            accept="application/json,.json"
+                                                            onChange={(e) =>
+                                                                handleImportOAuthJson(newProvider as 'gmail' | 'outlook', e)
+                                                            }
+                                                        />
+                                                    </Button>
                                                 </Grid>
                                             </>
                                         )}
@@ -1001,7 +1142,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 fullWidth 
                                                 variant="contained" 
                                                 onClick={handleAddAccount}
-                                                disabled={addingAccount || oauthConnecting !== null}
+                                                disabled={addingAccount || oauthConnecting !== null || savingOAuthConfig}
                                             >
                                                 {addingAccount
                                                     ? '连接中…'

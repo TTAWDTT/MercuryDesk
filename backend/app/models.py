@@ -21,6 +21,10 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     accounts: Mapped[list["ConnectedAccount"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    oauth_credentials: Mapped[list["OAuthCredentialConfig"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
     contacts: Mapped[list["Contact"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     messages: Mapped[list["Message"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     agent_config: Mapped[Optional["AgentConfig"]] = relationship(
@@ -111,6 +115,21 @@ class ForwardAccountConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped["ConnectedAccount"] = relationship(back_populates="forward_config")
+
+
+class OAuthCredentialConfig(Base):
+    __tablename__ = "oauth_credential_configs"
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_user_oauth_credential_provider"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider: Mapped[str] = mapped_column(String(50), index=True)
+    client_id: Mapped[str] = mapped_column(String(512))
+    client_secret: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="oauth_credentials")
 
 
 class AgentConfig(Base):

@@ -13,6 +13,7 @@ from app.models import (
     ForwardAccountConfig,
     ImapAccountConfig,
     Message,
+    OAuthCredentialConfig,
     User,
 )
 from app.security import get_password_hash, verify_password
@@ -164,6 +165,59 @@ def upsert_oauth_account(
         access_token=access_token,
         refresh_token=refresh_token,
     )
+
+
+def get_user_oauth_credentials(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+) -> tuple[str, str] | None:
+    provider_norm = provider.lower().strip()
+    config = db.scalar(
+        select(OAuthCredentialConfig).where(
+            OAuthCredentialConfig.user_id == user_id,
+            OAuthCredentialConfig.provider == provider_norm,
+        )
+    )
+    if config is None:
+        return None
+    client_secret = decrypt_optional(config.client_secret) or ""
+    if not config.client_id.strip() or not client_secret.strip():
+        return None
+    return config.client_id.strip(), client_secret.strip()
+
+
+def upsert_user_oauth_credentials(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+    client_id: str,
+    client_secret: str,
+) -> OAuthCredentialConfig:
+    provider_norm = provider.lower().strip()
+    config = db.scalar(
+        select(OAuthCredentialConfig).where(
+            OAuthCredentialConfig.user_id == user_id,
+            OAuthCredentialConfig.provider == provider_norm,
+        )
+    )
+    if config is None:
+        config = OAuthCredentialConfig(
+            user_id=user_id,
+            provider=provider_norm,
+            client_id=client_id.strip(),
+            client_secret=encrypt_optional(client_secret.strip()) or "",
+        )
+        db.add(config)
+    else:
+        config.client_id = client_id.strip()
+        config.client_secret = encrypt_optional(client_secret.strip()) or ""
+        db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
 
 
 def upsert_contact(db: Session, *, user_id: int, handle: str, display_name: str) -> Contact:

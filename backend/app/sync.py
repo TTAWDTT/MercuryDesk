@@ -14,6 +14,7 @@ from app.connectors.outlook import OutlookConnector
 from app.crud import (
     create_message,
     decrypt_account_tokens,
+    get_user_oauth_credentials,
     touch_account_sync,
     touch_contact_last_message,
 )
@@ -84,8 +85,19 @@ def _try_refresh_oauth_token(db: Session, *, account: ConnectedAccount) -> bool:
     _access_token, refresh_token = decrypt_account_tokens(account)
     if not refresh_token:
         return False
+    credentials = get_user_oauth_credentials(
+        db,
+        user_id=account.user_id,
+        provider=provider,
+    )
+    client_id, client_secret = credentials if credentials else (None, None)
     try:
-        next_access, next_refresh = refresh_access_token(provider=provider, refresh_token=refresh_token)
+        next_access, next_refresh = refresh_access_token(
+            provider=provider,
+            refresh_token=refresh_token,
+            client_id=client_id,
+            client_secret=client_secret,
+        )
     except Exception:
         return False
     account.access_token = encrypt_optional(next_access)

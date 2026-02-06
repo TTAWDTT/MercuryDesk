@@ -48,12 +48,12 @@ npm run dev
 2. 将回调地址配置为：
    - `http://127.0.0.1:8000/api/v1/accounts/oauth/gmail/callback`
    - `http://127.0.0.1:8000/api/v1/accounts/oauth/outlook/callback`
-3. 在 `backend/.env` 配置：
-   - `MERCURYDESK_GMAIL_CLIENT_ID`
-   - `MERCURYDESK_GMAIL_CLIENT_SECRET`
-   - `MERCURYDESK_OUTLOOK_CLIENT_ID`
-   - `MERCURYDESK_OUTLOOK_CLIENT_SECRET`
-4. 重启后端服务后，在设置页选择 Gmail/Outlook 一键授权。
+3. 在设置页直接保存 OAuth 配置（无需改 `.env`）：
+   - 可手动粘贴 `client_id/client_secret`
+   - 或直接导入 Google OAuth JSON 文件自动保存
+4. 保存后点击“一键授权”完成绑定。
+
+> 仍可继续使用 `.env` 方式作为全局默认配置（可选）。
 
 常见报错：`gmail OAuth 未配置 client_id/client_secret`
 

@@ -70,6 +70,17 @@ class AccountOAuthStartResponse(BaseModel):
     auth_url: str
 
 
+class OAuthCredentialConfigOut(BaseModel):
+    provider: str
+    configured: bool
+    client_id_hint: Optional[str] = None
+
+
+class OAuthCredentialConfigUpdate(BaseModel):
+    client_id: str = Field(min_length=1, max_length=512)
+    client_secret: str = Field(min_length=1, max_length=4096)
+
+
 class ForwardAccountInfo(BaseModel):
     account_id: int
     provider: str

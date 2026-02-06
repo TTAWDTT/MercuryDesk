@@ -209,6 +209,22 @@ def test_register_login_sync_and_list():
         oauth_start = client.get("/api/v1/accounts/oauth/gmail/start", headers=headers)
         assert oauth_start.status_code == 400, oauth_start.text
 
+        oauth_cfg = client.patch(
+            "/api/v1/accounts/oauth/gmail/config",
+            json={"client_id": "test-client-id.apps.googleusercontent.com", "client_secret": "test-client-secret"},
+            headers=headers,
+        )
+        assert oauth_cfg.status_code == 200, oauth_cfg.text
+        assert oauth_cfg.json()["configured"] is True
+
+        oauth_cfg_get = client.get("/api/v1/accounts/oauth/gmail/config", headers=headers)
+        assert oauth_cfg_get.status_code == 200, oauth_cfg_get.text
+        assert oauth_cfg_get.json()["configured"] is True
+
+        oauth_start2 = client.get("/api/v1/accounts/oauth/gmail/start", headers=headers)
+        assert oauth_start2.status_code == 200, oauth_start2.text
+        assert "accounts.google.com" in oauth_start2.json()["auth_url"]
+
         sm = client.post("/api/v1/agent/summarize", json={"text": "这是一封很长的邮件内容，用于测试摘要功能。"}, headers=headers)
         assert sm.status_code == 200, sm.text
         assert isinstance(sm.json().get("summary"), str)
