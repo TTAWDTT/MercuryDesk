@@ -183,7 +183,7 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
 
         received_at = _normalize_utc(incoming.received_at) or datetime.now(timezone.utc)
         contact = contacts_by_handle[incoming.sender]
-        summary = summarizer.summarize(incoming.body)
+        summary = None if incoming.source in {"rss", "bilibili", "x"} else summarizer.summarize(incoming.body)
         msg = create_message(
             db,
             user_id=account.user_id,

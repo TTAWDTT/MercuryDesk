@@ -3,7 +3,6 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Typography from '@mui/material/Typography';
 import Avatar from '@mui/material/Avatar';
-import Badge from '@mui/material/Badge';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -16,6 +15,11 @@ import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
 import { motion } from 'framer-motion';
 import { useTheme, alpha } from '@mui/material/styles';
+import {
+  extractPreviewImageUrl,
+  getPreviewDisplayText,
+  parseContentPreview,
+} from '../utils/contentPreview';
 
 interface ContactCardProps {
   contact: Contact;
@@ -36,6 +40,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 }) => {
   const theme = useTheme();
   const isFeature = variant === 'feature';
+  const [previewImageLoadFailed, setPreviewImageLoadFailed] = React.useState(false);
 
   const getSourceIcon = (source?: string | null) => {
     if (!source) return <EmailIcon fontSize="small" />;
@@ -60,6 +65,27 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     if (src.includes('mock')) return '演示';
     return '邮件';
   })();
+
+  const parsedPreview = React.useMemo(
+    () => parseContentPreview(contact.latest_preview),
+    [contact.latest_preview]
+  );
+
+  const previewTitle = contact.latest_subject || parsedPreview?.title || '暂无消息';
+  const previewText = React.useMemo(
+    () => getPreviewDisplayText(contact.latest_preview, '...'),
+    [contact.latest_preview]
+  );
+
+  const previewImageUrl = React.useMemo(
+    () => extractPreviewImageUrl(contact.latest_preview) || extractPreviewImageUrl(contact.latest_subject),
+    [contact.latest_preview, contact.latest_subject]
+  );
+  const previewUrl = parsedPreview?.url || null;
+
+  React.useEffect(() => {
+    setPreviewImageLoadFailed(false);
+  }, [previewImageUrl, contact.id]);
 
   return (
     <motion.div
@@ -178,6 +204,34 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 mb: isFeature ? 2.5 : 2,
             }}
           >
+            {previewImageUrl && !previewImageLoadFailed && (
+              <Box
+                sx={{
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                  mb: isFeature ? 2 : 1.5,
+                  border: '1px solid',
+                  borderColor: alpha(theme.palette.primary.main, 0.2),
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
+                  aspectRatio: isFeature ? '16 / 8.8' : '16 / 9',
+                }}
+              >
+                <Box
+                  component="img"
+                  src={previewImageUrl}
+                  alt={contact.latest_subject || `${contact.display_name} 预览图`}
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                  onError={() => setPreviewImageLoadFailed(true)}
+                  sx={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    display: 'block',
+                  }}
+                />
+              </Box>
+            )}
             <Typography
               variant={isFeature ? 'h6' : 'subtitle2'}
               fontWeight={700}
@@ -191,7 +245,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 lineHeight: 1.25,
               }}
             >
-              {contact.latest_subject || '暂无消息'}
+              {previewTitle}
             </Typography>
             <Typography variant="body2" color="textSecondary" sx={{
               display: '-webkit-box',
@@ -202,8 +256,28 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
               lineHeight: 1.5
             }}>
-              {contact.latest_preview || '...'}
+              {previewText}
             </Typography>
+            {previewUrl && (
+              <Typography
+                component="a"
+                href={previewUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="caption"
+                color="primary.main"
+                onClick={(event) => event.stopPropagation()}
+                sx={{
+                  mt: 1,
+                  display: 'inline-flex',
+                  textDecoration: 'none',
+                  fontWeight: 700,
+                  '&:hover': { textDecoration: 'underline' },
+                }}
+              >
+                查看原文
+              </Typography>
+            )}
           </Box>
 
           <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>

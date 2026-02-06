@@ -14,6 +14,11 @@ import { zhCN } from 'date-fns/locale';
 import { useTheme, alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  extractPreviewImageUrl,
+  getPreviewDisplayText,
+  parseContentPreview,
+} from '../utils/contentPreview';
 
 const URL_PATTERN = /(https?:\/\/[^\s)]+)(?=[\s)]|$)/g;
 
@@ -141,7 +146,15 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
         ) : (
           <Box display="flex" flexDirection="column" gap={3}>
             <AnimatePresence>
-            {messages.map((msg, i) => (
+            {messages.map((msg, i) => {
+              const parsedPreview = parseContentPreview(msg.body_preview);
+              const previewImageUrl = extractPreviewImageUrl(msg.body_preview);
+              const previewUrl = parsedPreview?.url || null;
+              const displayText = parsedPreview
+                ? getPreviewDisplayText(msg.body_preview, msg.body_preview)
+                : msg.body_preview;
+
+              return (
               <motion.div
                 key={msg.id}
                 initial={{ opacity: 0, y: 20 }}
@@ -186,13 +199,60 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                 <Typography variant="h6" gutterBottom fontSize="1.05rem" fontWeight="600">
                   {msg.subject}
                 </Typography>
+
+                {(previewImageUrl || previewUrl) && (
+                  <Box
+                    sx={{
+                      border: '1px solid',
+                      borderColor: alpha(theme.palette.primary.main, 0.2),
+                      borderRadius: 3,
+                      p: 1.5,
+                      mb: 2,
+                      bgcolor: alpha(theme.palette.primary.main, 0.04),
+                    }}
+                  >
+                    {previewImageUrl && (
+                      <Box
+                        component="img"
+                        src={previewImageUrl}
+                        alt={msg.subject || '预览图'}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        sx={{
+                          width: '100%',
+                          display: 'block',
+                          borderRadius: 2,
+                          objectFit: 'cover',
+                          mb: previewUrl ? 1 : 0,
+                          maxHeight: { xs: 220, md: 280 },
+                        }}
+                      />
+                    )}
+                    {previewUrl && (
+                      <Link
+                        href={previewUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        underline="hover"
+                        sx={{
+                          display: 'inline-flex',
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        查看原文
+                      </Link>
+                    )}
+                  </Box>
+                )}
                 
                 <Typography
                   variant="body2"
                   color="textSecondary"
                   sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, wordBreak: 'break-word' }}
                 >
-                  {renderTextWithLinks(msg.body_preview)}
+                  {renderTextWithLinks(displayText)}
                 </Typography>
 
                 {msg.summary && (
@@ -218,7 +278,8 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                 )}
               </Paper>
               </motion.div>
-            ))}
+            );
+            })}
             </AnimatePresence>
           </Box>
         )}
