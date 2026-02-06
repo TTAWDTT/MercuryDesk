@@ -34,6 +34,7 @@ import {
     ConnectedAccount, 
     ForwardAccountInfo,
     ModelCatalogResponse,
+    OAuthProvider,
     OAuthProviderConfig,
     User, 
     createAccount, 
@@ -59,8 +60,18 @@ interface SettingsProps {
 }
 
 type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x';
+type OAuthSourceProvider = OAuthProvider;
 const GMAIL_OAUTH_CONSOLE_URL = 'https://console.cloud.google.com/apis/credentials';
 const GMAIL_API_ENABLE_URL = 'https://console.cloud.google.com/apis/library/gmail.googleapis.com';
+const GITHUB_OAUTH_APPS_URL = 'https://github.com/settings/developers';
+const GITHUB_OAUTH_DOCS_URL = 'https://docs.github.com/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app';
+const OUTLOOK_OAUTH_PORTAL_URL = 'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade';
+
+const OAUTH_PROVIDER_LABEL: Record<OAuthSourceProvider, string> = {
+    gmail: 'Gmail',
+    outlook: 'Outlook',
+    github: 'GitHub',
+};
 
 function accountIcon(provider: string) {
     const normalized = provider.toLowerCase();
@@ -93,9 +104,7 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [updatingProfile, setUpdatingProfile] = useState(false);
 
     // Account State
-    const [newIdentifier, setNewIdentifier] = useState('');
     const [newProvider, setNewProvider] = useState<SourceProvider>('gmail');
-    const [newToken, setNewToken] = useState('');
     const [imapPreset, setImapPreset] = useState<'gmail' | 'outlook' | 'icloud' | 'qq' | '163' | 'custom'>('gmail');
     const [showImapAdvanced, setShowImapAdvanced] = useState(false);
     const [imapHost, setImapHost] = useState('');
@@ -111,15 +120,15 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [xUsername, setXUsername] = useState('');
     const [forwardSourceEmail, setForwardSourceEmail] = useState('');
     const [addingAccount, setAddingAccount] = useState(false);
-    const [oauthConnecting, setOauthConnecting] = useState<null | 'gmail' | 'outlook'>(null);
+    const [oauthConnecting, setOauthConnecting] = useState<null | OAuthSourceProvider>(null);
     const [oauthClientIdInput, setOauthClientIdInput] = useState('');
     const [oauthClientSecretInput, setOauthClientSecretInput] = useState('');
     const [savingOAuthConfig, setSavingOAuthConfig] = useState(false);
     const [latestForwardInfo, setLatestForwardInfo] = useState<ForwardAccountInfo | null>(null);
-    const isOAuthProvider = newProvider === 'gmail' || newProvider === 'outlook';
+    const isOAuthProvider = newProvider === 'gmail' || newProvider === 'outlook' || newProvider === 'github';
     const { data: oauthProviderConfig, mutate: mutateOAuthProviderConfig } = useSWR<OAuthProviderConfig>(
         isOAuthProvider ? `oauth-config-${newProvider}` : null,
-        () => getOAuthProviderConfig(newProvider as 'gmail' | 'outlook')
+        () => getOAuthProviderConfig(newProvider as OAuthSourceProvider)
     );
 
     // Agent State
@@ -300,7 +309,7 @@ export default function Settings({ onLogout }: SettingsProps) {
     };
 
     const findNewOAuthAccount = async (
-        provider: 'gmail' | 'outlook',
+        provider: OAuthSourceProvider,
         knownAccountIds: Set<number>
     ): Promise<ConnectedAccount | null> => {
         try {
@@ -316,17 +325,18 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
-    const showOAuthSetupGuide = (popup: Window, provider: 'gmail' | 'outlook', message: string): boolean => {
+    const showOAuthSetupGuide = (popup: Window, provider: OAuthSourceProvider, message: string): boolean => {
         if (!message.includes('未配置 client_id/client_secret')) return false;
-        const envHint =
-            provider === 'gmail'
-                ? 'MERCURYDESK_GMAIL_CLIENT_ID / MERCURYDESK_GMAIL_CLIENT_SECRET'
-                : 'MERCURYDESK_OUTLOOK_CLIENT_ID / MERCURYDESK_OUTLOOK_CLIENT_SECRET';
+        const envHint = provider === 'gmail'
+            ? 'MERCURYDESK_GMAIL_CLIENT_ID / MERCURYDESK_GMAIL_CLIENT_SECRET'
+            : provider === 'outlook'
+                ? 'MERCURYDESK_OUTLOOK_CLIENT_ID / MERCURYDESK_OUTLOOK_CLIENT_SECRET'
+                : 'MERCURYDESK_GITHUB_CLIENT_ID / MERCURYDESK_GITHUB_CLIENT_SECRET';
         const callbackUrl = `http://127.0.0.1:8000/api/v1/accounts/oauth/${provider}/callback`;
         popup.document.title = 'OAuth 未配置';
         popup.document.body.innerHTML = `
           <div style="font-family:system-ui;padding:20px;line-height:1.65">
-            <h3 style="margin:0 0 8px">未完成 ${provider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置</h3>
+            <h3 style="margin:0 0 8px">未完成 ${OAUTH_PROVIDER_LABEL[provider]} OAuth 配置</h3>
             <p style="margin:0 0 12px">${message}</p>
             <ol style="margin:0 0 12px;padding-left:20px">
               <li>在后端环境变量设置：<code>${envHint}</code></li>
@@ -339,7 +349,7 @@ export default function Settings({ onLogout }: SettingsProps) {
         return true;
     };
 
-    const connectOAuth = async (provider: 'gmail' | 'outlook') => {
+    const connectOAuth = async (provider: OAuthSourceProvider) => {
         setOauthConnecting(provider);
         const knownAccountIds = new Set<number>();
         let allowFallback = false;
@@ -412,7 +422,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             if (!result.ok || !result.account_id) {
                 throw new Error(result.error || '授权失败');
             }
-            await postConnectSync(result.account_id, provider === 'gmail' ? 'Gmail' : 'Outlook');
+            await postConnectSync(result.account_id, OAUTH_PROVIDER_LABEL[provider]);
             mutateAccounts();
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
@@ -420,7 +430,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             if (allowFallback) {
                 const fallbackAccount = await findNewOAuthAccount(provider, knownAccountIds);
                 if (fallbackAccount) {
-                    await postConnectSync(fallbackAccount.id, provider === 'gmail' ? 'Gmail' : 'Outlook');
+                    await postConnectSync(fallbackAccount.id, OAUTH_PROVIDER_LABEL[provider]);
                     return;
                 }
             }
@@ -440,11 +450,11 @@ export default function Settings({ onLogout }: SettingsProps) {
     };
 
     const openExternalPage = (url: string) => {
-        window.location.href = url;
+        window.open(url, '_blank', 'noopener,noreferrer');
     };
 
     const saveOAuthConfig = async (
-        provider: 'gmail' | 'outlook',
+        provider: OAuthSourceProvider,
         clientId: string,
         clientSecret: string,
         options?: { silent?: boolean }
@@ -465,7 +475,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             setOauthClientSecretInput('');
             if (!options?.silent) {
                 setToast({
-                    message: `${provider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 凭据已保存`,
+                    message: `${OAUTH_PROVIDER_LABEL[provider]} OAuth 凭据已保存`,
                     severity: 'success',
                 });
             }
@@ -475,7 +485,7 @@ export default function Settings({ onLogout }: SettingsProps) {
     };
 
     const handleImportOAuthJson = async (
-        provider: 'gmail' | 'outlook',
+        provider: OAuthSourceProvider,
         event: React.ChangeEvent<HTMLInputElement>
     ) => {
         const file = event.target.files?.[0];
@@ -504,7 +514,7 @@ export default function Settings({ onLogout }: SettingsProps) {
     const handleAddAccount = async () => {
         setAddingAccount(true);
         try {
-            if (newProvider === 'gmail' || newProvider === 'outlook') {
+            if (newProvider === 'gmail' || newProvider === 'outlook' || newProvider === 'github') {
                 await connectOAuth(newProvider);
             } else if (newProvider === 'forward') {
                 const sourceEmail = forwardSourceEmail.trim().toLowerCase();
@@ -540,17 +550,6 @@ export default function Settings({ onLogout }: SettingsProps) {
                         imap_mailbox: mailbox,
                     },
                     '邮箱'
-                );
-            } else if (newProvider === 'github') {
-                const identifier = newIdentifier.trim() || 'me';
-                if (!newToken.trim()) throw new Error('请填写 GitHub Token');
-                await connectAndSync(
-                    {
-                        provider: 'github',
-                        identifier,
-                        access_token: newToken.trim(),
-                    },
-                    'GitHub'
                 );
             } else if (newProvider === 'rss') {
                 const feedUrl = rssFeedUrl.trim();
@@ -603,8 +602,6 @@ export default function Settings({ onLogout }: SettingsProps) {
             }
 
             mutateAccounts();
-            setNewIdentifier('');
-            setNewToken('');
             setImapPassword('');
             setForwardSourceEmail('');
             setRssFeedUrl('');
@@ -734,7 +731,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>已连接账户</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
-                                管理你的消息来源。推荐先用 Gmail/Outlook 一键授权；也支持转发接入、IMAP 高级接入、GitHub、RSS、Bilibili、X。
+                                管理你的消息来源。推荐先用 Gmail/Outlook/GitHub 一键授权；也支持转发接入、IMAP 高级接入、RSS、Bilibili、X。
                             </Typography>
                             
                             <List>
@@ -792,9 +789,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             >
                                                 <option value="gmail">Gmail（一键授权，推荐）</option>
                                                 <option value="outlook">Outlook（一键授权，推荐）</option>
+                                                <option value="github">GitHub（一键授权，推荐）</option>
                                                 <option value="forward">邮箱转发接入（更简）</option>
                                                 <option value="imap">邮箱（IMAP）</option>
-                                                <option value="github">GitHub 通知</option>
                                                 <option value="rss">RSS / Blog</option>
                                                 <option value="bilibili">Bilibili UP 动态</option>
                                                 <option value="x">X 用户更新</option>
@@ -802,19 +799,28 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             </TextField>
                                         </Grid>
 
-                                        {(newProvider === 'gmail' || newProvider === 'outlook') && (
+                                        {(newProvider === 'gmail' || newProvider === 'outlook' || newProvider === 'github') && (
                                             <>
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="success" sx={{ borderRadius: 3 }}>
-                                                        推荐方式：点击下方按钮，跳转到 {newProvider === 'gmail' ? 'Google' : 'Microsoft'} 官方授权页，一次授权即可读取邮件。
+                                                        推荐方式：点击下方按钮，跳转到
+                                                        {' '}
+                                                        {newProvider === 'gmail'
+                                                            ? 'Google'
+                                                            : newProvider === 'outlook'
+                                                                ? 'Microsoft'
+                                                                : 'GitHub'}
+                                                        {' '}
+                                                        官方授权页，完成一次授权即可接入
+                                                        {newProvider === 'github' ? '通知' : '邮件'}。
                                                         {oauthProviderConfig?.configured ? '（当前已配置 OAuth 凭据）' : '（首次请先保存 OAuth 凭据，可在此页完成）'}
                                                     </Alert>
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity={oauthProviderConfig?.configured ? 'info' : 'warning'} sx={{ borderRadius: 3 }}>
                                                         {oauthProviderConfig?.configured
-                                                            ? `已保存 ${newProvider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置：${oauthProviderConfig.client_id_hint || '已隐藏'}`
-                                                            : `尚未保存 ${newProvider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置。你可以直接在当前页面保存，无需改 .env。`}
+                                                            ? `已保存 ${OAUTH_PROVIDER_LABEL[newProvider]} OAuth 配置：${oauthProviderConfig.client_id_hint || '已隐藏'}`
+                                                            : `尚未保存 ${OAUTH_PROVIDER_LABEL[newProvider]} OAuth 配置。你可以直接在当前页面保存，无需改 .env。`}
                                                     </Alert>
                                                 </Grid>
                                                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -824,7 +830,13 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                         label="OAuth Client ID"
                                                         value={oauthClientIdInput}
                                                         onChange={(e) => setOauthClientIdInput(e.target.value)}
-                                                        placeholder={newProvider === 'gmail' ? 'xxx.apps.googleusercontent.com' : '应用 Client ID'}
+                                                        placeholder={
+                                                            newProvider === 'gmail'
+                                                                ? 'xxx.apps.googleusercontent.com'
+                                                                : newProvider === 'github'
+                                                                    ? 'Iv1.***'
+                                                                    : '应用 Client ID'
+                                                        }
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12, sm: 6 }}>
@@ -844,7 +856,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                         disabled={savingOAuthConfig}
                                                         onClick={() =>
                                                             saveOAuthConfig(
-                                                                newProvider as 'gmail' | 'outlook',
+                                                                newProvider as OAuthSourceProvider,
                                                                 oauthClientIdInput,
                                                                 oauthClientSecretInput
                                                             ).catch((e) =>
@@ -857,17 +869,19 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     >
                                                         {savingOAuthConfig ? '保存中…' : '保存 OAuth 配置'}
                                                     </Button>
-                                                    <Button variant="text" component="label" disabled={savingOAuthConfig}>
-                                                        导入 OAuth JSON 并保存
-                                                        <input
-                                                            hidden
-                                                            type="file"
-                                                            accept="application/json,.json"
-                                                            onChange={(e) =>
-                                                                handleImportOAuthJson(newProvider as 'gmail' | 'outlook', e)
-                                                            }
-                                                        />
-                                                    </Button>
+                                                    {newProvider !== 'github' && (
+                                                        <Button variant="text" component="label" disabled={savingOAuthConfig}>
+                                                            导入 OAuth JSON 并保存
+                                                            <input
+                                                                hidden
+                                                                type="file"
+                                                                accept="application/json,.json"
+                                                                onChange={(e) =>
+                                                                    handleImportOAuthJson(newProvider as OAuthSourceProvider, e)
+                                                                }
+                                                            />
+                                                        </Button>
+                                                    )}
                                                     {newProvider === 'gmail' && (
                                                         <>
                                                             <Button
@@ -886,32 +900,33 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                             </Button>
                                                         </>
                                                     )}
-                                                </Grid>
-                                            </>
-                                        )}
-
-                                        {newProvider === 'github' && (
-                                            <>
-                                                <Grid size={{ xs: 12, sm: 4 }}>
-                                                    <TextField 
-                                                        fullWidth 
-                                                        size="small" 
-                                                        label="标识（可选）" 
-                                                        value={newIdentifier}
-                                                        onChange={(e) => setNewIdentifier(e.target.value)}
-                                                        placeholder="me"
-                                                    />
-                                                </Grid>
-                                                <Grid size={{ xs: 12, sm: 4 }}>
-                                                    <TextField 
-                                                        fullWidth 
-                                                        size="small" 
-                                                        label="GitHub Token" 
-                                                        type="password"
-                                                        value={newToken}
-                                                        onChange={(e) => setNewToken(e.target.value)}
-                                                        placeholder="ghp_..."
-                                                    />
+                                                    {newProvider === 'outlook' && (
+                                                        <Button
+                                                            variant="text"
+                                                            onClick={() => openExternalPage(OUTLOOK_OAUTH_PORTAL_URL)}
+                                                            aria-label="在新窗口打开 Azure 应用注册页"
+                                                        >
+                                                            跳转到 Azure 应用注册（新窗口）
+                                                        </Button>
+                                                    )}
+                                                    {newProvider === 'github' && (
+                                                        <>
+                                                            <Button
+                                                                variant="text"
+                                                                onClick={() => openExternalPage(GITHUB_OAUTH_APPS_URL)}
+                                                                aria-label="在新窗口打开 GitHub OAuth Apps 页面"
+                                                            >
+                                                                跳转到 GitHub OAuth Apps（新窗口）
+                                                            </Button>
+                                                            <Button
+                                                                variant="text"
+                                                                onClick={() => openExternalPage(GITHUB_OAUTH_DOCS_URL)}
+                                                                aria-label="在新窗口打开 GitHub OAuth 文档"
+                                                            >
+                                                                跳转查看 GitHub OAuth 文档（新窗口）
+                                                            </Button>
+                                                        </>
+                                                    )}
                                                 </Grid>
                                             </>
                                         )}
@@ -1174,7 +1189,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     ? '连接中…'
                                                     : oauthConnecting
                                                         ? '授权中…'
-                                                        : (newProvider === 'gmail' || newProvider === 'outlook')
+                                                        : (newProvider === 'gmail' || newProvider === 'outlook' || newProvider === 'github')
                                                             ? '开始授权连接'
                                                             : newProvider === 'forward'
                                                                 ? '生成转发地址'

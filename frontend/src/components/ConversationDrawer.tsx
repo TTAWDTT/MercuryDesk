@@ -153,6 +153,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
               const displayText = parsedPreview
                 ? getPreviewDisplayText(msg.body_preview, msg.body_preview)
                 : msg.body_preview;
+              const displayTitle = (msg.subject || '').trim() || parsedPreview?.title || '未命名消息';
 
               return (
               <motion.div
@@ -197,7 +198,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                 </Box>
                 
                 <Typography variant="h6" gutterBottom fontSize="1.05rem" fontWeight="600">
-                  {msg.subject}
+                  {displayTitle}
                 </Typography>
 
                 {(previewImageUrl || previewUrl) && (

@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     gmail_client_secret: str | None = None
     outlook_client_id: str | None = None
     outlook_client_secret: str | None = None
+    github_client_id: str | None = None
+    github_client_secret: str | None = None
 
     # Optional Fernet key used to encrypt stored secrets (OAuth tokens, IMAP passwords).
     # Generate one via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

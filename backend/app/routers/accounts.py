@@ -69,6 +69,9 @@ def _provider_env_client_id(provider: str) -> str | None:
     if provider_norm == "outlook":
         value = (settings.outlook_client_id or "").strip()
         return value or None
+    if provider_norm == "github":
+        value = (settings.github_client_id or "").strip()
+        return value or None
     return None
 
 
@@ -101,6 +104,7 @@ def add_connected_account(
         "twitter": "x",
         "gmail_oauth": "gmail",
         "outlook_oauth": "outlook",
+        "github_oauth": "github",
     }.get(provider_raw, provider_raw)
     identifier = payload.identifier.strip() if payload.identifier else ""
     feed_url = payload.feed_url.strip() if payload.feed_url else None
@@ -137,7 +141,7 @@ def add_connected_account(
         if not feed_homepage_url and feed_url.startswith("https://claude.com/blog"):
             feed_homepage_url = "https://claude.com/blog/"
         identifier = identifier or feed_display_name or feed_homepage_url or feed_url
-    elif provider in {"gmail", "outlook"}:
+    elif provider in {"gmail", "outlook", "github"}:
         if not payload.access_token:
             raise HTTPException(status_code=400, detail=f"{provider} 账户需要 access_token")
         if not identifier:
@@ -194,7 +198,7 @@ def start_oauth(
     current_user: User = Depends(get_current_user),
 ):
     provider_norm = provider.lower().strip()
-    if provider_norm not in {"gmail", "outlook"}:
+    if provider_norm not in {"gmail", "outlook", "github"}:
         raise HTTPException(status_code=404, detail="OAuth provider not supported")
     credentials = crud.get_user_oauth_credentials(
         db,
@@ -223,7 +227,7 @@ def oauth_callback(
     db: Session = Depends(get_session),
 ):
     provider_norm = provider.lower().strip()
-    if provider_norm not in {"gmail", "outlook"}:
+    if provider_norm not in {"gmail", "outlook", "github"}:
         return _oauth_popup_html({"source": "mercurydesk-oauth", "ok": False, "error": "不支持的 OAuth provider"})
     if error:
         return _oauth_popup_html({"source": "mercurydesk-oauth", "ok": False, "error": f"授权失败: {error}"})
@@ -276,7 +280,7 @@ def get_oauth_config(
     current_user: User = Depends(get_current_user),
 ):
     provider_norm = provider.lower().strip()
-    if provider_norm not in {"gmail", "outlook"}:
+    if provider_norm not in {"gmail", "outlook", "github"}:
         raise HTTPException(status_code=404, detail="OAuth provider not supported")
     credentials = crud.get_user_oauth_credentials(
         db,
@@ -306,7 +310,7 @@ def upsert_oauth_config(
     current_user: User = Depends(get_current_user),
 ):
     provider_norm = provider.lower().strip()
-    if provider_norm not in {"gmail", "outlook"}:
+    if provider_norm not in {"gmail", "outlook", "github"}:
         raise HTTPException(status_code=404, detail="OAuth provider not supported")
     config = crud.upsert_user_oauth_credentials(
         db,

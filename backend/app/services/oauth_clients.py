@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import parse_qs
 from urllib.parse import urlencode
 
 import httpx
@@ -10,7 +11,7 @@ import httpx
 from app.services.oauth_state import issue_state
 from app.settings import settings
 
-SupportedOAuthProvider = Literal["gmail", "outlook"]
+SupportedOAuthProvider = Literal["gmail", "outlook", "github"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,16 @@ _PROVIDERS: dict[str, OAuthProviderConfig] = {
             "email",
             "User.Read",
             "Mail.Read",
+        ),
+    ),
+    "github": OAuthProviderConfig(
+        provider="github",
+        authorize_url="https://github.com/login/oauth/authorize",
+        token_url="https://github.com/login/oauth/access_token",
+        scopes=(
+            "notifications",
+            "read:user",
+            "user:email",
         ),
     ),
 }
@@ -92,6 +103,18 @@ def _client_credentials(
         client_id = (settings.outlook_client_id or "").strip()
         client_secret = (settings.outlook_client_secret or "").strip()
         missing_hint = "请设置 MERCURYDESK_OUTLOOK_CLIENT_ID 和 MERCURYDESK_OUTLOOK_CLIENT_SECRET"
+    elif provider_norm == "github":
+        client_id = (
+            settings.github_client_id
+            or os.getenv("GITHUB_CLIENT_ID")
+            or ""
+        ).strip()
+        client_secret = (
+            settings.github_client_secret
+            or os.getenv("GITHUB_CLIENT_SECRET")
+            or ""
+        ).strip()
+        missing_hint = "请设置 MERCURYDESK_GITHUB_CLIENT_ID 和 MERCURYDESK_GITHUB_CLIENT_SECRET"
     else:
         raise ValueError(f"不支持的 OAuth provider: {provider}")
     if not client_id or not client_secret:
@@ -131,6 +154,8 @@ def build_authorization_url(
         params["include_granted_scopes"] = "true"
     elif config.provider == "outlook":
         params["prompt"] = "select_account"
+    elif config.provider == "github":
+        params["allow_signup"] = "true"
 
     return f"{config.authorize_url}?{urlencode(params)}"
 
@@ -150,17 +175,29 @@ def exchange_code_for_tokens(
     )
     redirect_uri = _redirect_uri(config.provider)
     payload = {
-        "grant_type": "authorization_code",
         "code": code,
         "client_id": client_id,
         "client_secret": client_secret,
         "redirect_uri": redirect_uri,
     }
+    headers = {}
+    if config.provider != "github":
+        payload["grant_type"] = "authorization_code"
+    else:
+        headers["Accept"] = "application/json"
     with httpx.Client(timeout=20, follow_redirects=True) as client:
-        resp = client.post(config.token_url, data=payload)
+        resp = client.post(config.token_url, data=payload, headers=headers)
     if resp.status_code >= 400:
         raise ValueError(f"OAuth token exchange 失败: {resp.text[:500]}")
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        parsed = parse_qs(resp.text or "", keep_blank_values=True)
+        data = {key: values[0] if values else "" for key, values in parsed.items()}
+    error = str(data.get("error") or "").strip()
+    if error:
+        error_description = str(data.get("error_description") or data.get("error_uri") or "").strip()
+        raise ValueError(f"OAuth token exchange 失败: {error} {error_description}".strip())
     access_token = str(data.get("access_token") or "").strip()
     refresh_token_raw = str(data.get("refresh_token") or "").strip()
     refresh_token = refresh_token_raw or None
@@ -177,6 +214,8 @@ def refresh_access_token(
     client_secret: str | None = None,
 ) -> tuple[str, str | None]:
     config = _provider_config(provider)
+    if config.provider == "github":
+        raise ValueError("GitHub OAuth token 不支持自动刷新，请重新授权连接")
     client_id, client_secret = _client_credentials(
         config.provider,
         client_id=client_id,
@@ -231,4 +270,24 @@ def fetch_identifier(*, provider: str, access_token: str) -> str:
             if not email:
                 raise ValueError("Outlook 账号信息未返回邮箱")
             return email
+        if provider_norm == "github":
+            gh_headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            }
+            profile_resp = client.get("https://api.github.com/user", headers=gh_headers)
+            if profile_resp.status_code >= 400:
+                raise ValueError(f"获取 GitHub 账号信息失败: {profile_resp.text[:300]}")
+            data = profile_resp.json()
+            login = str(data.get("login") or "").strip()
+            email = str(data.get("email") or "").strip()
+            if login:
+                return login
+            if email:
+                return email
+            user_id = data.get("id")
+            if user_id is not None:
+                return f"github-user-{user_id}"
+            raise ValueError("GitHub 账号信息未返回 login")
     raise ValueError(f"不支持的 OAuth provider: {provider}")

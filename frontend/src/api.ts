@@ -96,6 +96,8 @@ export type OAuthProviderConfig = {
   client_id_hint?: string | null;
 };
 
+export type OAuthProvider = "gmail" | "outlook" | "github";
+
 export type ForwardAccountInfo = {
   account_id: number;
   provider: string;
@@ -213,16 +215,16 @@ export async function deleteAccount(accountId: number): Promise<void> {
   await apiFetch(`/api/v1/accounts/${accountId}`, { method: "DELETE" });
 }
 
-export async function startAccountOAuth(provider: "gmail" | "outlook"): Promise<AccountOAuthStart> {
+export async function startAccountOAuth(provider: OAuthProvider): Promise<AccountOAuthStart> {
   return await fetchJson<AccountOAuthStart>(`/api/v1/accounts/oauth/${provider}/start`);
 }
 
-export async function getOAuthProviderConfig(provider: "gmail" | "outlook"): Promise<OAuthProviderConfig> {
+export async function getOAuthProviderConfig(provider: OAuthProvider): Promise<OAuthProviderConfig> {
   return await fetchJson<OAuthProviderConfig>(`/api/v1/accounts/oauth/${provider}/config`);
 }
 
 export async function updateOAuthProviderConfig(
-  provider: "gmail" | "outlook",
+  provider: OAuthProvider,
   payload: { client_id: string; client_secret: string }
 ): Promise<OAuthProviderConfig> {
   return await fetchJson<OAuthProviderConfig>(`/api/v1/accounts/oauth/${provider}/config`, {

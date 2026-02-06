@@ -71,7 +71,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     [contact.latest_preview]
   );
 
-  const previewTitle = contact.latest_subject || parsedPreview?.title || '暂无消息';
+  const previewTitle = React.useMemo(() => {
+    const subject = (contact.latest_subject || '').trim();
+    const parsedTitle = (parsedPreview?.title || '').trim();
+    const normalizedSubject = subject.toLowerCase();
+    const isGenericSubject = !subject || ['新内容更新', 'github notification', 'notification'].includes(normalizedSubject);
+    if (isGenericSubject && parsedTitle) return parsedTitle;
+    return subject || parsedTitle || '暂无消息';
+  }, [contact.latest_subject, parsedPreview?.title]);
   const previewText = React.useMemo(
     () => getPreviewDisplayText(contact.latest_preview, '...'),
     [contact.latest_preview]

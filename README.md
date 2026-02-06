@@ -7,7 +7,7 @@
 - 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
 - 数据来源：
   - 邮箱 IMAP（真实邮箱）
-  - GitHub 通知
+  - GitHub 通知（支持 OAuth 一键授权）
   - RSS / Blog 订阅
   - Bilibili 指定 UP 主动态（基于 RSSHub）
   - X 指定用户更新（基于 RSSHub）
@@ -40,18 +40,19 @@ npm run dev
 
 ## 最简配置流程（中文界面）
 
-### 连接 Gmail / Outlook（一键授权，推荐）
+### 连接 Gmail / Outlook / GitHub（一键授权，推荐）
 
 登录后如果检测到尚未绑定 Gmail，首页会自动弹窗提示授权绑定（可稍后跳过）。
 
-1. 在 Google Cloud / Microsoft Entra 创建 OAuth 应用（Web）
+1. 在 Google Cloud / Microsoft Entra / GitHub Developers 创建 OAuth 应用（Web）
 2. 将回调地址配置为：
    - `http://127.0.0.1:8000/api/v1/accounts/oauth/gmail/callback`
    - `http://127.0.0.1:8000/api/v1/accounts/oauth/outlook/callback`
+   - `http://127.0.0.1:8000/api/v1/accounts/oauth/github/callback`
 3. 在设置页直接保存 OAuth 配置（无需改 `.env`）：
    - 可手动粘贴 `client_id/client_secret`
-   - 或直接导入 Google OAuth JSON 文件自动保存
-4. 保存后点击“一键授权”完成绑定。
+   - Gmail/Outlook 可直接导入 OAuth JSON 自动保存
+4. 保存后点击“一键授权”完成绑定（GitHub 会请求 Notifications 权限）。
 
 > 仍可继续使用 `.env` 方式作为全局默认配置（可选）。
 
@@ -121,6 +122,7 @@ python -m uvicorn app.main:app --reload --port 8000
 - `MERCURYDESK_FORWARD_INBOUND_DOMAIN`（转发专属地址域名，例如 `inbox.example.com`）
 - `MERCURYDESK_GMAIL_CLIENT_ID` / `MERCURYDESK_GMAIL_CLIENT_SECRET`
 - `MERCURYDESK_OUTLOOK_CLIENT_ID` / `MERCURYDESK_OUTLOOK_CLIENT_SECRET`
+- `MERCURYDESK_GITHUB_CLIENT_ID` / `MERCURYDESK_GITHUB_CLIENT_SECRET`
 
 ## 邮件转发接入（只填邮箱）
 
