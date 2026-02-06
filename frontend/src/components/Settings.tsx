@@ -296,19 +296,24 @@ export default function Settings({ onLogout }: SettingsProps) {
         setOauthConnecting(provider);
         const knownAccountIds = new Set<number>();
         let allowFallback = false;
+        let popup: Window | null = null;
         try {
+            popup = window.open(
+                'about:blank',
+                `oauth-${provider}`,
+                'width=560,height=760,menubar=no,toolbar=no,status=no'
+            );
+            if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
+            popup.document.title = 'MercuryDesk OAuth';
+            popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到授权页面…</p>';
+
             const baselineAccounts = await listAccounts().catch(() => accounts ?? []);
             baselineAccounts
                 .filter((item) => item.provider.toLowerCase() === provider)
                 .forEach((item) => knownAccountIds.add(item.id));
 
             const started = await startAccountOAuth(provider);
-            const popup = window.open(
-                started.auth_url,
-                `oauth-${provider}`,
-                'width=560,height=760,menubar=no,toolbar=no,status=no'
-            );
-            if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
+            popup.location.href = started.auth_url;
             allowFallback = true;
 
             const result = await new Promise<{ ok: boolean; account_id?: number; identifier?: string; error?: string }>(
@@ -360,6 +365,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             await postConnectSync(result.account_id, provider === 'gmail' ? 'Gmail' : 'Outlook');
             mutateAccounts();
         } catch (error) {
+            if (popup && !popup.closed) popup.close();
             if (allowFallback) {
                 const fallbackAccount = await findNewOAuthAccount(provider, knownAccountIds);
                 if (fallbackAccount) {

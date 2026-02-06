@@ -84,14 +84,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         .map((item) => item.id)
     );
     let allowFallback = false;
+    let popup: Window | null = null;
     try {
-      const started = await startAccountOAuth('gmail');
-      const popup = window.open(
-        started.auth_url,
+      popup = window.open(
+        'about:blank',
         'oauth-gmail-login-bind',
         'width=560,height=760,menubar=no,toolbar=no,status=no'
       );
       if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
+      popup.document.title = 'MercuryDesk Gmail OAuth';
+      popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到 Google 授权页面…</p>';
+
+      const started = await startAccountOAuth('gmail');
+      popup.location.href = started.auth_url;
       allowFallback = true;
 
       const result = await new Promise<{ ok: boolean; account_id?: number; error?: string }>((resolve, reject) => {
@@ -132,6 +137,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       sessionStorage.removeItem('mercurydesk:gmail-bind-dismissed');
       await Promise.all([mutateAccounts(), mutateContacts()]);
     } catch (error) {
+      if (popup && !popup.closed) popup.close();
       if (allowFallback) {
         const latest = await listAccounts().catch(() => accounts ?? []);
         const fallback = latest
