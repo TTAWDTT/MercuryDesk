@@ -7,7 +7,7 @@
 - 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
 - 数据来源：
   - 邮箱 IMAP（真实邮箱）
-  - GitHub 通知（支持 OAuth 一键授权）
+  - GitHub 通知（支持 OAuth 一键授权 / Token 直连）
   - RSS / Blog 订阅
   - Bilibili 指定 UP 主动态（基于 RSSHub）
   - X 指定用户更新（基于 RSSHub）
@@ -40,7 +40,7 @@ npm run dev
 
 ## 最简配置流程（中文界面）
 
-### 连接 Gmail / Outlook / GitHub（一键授权，推荐）
+### 连接 Gmail / Outlook / GitHub（OAuth 推荐）
 
 登录后如果检测到尚未绑定 Gmail，首页会自动弹窗提示授权绑定（可稍后跳过）。
 
@@ -53,6 +53,13 @@ npm run dev
    - 可手动粘贴 `client_id/client_secret`
    - Gmail/Outlook 可直接导入 OAuth JSON 自动保存
 4. 保存后点击“一键授权”完成绑定（GitHub 会请求 Notifications 权限）。
+
+GitHub 也支持旧版 Token 方式（无需 OAuth 应用）：
+
+1. 在设置页选择 `GitHub（OAuth / Token）`
+2. 将“GitHub 接入方式”切为 `手动 Token（兼容旧方式）`
+3. 填写 Token 后直接“连接并同步”
+4. 建议 Token 使用 Classic PAT 并包含 `notifications` 权限
 
 > 仍可继续使用 `.env` 方式作为全局默认配置（可选）。
 
