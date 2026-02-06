@@ -1084,8 +1084,8 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                         fullWidth
                                                         variant="outlined"
                                                         onClick={() => {
-                                                            setRssFeedUrl('https://www.anthropic.com/news/rss.xml');
-                                                            setRssHomepageUrl('https://www.anthropic.com/news');
+                                                            setRssFeedUrl('https://claude.com/blog/');
+                                                            setRssHomepageUrl('https://claude.com/blog/');
                                                             setRssDisplayName('Claude Blog');
                                                         }}
                                                     >

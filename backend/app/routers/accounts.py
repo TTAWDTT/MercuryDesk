@@ -21,6 +21,7 @@ from app.schemas import (
     OAuthCredentialConfigUpdate,
 )
 from app.services.forwarding import build_forward_address
+from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import build_authorization_url, exchange_code_for_tokens, fetch_identifier
 from app.services.oauth_state import consume_state
 from app.settings import settings
@@ -132,6 +133,9 @@ def add_connected_account(
     elif provider == "rss":
         if not feed_url:
             raise HTTPException(status_code=400, detail="RSS/Blog 订阅需要 feed_url")
+        feed_url = normalize_feed_url(feed_url)
+        if not feed_homepage_url and feed_url.startswith("https://claude.com/blog"):
+            feed_homepage_url = "https://claude.com/blog/"
         identifier = identifier or feed_display_name or feed_homepage_url or feed_url
     elif provider in {"gmail", "outlook"}:
         if not payload.access_token:

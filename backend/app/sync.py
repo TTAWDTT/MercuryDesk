@@ -21,6 +21,7 @@ from app.crud import (
 )
 from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message
 from app.services.encryption import decrypt_optional, encrypt_optional
+from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
 
@@ -79,8 +80,15 @@ def _connector_for(db: Session, account: ConnectedAccount):
         config = db.get(FeedAccountConfig, account.id)
         if config is None or not config.feed_url:
             raise ValueError(f"{provider} account requires feed configuration")
+        normalized_feed_url = normalize_feed_url(config.feed_url)
+        if normalized_feed_url != config.feed_url:
+            config.feed_url = normalized_feed_url
+            if provider == "rss" and (config.homepage_url or "").strip() in {"", "https://www.anthropic.com/news"}:
+                config.homepage_url = "https://claude.com/blog/"
+            db.add(config)
+            db.flush()
         return FeedConnector(
-            feed_url=config.feed_url,
+            feed_url=normalized_feed_url,
             source=provider,
             default_sender=(config.display_name or account.identifier or provider),
         )
