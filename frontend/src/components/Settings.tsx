@@ -59,6 +59,8 @@ interface SettingsProps {
 }
 
 type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x';
+const GMAIL_OAUTH_CONSOLE_URL = 'https://console.cloud.google.com/apis/credentials';
+const GMAIL_API_ENABLE_URL = 'https://console.cloud.google.com/apis/library/gmail.googleapis.com';
 
 function accountIcon(provider: string) {
     const normalized = provider.toLowerCase();
@@ -433,6 +435,10 @@ export default function Settings({ onLogout }: SettingsProps) {
         } catch {
             setToast({ message: '复制失败，请手动复制', severity: 'error' });
         }
+    };
+
+    const openExternalPage = (url: string) => {
+        window.location.href = url;
     };
 
     const saveOAuthConfig = async (
@@ -860,6 +866,24 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                             }
                                                         />
                                                     </Button>
+                                                    {newProvider === 'gmail' && (
+                                                        <>
+                                                            <Button
+                                                                variant="text"
+                                                                onClick={() => openExternalPage(GMAIL_OAUTH_CONSOLE_URL)}
+                                                                aria-label="在新窗口打开 OAuth 配置页"
+                                                            >
+                                                                跳转查看信息（OAuth 配置页，新窗口）
+                                                            </Button>
+                                                            <Button
+                                                                variant="text"
+                                                                onClick={() => openExternalPage(GMAIL_API_ENABLE_URL)}
+                                                                aria-label="在新窗口打开 Gmail API 启用页面"
+                                                            >
+                                                                跳转启用 Gmail API（新窗口）
+                                                            </Button>
+                                                        </>
+                                                    )}
                                                 </Grid>
                                             </>
                                         )}
