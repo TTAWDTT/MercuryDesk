@@ -11,6 +11,7 @@ import feedparser
 import httpx
 
 from app.connectors.base import IncomingMessage
+from app.services.avatar import normalize_http_avatar_url
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _HTML_IMAGE_RE = re.compile(r"<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>", flags=re.IGNORECASE)
@@ -242,6 +243,16 @@ class FeedConnector:
             parsed = feedparser.parse(resp.content)
             feed_title = str(parsed.feed.get("title") or self._default_sender or "subscription")
 
+            # 提取订阅源级别的图标/头像作为 sender_avatar_url
+            feed_image_url: str | None = None
+            feed_image = parsed.feed.get("image")
+            if isinstance(feed_image, dict):
+                feed_image_url = normalize_http_avatar_url(feed_image.get("href") or feed_image.get("url"))
+            if not feed_image_url:
+                feed_image_url = normalize_http_avatar_url(parsed.feed.get("logo"))
+            if not feed_image_url:
+                feed_image_url = normalize_http_avatar_url(parsed.feed.get("icon"))
+
             since_utc = since.astimezone(timezone.utc) if since else None
             messages: list[IncomingMessage] = []
             og_lookup_budget = min(self._max_entries, 12)
@@ -299,6 +310,7 @@ class FeedConnector:
                         subject=title[:998],
                         body=body,
                         received_at=published,
+                        sender_avatar_url=feed_image_url,
                     )
                 )
 

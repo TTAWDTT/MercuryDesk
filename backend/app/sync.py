@@ -26,6 +26,7 @@ from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
+from app.services.avatar import gravatar_url_for_email
 
 
 def _normalize_utc(value: datetime | None) -> datetime | None:
@@ -223,6 +224,12 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
             normalized_avatar = incoming.sender_avatar_url.strip()
             if normalized_avatar and contact.avatar_url != normalized_avatar:
                 contact.avatar_url = normalized_avatar
+                db.add(contact)
+        elif not contact.avatar_url:
+            # 没有来源头像也没有已存头像时，尝试用 Gravatar 作为兜底
+            gravatar = gravatar_url_for_email(incoming.sender)
+            if gravatar:
+                contact.avatar_url = gravatar
                 db.add(contact)
 
         if incoming.external_id and incoming.external_id in existing_external_ids.get(incoming.source, set()):

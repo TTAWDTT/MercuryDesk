@@ -103,6 +103,29 @@ class BilibiliConnector:
         self._max_items = max(1, max_items)
         self._transport = transport
 
+    def _fetch_user_info(self, *, client: httpx.Client) -> tuple[str | None, str | None]:
+        """通过 B 站 API 获取用户头像和昵称（可靠来源）"""
+        if not self._uid:
+            return None, None
+        try:
+            response = client.get(
+                "https://api.bilibili.com/x/space/wbi/acc/info",
+                params={"mid": self._uid},
+                headers={"Referer": f"https://space.bilibili.com/{self._uid}/"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except Exception:
+            return None, None
+        if not isinstance(payload, dict) or payload.get("code") != 0:
+            return None, None
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return None, None
+        avatar_url = normalize_http_avatar_url(data.get("face"))
+        name = str(data.get("name") or "").strip() or None
+        return avatar_url, name
+
     def _discover_bvids(self, *, client: httpx.Client) -> tuple[list[str], str | None]:
         if not self._uid:
             raise ValueError("Bilibili 订阅缺少有效 UID")
@@ -162,7 +185,12 @@ class BilibiliConnector:
             headers={"User-Agent": _DEFAULT_USER_AGENT},
             transport=self._transport,
         ) as client:
+            # 优先通过 API 获取可靠头像和昵称
+            api_avatar, api_name = self._fetch_user_info(client=client)
             bvids, fallback_avatar = self._discover_bvids(client=client)
+            # API 头像优先于 jina.ai 页面解析的头像
+            primary_avatar = api_avatar or fallback_avatar
+            primary_name = api_name
             messages: list[IncomingMessage] = []
             for bvid in bvids:
                 detail = self._fetch_video_detail(client=client, bvid=bvid)
@@ -179,8 +207,8 @@ class BilibiliConnector:
                 link = f"https://www.bilibili.com/video/{bvid}/"
                 cover = normalize_http_avatar_url(detail.get("pic"))
                 owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
-                sender = str(owner.get("name") or self._default_sender).strip() or self._default_sender
-                sender_avatar_url = normalize_http_avatar_url(owner.get("face")) or fallback_avatar
+                sender = str(owner.get("name") or primary_name or self._default_sender).strip() or self._default_sender
+                sender_avatar_url = normalize_http_avatar_url(owner.get("face")) or primary_avatar
 
                 messages.append(
                     IncomingMessage(
