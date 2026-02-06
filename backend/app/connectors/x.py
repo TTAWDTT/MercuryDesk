@@ -518,22 +518,7 @@ class XConnector:
                     )
                 )
         messages.sort(key=lambda item: (item.received_at, item.external_id or ""), reverse=True)
-        # 如果返回的最新帖子超过 7 天，无论数量多少，均判定数据疑似过旧 (Guest Token 常见限制)
-        if messages:
-            newest = messages[0].received_at
-            if newest < datetime.now(timezone.utc) - timedelta(days=7):
-                raise ValueError(f"X GraphQL 返回数据疑似过旧 (最新: {newest})")
         return messages[: self._max_items]
-
-    def _check_stale_data(self, messages: list[IncomingMessage], source_name: str) -> list[IncomingMessage]:
-        """通用过旧数据检测"""
-        if not messages:
-            return messages
-        messages.sort(key=lambda item: (item.received_at, item.external_id or ""), reverse=True)
-        newest = messages[0].received_at
-        if newest < datetime.now(timezone.utc) - timedelta(days=7):
-             raise ValueError(f"{source_name} 返回数据疑似过旧 (最新: {newest})")
-        return messages
 
     def _fetch_via_rsshub(self, *, since: datetime | None) -> list[IncomingMessage]:
         """通过 RSSHub 获取用户推文（第二优先级回退）"""

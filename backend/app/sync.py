@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
 from app.connectors.gmail import GmailConnector
 from app.connectors.github import GitHubNotificationsConnector
@@ -26,7 +27,7 @@ from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
-from app.services.avatar import gravatar_url_for_email
+from app.services.avatar import gravatar_url_for_email, normalize_http_avatar_url
 
 
 def _normalize_utc(value: datetime | None) -> datetime | None:
@@ -166,6 +167,33 @@ def _try_refresh_oauth_token(db: Session, *, account: ConnectedAccount) -> bool:
     return True
 
 
+def _refresh_contact_avatars(
+    db: Session,
+    *,
+    user_id: int,
+    incoming_messages: list[IncomingMessage],
+) -> int:
+    handles = {message.sender for message in incoming_messages if message.sender and message.sender_avatar_url}
+    if not handles:
+        return 0
+
+    contacts = list(db.scalars(select(Contact).where(Contact.user_id == user_id, Contact.handle.in_(handles))))
+    contacts_by_handle = {contact.handle: contact for contact in contacts}
+    updated = 0
+    for message in incoming_messages:
+        if not message.sender_avatar_url:
+            continue
+        contact = contacts_by_handle.get(message.sender)
+        if contact is None:
+            continue
+        normalized_avatar = normalize_http_avatar_url(message.sender_avatar_url) or message.sender_avatar_url.strip()
+        if normalized_avatar and contact.avatar_url != normalized_avatar:
+            contact.avatar_url = normalized_avatar
+            db.add(contact)
+            updated += 1
+    return updated
+
+
 def sync_account(db: Session, *, account: ConnectedAccount) -> int:
     connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
@@ -180,6 +208,17 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
         else:
             raise error
     if not incoming_messages:
+        provider = account.provider.lower().strip()
+        if provider in {"x", "bilibili", "rss"}:
+            try:
+                recent_messages = connector.fetch_new_messages(since=None)
+            except Exception:
+                recent_messages = []
+            _refresh_contact_avatars(
+                db,
+                user_id=account.user_id,
+                incoming_messages=recent_messages,
+            )
         touch_account_sync(db, account=account)
         db.commit()
         return 0
@@ -221,7 +260,7 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
     for incoming in incoming_messages:
         contact = contacts_by_handle[incoming.sender]
         if incoming.sender_avatar_url:
-            normalized_avatar = incoming.sender_avatar_url.strip()
+            normalized_avatar = normalize_http_avatar_url(incoming.sender_avatar_url) or incoming.sender_avatar_url.strip()
             if normalized_avatar and contact.avatar_url != normalized_avatar:
                 contact.avatar_url = normalized_avatar
                 db.add(contact)
