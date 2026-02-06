@@ -104,13 +104,13 @@ class BilibiliConnector:
         self._transport = transport
 
     def _fetch_user_info(self, *, client: httpx.Client) -> tuple[str | None, str | None]:
-        """通过 B 站 API 获取用户头像和昵称（可靠来源）"""
+        """通过 B 站 API 获取用户头像和昵称（可靠来源，使用 card 接口避免 WBI 签名问题）"""
         if not self._uid:
             return None, None
         try:
             response = client.get(
-                "https://api.bilibili.com/x/space/wbi/acc/info",
-                params={"mid": self._uid},
+                "https://api.bilibili.com/x/web-interface/card",
+                params={"mid": self._uid, "photo": "true"},
                 headers={"Referer": f"https://space.bilibili.com/{self._uid}/"},
             )
             response.raise_for_status()
@@ -122,9 +122,14 @@ class BilibiliConnector:
         data = payload.get("data")
         if not isinstance(data, dict):
             return None, None
-        avatar_url = normalize_http_avatar_url(data.get("face"))
-        name = str(data.get("name") or "").strip() or None
-        return avatar_url, name
+
+        card = data.get("card")
+        if isinstance(card, dict):
+            avatar_url = normalize_http_avatar_url(card.get("face"))
+            name = str(card.get("name") or "").strip() or None
+            return avatar_url, name
+
+        return None, None
 
     def _discover_bvids(self, *, client: httpx.Client) -> tuple[list[str], str | None]:
         if not self._uid:

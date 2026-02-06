@@ -520,19 +520,30 @@ class XConnector:
                 raise ValueError(f"X GraphQL 返回数据疑似过旧 (最新: {newest})")
         return messages[: self._max_items]
 
+    def _check_stale_data(self, messages: list[IncomingMessage], source_name: str) -> list[IncomingMessage]:
+        """通用过旧数据检测"""
+        if not messages:
+            return messages
+        messages.sort(key=lambda item: (item.received_at, item.external_id or ""), reverse=True)
+        newest = messages[0].received_at
+        if newest < datetime.now(timezone.utc) - timedelta(days=7):
+             raise ValueError(f"{source_name} 返回数据疑似过旧 (最新: {newest})")
+        return messages
+
     def _fetch_via_rsshub(self, *, since: datetime | None) -> list[IncomingMessage]:
         """通过 RSSHub 获取用户推文（第二优先级回退）"""
         if not self._username:
             raise ValueError("RSSHub 回退需要有效用户名")
         base = os.environ.get("MERCURYDESK_RSSHUB_BASE_URL", "https://rsshub.app").rstrip("/")
         feed_url = f"{base}/twitter/user/{self._username}"
-        return FeedConnector(
+        messages = FeedConnector(
             feed_url=feed_url,
             source="x",
             default_sender=self._default_sender,
             timeout_seconds=self._timeout_seconds,
             max_entries=self._max_items,
         ).fetch_new_messages(since=since)
+        return self._check_stale_data(messages, "RSSHub")
 
     def _fetch_via_nitter(self, *, since: datetime | None) -> list[IncomingMessage]:
         """通过 Nitter 实例的 RSS 获取用户推文（第三优先级回退）"""
@@ -542,13 +553,14 @@ class XConnector:
         for instance in _NITTER_INSTANCES:
             feed_url = f"{instance.rstrip('/')}/{self._username}/rss"
             try:
-                return FeedConnector(
+                messages = FeedConnector(
                     feed_url=feed_url,
                     source="x",
                     default_sender=self._default_sender,
                     timeout_seconds=self._timeout_seconds,
                     max_entries=self._max_items,
                 ).fetch_new_messages(since=since)
+                return self._check_stale_data(messages, f"Nitter({instance})")
             except Exception as e:
                 errors.append(f"{instance}: {e}")
         raise ValueError(f"所有 Nitter 实例均失败: {'; '.join(errors)}")
