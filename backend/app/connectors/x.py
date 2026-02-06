@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,11 @@ import httpx
 from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
+
+_NITTER_INSTANCES = [
+    "https://nitter.privacydev.net",
+    "https://nitter.poast.org",
+]
 
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -392,7 +398,7 @@ class XConnector:
             canonical_name = str(user_legacy.get("name") or f"@{canonical_screen_name}").strip() or f"@{canonical_screen_name}"
             canonical_avatar_url = _extract_user_avatar_url(user_result, user_legacy)
             timeline_count = min(max(self._max_items * 2, 40), 200)
-            max_pages = 4
+            max_pages = 6
             entries: list[dict[str, Any]] = []
             cursor: str | None = None
             seen_cursors: set[str] = set()
@@ -507,23 +513,78 @@ class XConnector:
                     )
                 )
         messages.sort(key=lambda item: (item.received_at, item.external_id or ""), reverse=True)
+        # 如果返回的最新帖子超过 14 天且数量不足，判定数据疑似过旧
+        if messages:
+            newest = messages[0].received_at
+            if newest < datetime.now(timezone.utc) - timedelta(days=14) and len(messages) < 5:
+                raise ValueError("X GraphQL 返回数据疑似过旧")
         return messages[: self._max_items]
 
+    def _fetch_via_rsshub(self, *, since: datetime | None) -> list[IncomingMessage]:
+        """通过 RSSHub 获取用户推文（第二优先级回退）"""
+        if not self._username:
+            raise ValueError("RSSHub 回退需要有效用户名")
+        base = os.environ.get("MERCURYDESK_RSSHUB_BASE_URL", "https://rsshub.app").rstrip("/")
+        feed_url = f"{base}/twitter/user/{self._username}"
+        return FeedConnector(
+            feed_url=feed_url,
+            source="x",
+            default_sender=self._default_sender,
+            timeout_seconds=self._timeout_seconds,
+            max_entries=self._max_items,
+        ).fetch_new_messages(since=since)
+
+    def _fetch_via_nitter(self, *, since: datetime | None) -> list[IncomingMessage]:
+        """通过 Nitter 实例的 RSS 获取用户推文（第三优先级回退）"""
+        if not self._username:
+            raise ValueError("Nitter 回退需要有效用户名")
+        errors: list[str] = []
+        for instance in _NITTER_INSTANCES:
+            feed_url = f"{instance.rstrip('/')}/{self._username}/rss"
+            try:
+                return FeedConnector(
+                    feed_url=feed_url,
+                    source="x",
+                    default_sender=self._default_sender,
+                    timeout_seconds=self._timeout_seconds,
+                    max_entries=self._max_items,
+                ).fetch_new_messages(since=since)
+            except Exception as e:
+                errors.append(f"{instance}: {e}")
+        raise ValueError(f"所有 Nitter 实例均失败: {'; '.join(errors)}")
+
     def fetch_new_messages(self, *, since: datetime | None) -> list[IncomingMessage]:
+        errors: list[str] = []
+
+        # 第一优先级：GraphQL 直接抓取
         try:
             return self._fetch_via_graphql(since=since)
-        except Exception as primary_error:
-            if self._fallback_feed_url:
-                try:
-                    return FeedConnector(
-                        feed_url=self._fallback_feed_url,
-                        source="x",
-                        default_sender=self._default_sender,
-                        timeout_seconds=self._timeout_seconds,
-                        max_entries=self._max_items,
-                    ).fetch_new_messages(since=since)
-                except Exception as fallback_error:
-                    raise ValueError(
-                        f"X 抓取失败: {primary_error}; RSS 回退失败: {fallback_error}"
-                    ) from fallback_error
-            raise ValueError(f"X 抓取失败: {primary_error}") from primary_error
+        except Exception as e:
+            errors.append(f"GraphQL: {e}")
+
+        # 第二优先级：RSSHub 回退
+        try:
+            return self._fetch_via_rsshub(since=since)
+        except Exception as e:
+            errors.append(f"RSSHub: {e}")
+
+        # 第三优先级：Nitter 实例回退
+        try:
+            return self._fetch_via_nitter(since=since)
+        except Exception as e:
+            errors.append(f"Nitter: {e}")
+
+        # 最后回退：用户自定义 RSS 订阅源
+        if self._fallback_feed_url:
+            try:
+                return FeedConnector(
+                    feed_url=self._fallback_feed_url,
+                    source="x",
+                    default_sender=self._default_sender,
+                    timeout_seconds=self._timeout_seconds,
+                    max_entries=self._max_items,
+                ).fetch_new_messages(since=since)
+            except Exception as e:
+                errors.append(f"RSS 回退: {e}")
+
+        raise ValueError(f"X 抓取失败: {'; '.join(errors)}")
