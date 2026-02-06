@@ -1276,7 +1276,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="info" sx={{ borderRadius: 3 }}>
-                                                        使用 RSSHub 订阅 X 更新，只需用户名，系统会自动生成抓取地址。
+                                                        使用 X 公共网页接口抓取更新，只需用户名即可同步；如失败会自动回退到订阅地址抓取。
                                                     </Alert>
                                                 </Grid>
                                             </>

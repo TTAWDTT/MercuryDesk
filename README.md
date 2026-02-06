@@ -10,7 +10,7 @@
   - GitHub 通知（支持 OAuth 一键授权 / Token 直连）
   - RSS / Blog 订阅
   - Bilibili 指定 UP 主动态（基于 RSSHub）
-  - X 指定用户更新（基于 RSSHub）
+  - X 指定用户更新（基于 X 公共网页接口抓取）
   - Mock 演示数据
 - 主题：浅色浅蓝、深色纯黑（深蓝强调色），整体保持杂志化排版风格。
 - Agent 配置：
@@ -96,7 +96,7 @@ python -m uvicorn app.main:app --reload --port 8000
 
 - RSS/Blog：输入 feed URL（可一键填入 Claude Blog）
 - Bilibili：输入 UP 主 UID
-- X：输入用户名（`@` 可省略）
+- X：输入用户名（`@` 可省略，默认走 X 公共网页接口抓取）
 
 ## Agent / LLM 配置
 

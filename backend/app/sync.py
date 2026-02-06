@@ -12,6 +12,7 @@ from app.connectors.github import GitHubNotificationsConnector
 from app.connectors.imap import ImapConnector
 from app.connectors.mock import MockConnector
 from app.connectors.outlook import OutlookConnector
+from app.connectors.x import XConnector
 from app.crud import (
     create_message,
     decrypt_account_tokens,
@@ -76,7 +77,26 @@ def _connector_for(db: Session, account: ConnectedAccount):
             mailbox=config.mailbox or "INBOX",
             external_id_prefix=f"imap:{account.id}",
         )
-    if provider in {"rss", "bilibili", "x"}:
+    if provider == "x":
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None:
+            raise ValueError("x account requires feed configuration")
+        normalized_feed_url = normalize_feed_url(config.feed_url) if config.feed_url else None
+        if normalized_feed_url and normalized_feed_url != config.feed_url:
+            config.feed_url = normalized_feed_url
+            db.add(config)
+            db.flush()
+        username_hint = (
+            account.identifier
+            or (config.homepage_url or "")
+            or (config.feed_url or "")
+        )
+        return XConnector(
+            username=username_hint,
+            fallback_feed_url=normalized_feed_url,
+            default_sender=(config.display_name or account.identifier or "x"),
+        )
+    if provider in {"rss", "bilibili"}:
         config = db.get(FeedAccountConfig, account.id)
         if config is None or not config.feed_url:
             raise ValueError(f"{provider} account requires feed configuration")
