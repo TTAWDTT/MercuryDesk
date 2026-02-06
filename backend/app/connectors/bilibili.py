@@ -16,9 +16,9 @@ _SPACE_UID_RE = re.compile(r"space\.bilibili\.com/(\d{3,20})", flags=re.IGNORECA
 _BVID_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
 _FACE_URL_RE = re.compile(r"(https?://[^\s)\]]*/bfs/face/[^\s)\]]+)", flags=re.IGNORECASE)
 _DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/122.0.0.0 Safari/537.36"
+    "Chrome/125.0.0.0 Safari/537.36"
 )
 
 
@@ -104,30 +104,50 @@ class BilibiliConnector:
         self._transport = transport
 
     def _fetch_user_info(self, *, client: httpx.Client) -> tuple[str | None, str | None]:
-        """通过 B 站 API 获取用户头像和昵称（可靠来源，使用 card 接口避免 WBI 签名问题）"""
+        """通过 B 站 API 获取用户头像和昵称（尝试多个端点）"""
         if not self._uid:
             return None, None
-        try:
-            response = client.get(
-                "https://api.bilibili.com/x/web-interface/card",
-                params={"mid": self._uid, "photo": "true"},
-                headers={"Referer": f"https://space.bilibili.com/{self._uid}/"},
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except Exception:
-            return None, None
-        if not isinstance(payload, dict) or payload.get("code") != 0:
-            return None, None
-        data = payload.get("data")
-        if not isinstance(data, dict):
-            return None, None
 
-        card = data.get("card")
-        if isinstance(card, dict):
-            avatar_url = normalize_http_avatar_url(card.get("face"))
-            name = str(card.get("name") or "").strip() or None
-            return avatar_url, name
+        endpoints = [
+            ("https://api.bilibili.com/x/web-interface/card", {"mid": self._uid, "photo": "true"}),
+            ("https://api.bilibili.com/x/space/acc/info", {"mid": self._uid}),
+        ]
+
+        for url, params in endpoints:
+            try:
+                response = client.get(
+                    url,
+                    params=params,
+                    headers={"Referer": f"https://space.bilibili.com/{self._uid}/"},
+                )
+                if response.status_code != 200:
+                    continue
+
+                payload = response.json()
+                if not isinstance(payload, dict) or payload.get("code") != 0:
+                    continue
+
+                data = payload.get("data")
+                if not isinstance(data, dict):
+                    continue
+
+                # Handle 'card' endpoint structure
+                card = data.get("card")
+                if isinstance(card, dict):
+                    avatar = normalize_http_avatar_url(card.get("face"))
+                    name = str(card.get("name") or "").strip() or None
+                    if avatar:
+                        return avatar, name
+
+                # Handle 'acc/info' endpoint structure
+                face = data.get("face")
+                if face:
+                    avatar = normalize_http_avatar_url(face)
+                    name = str(data.get("name") or "").strip() or None
+                    return avatar, name
+
+            except Exception:
+                continue
 
         return None, None
 

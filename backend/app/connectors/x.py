@@ -15,14 +15,18 @@ from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
 
 _NITTER_INSTANCES = [
+    "https://nitter.moomoo.me",
+    "https://nitter.soopy.moe",
+    "https://nitter.uni-sonia.com",
     "https://nitter.privacydev.net",
     "https://nitter.poast.org",
+    "https://nitter.lucabased.xyz",
 ]
 
 _DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/122.0.0.0 Safari/537.36"
+    "Chrome/125.0.0.0 Safari/537.36"
 )
 _MAIN_JS_RE = re.compile(r"https://abs\.twimg\.com/responsive-web/client-web/main\.[^\"'<>]+\.js")
 _GUEST_TOKEN_RE = re.compile(r'document\.cookie="gt=(\d+);')
