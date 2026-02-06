@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     media_dir: str = "./media"
+    rsshub_base_url: str = "https://rsshub.app"
+    models_catalog_url: str = "https://models.dev/api.json"
+    models_catalog_refresh_seconds: int = 60 * 60
 
     # Optional Fernet key used to encrypt stored secrets (OAuth tokens, IMAP passwords).
     # Generate one via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

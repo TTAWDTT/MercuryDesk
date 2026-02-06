@@ -5,6 +5,7 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.connectors.feed import FeedConnector
 from app.connectors.github import GitHubNotificationsConnector
 from app.connectors.imap import ImapConnector
 from app.connectors.mock import MockConnector
@@ -14,7 +15,7 @@ from app.crud import (
     touch_account_sync,
     touch_contact_last_message,
 )
-from app.models import ConnectedAccount, Contact, ImapAccountConfig, Message
+from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message
 from app.services.encryption import decrypt_optional
 from app.services.summarizer import RuleBasedSummarizer
 
@@ -46,6 +47,15 @@ def _connector_for(db: Session, account: ConnectedAccount):
             password=password,
             mailbox=config.mailbox or "INBOX",
             external_id_prefix=f"imap:{account.id}",
+        )
+    if provider in {"rss", "bilibili", "x"}:
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None or not config.feed_url:
+            raise ValueError(f"{provider} account requires feed configuration")
+        return FeedConnector(
+            feed_url=config.feed_url,
+            source=provider,
+            default_sender=(config.display_name or account.identifier or provider),
         )
     raise ValueError(f"Unknown provider: {account.provider}")
 

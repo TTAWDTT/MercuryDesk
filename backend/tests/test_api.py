@@ -97,6 +97,33 @@ def test_register_login_sync_and_list():
         )
         assert imap_acct.status_code == 200, imap_acct.text
 
+        # Create RSS / Bilibili / X subscription accounts.
+        rss_acct = client.post(
+            "/api/v1/accounts",
+            json={
+                "provider": "rss",
+                "feed_url": "https://www.anthropic.com/news/rss.xml",
+                "feed_homepage_url": "https://www.anthropic.com/news",
+                "feed_display_name": "Claude Blog",
+            },
+            headers=headers,
+        )
+        assert rss_acct.status_code == 200, rss_acct.text
+
+        bilibili_acct = client.post(
+            "/api/v1/accounts",
+            json={"provider": "bilibili", "bilibili_uid": "2233"},
+            headers=headers,
+        )
+        assert bilibili_acct.status_code == 200, bilibili_acct.text
+
+        x_acct = client.post(
+            "/api/v1/accounts",
+            json={"provider": "x", "x_username": "openai"},
+            headers=headers,
+        )
+        assert x_acct.status_code == 200, x_acct.text
+
         # Sync it
         sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
         assert sync.status_code == 200, sync.text
@@ -105,6 +132,8 @@ def test_register_login_sync_and_list():
         accounts = client.get("/api/v1/accounts", headers=headers)
         assert accounts.status_code == 200, accounts.text
         assert any(a["provider"] == "imap" for a in accounts.json())
+        providers = {a["provider"] for a in accounts.json()}
+        assert {"rss", "bilibili", "x"}.issubset(providers)
 
         # List contacts
         contacts = client.get("/api/v1/contacts", headers=headers)
@@ -146,6 +175,10 @@ def test_register_login_sync_and_list():
         assert cfg.json()["provider"] == "rule_based"
         assert cfg.json()["has_api_key"] is False
 
+        catalog = client.get("/api/v1/agent/catalog", headers=headers)
+        assert catalog.status_code == 200, catalog.text
+        assert isinstance(catalog.json().get("providers"), list)
+
         sm = client.post("/api/v1/agent/summarize", json={"text": "这是一封很长的邮件内容，用于测试摘要功能。"}, headers=headers)
         assert sm.status_code == 200, sm.text
         assert isinstance(sm.json().get("summary"), str)
@@ -153,9 +186,15 @@ def test_register_login_sync_and_list():
         # Updating config should persist (no external call performed here).
         upd = client.patch(
             "/api/v1/agent/config",
-            json={"provider": "openai", "api_key": "sk-test", "model": "gpt-4o-mini", "temperature": 0.2},
+            json={
+                "provider": "openrouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "api_key": "sk-test",
+                "model": "openai/gpt-4o-mini",
+                "temperature": 0.2,
+            },
             headers=headers,
         )
         assert upd.status_code == 200, upd.text
-        assert upd.json()["provider"] == "openai"
+        assert upd.json()["provider"] == "openrouter"
         assert upd.json()["has_api_key"] is True

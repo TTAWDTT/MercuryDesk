@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app import crud
@@ -18,8 +18,10 @@ from app.schemas import (
     AgentTestResponse,
     DraftReplyRequest,
     DraftReplyResponse,
+    ModelCatalogResponse,
 )
 from app.services.encryption import decrypt_optional
+from app.services.model_catalog import get_model_catalog
 from app.services.summarizer import RuleBasedSummarizer
 
 router = APIRouter(prefix="/agent", tags=["agent"])
@@ -96,9 +98,14 @@ def _openai_chat(
 
 def _provider_for(config: AgentConfigOut) -> Literal["rule_based", "openai"]:
     p = (config.provider or "rule_based").lower().strip()
-    if p in {"openai", "openai_compatible", "openai-compatible"}:
-        return "openai"
-    return "rule_based"
+    if p in {"rule_based", "rule-based", "builtin", "local"}:
+        return "rule_based"
+    return "openai"
+
+
+@router.get("/catalog", response_model=ModelCatalogResponse)
+def model_catalog(force_refresh: bool = Query(default=False)):
+    return get_model_catalog(force_refresh=force_refresh)
 
 
 @router.post("/summarize", response_model=AgentSummarizeResponse)
@@ -116,6 +123,8 @@ def summarize(
     api_key = decrypt_optional(stored.api_key if stored else None) if stored else None
     if not api_key:
         raise HTTPException(status_code=400, detail="请先在设置里配置 Agent API Key")
+    if not (config.base_url or "").strip():
+        raise HTTPException(status_code=400, detail="请先在设置里配置 Agent Base URL")
 
     try:
         summary = _openai_chat(
@@ -152,6 +161,8 @@ def draft_reply(
     api_key = decrypt_optional(stored.api_key if stored else None) if stored else None
     if not api_key:
         raise HTTPException(status_code=400, detail="请先在设置里配置 Agent API Key")
+    if not (config.base_url or "").strip():
+        raise HTTPException(status_code=400, detail="请先在设置里配置 Agent Base URL")
 
     tone = (payload.tone or "friendly").lower().strip()
     tone_zh = "友好" if tone in {"friendly", "casual"} else "正式"
@@ -224,6 +235,8 @@ def test_agent(
     api_key = decrypt_optional(stored.api_key if stored else None) if stored else None
     if not api_key:
         raise HTTPException(status_code=400, detail="缺少 API Key")
+    if not (config.base_url or "").strip():
+        raise HTTPException(status_code=400, detail="缺少 Base URL")
 
     try:
         out = _openai_chat(
@@ -240,4 +253,4 @@ def test_agent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return AgentTestResponse(ok=True, provider="openai", message=out or "OK")
+    return AgentTestResponse(ok=True, provider=config.provider, message=out or "OK")

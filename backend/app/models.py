@@ -52,6 +52,11 @@ class ConnectedAccount(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    feed_config: Mapped[Optional["FeedAccountConfig"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class ImapAccountConfig(Base):
@@ -72,6 +77,21 @@ class ImapAccountConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped["ConnectedAccount"] = relationship(back_populates="imap_config")
+
+
+class FeedAccountConfig(Base):
+    __tablename__ = "feed_account_configs"
+
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("connected_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    feed_url: Mapped[str] = mapped_column(String(2048))
+    homepage_url: Mapped[Optional[str]] = mapped_column(String(2048), nullable=True)
+    display_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    account: Mapped["ConnectedAccount"] = relationship(back_populates="feed_config")
 
 
 class AgentConfig(Base):

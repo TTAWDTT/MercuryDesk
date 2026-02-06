@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import AgentConfig, ConnectedAccount, Contact, ImapAccountConfig, Message, User
+from app.models import AgentConfig, ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message, User
 from app.security import get_password_hash, verify_password
 from app.services.encryption import decrypt_optional, encrypt_optional
 
@@ -41,12 +41,18 @@ def create_connected_account(
     imap_username: str | None = None,
     imap_password: str | None = None,
     imap_mailbox: str | None = None,
+    feed_url: str | None = None,
+    feed_homepage_url: str | None = None,
+    feed_display_name: str | None = None,
 ) -> ConnectedAccount:
     provider_norm = provider.lower().strip()
+    identifier_norm = identifier.strip()
+    if not identifier_norm:
+        raise ValueError("identifier is required")
     account = ConnectedAccount(
         user_id=user_id,
         provider=provider_norm,
-        identifier=identifier,
+        identifier=identifier_norm,
         access_token=encrypt_optional(access_token),
         refresh_token=encrypt_optional(refresh_token),
     )
@@ -66,6 +72,16 @@ def create_connected_account(
             mailbox=imap_mailbox or "INBOX",
         )
         db.add(config)
+    elif provider_norm in {"rss", "bilibili", "x"}:
+        if not feed_url:
+            raise ValueError(f"{provider_norm} account requires feed_url")
+        feed_config = FeedAccountConfig(
+            account_id=account.id,
+            feed_url=feed_url.strip(),
+            homepage_url=feed_homepage_url.strip() if feed_homepage_url else None,
+            display_name=feed_display_name.strip() if feed_display_name else None,
+        )
+        db.add(feed_config)
     db.commit()
     db.refresh(account)
     return account

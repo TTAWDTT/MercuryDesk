@@ -32,8 +32,8 @@ class UserOut(BaseModel):
 
 
 class ConnectedAccountCreate(BaseModel):
-    provider: str = Field(min_length=2, max_length=50)
-    identifier: str = Field(min_length=1, max_length=255)
+    provider: str = Field(min_length=1, max_length=50)
+    identifier: str = Field(default="", max_length=255)
     access_token: Optional[str] = None
     refresh_token: Optional[str] = None
 
@@ -44,6 +44,13 @@ class ConnectedAccountCreate(BaseModel):
     imap_username: Optional[str] = Field(None, min_length=1, max_length=255)
     imap_password: Optional[str] = Field(None, min_length=1, max_length=2048)
     imap_mailbox: Optional[str] = Field(None, min_length=1, max_length=255)
+
+    # Optional provider-specific fields (used when provider in {"rss", "bilibili", "x"}).
+    feed_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    feed_homepage_url: Optional[str] = Field(None, min_length=1, max_length=2048)
+    feed_display_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    bilibili_uid: Optional[str] = Field(None, min_length=1, max_length=64)
+    x_username: Optional[str] = Field(None, min_length=1, max_length=64)
 
 
 class ConnectedAccountOut(BaseModel):
@@ -134,3 +141,28 @@ class AgentTestResponse(BaseModel):
     ok: bool
     provider: str
     message: str
+
+
+class ModelInfo(BaseModel):
+    id: str
+    name: str
+    family: Optional[str] = None
+    reasoning: Optional[bool] = None
+    tool_call: Optional[bool] = None
+    temperature: Optional[bool] = None
+
+
+class ModelProviderInfo(BaseModel):
+    id: str
+    name: str
+    api: Optional[str] = None
+    doc: Optional[str] = None
+    env: list[str] = Field(default_factory=list)
+    model_count: int = 0
+    models: list[ModelInfo] = Field(default_factory=list)
+
+
+class ModelCatalogResponse(BaseModel):
+    source_url: str
+    fetched_at: datetime
+    providers: list[ModelProviderInfo]
