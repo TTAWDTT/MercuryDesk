@@ -3,21 +3,12 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import Box from '@mui/material/Box';
 import Skeleton from '@mui/material/Skeleton';
-import { alpha, useTheme } from '@mui/material/styles';
 
 export const ContactSkeleton: React.FC<{ variant?: 'standard' | 'feature' }> = ({ variant = 'standard' }) => {
   const isFeature = variant === 'feature';
-  const theme = useTheme();
 
   return (
-    <Card
-      sx={{
-        height: '100%',
-        border: '1px solid',
-        borderColor: alpha(theme.palette.primary.main, 0.16),
-        background: `linear-gradient(154deg, ${alpha(theme.palette.background.paper, 0.98)} 0%, ${alpha(theme.palette.background.default, 0.92)} 100%)`,
-      }}
-    >
+    <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 } }}>
         <Box display="flex" alignItems="center" mb={isFeature ? 3 : 2.5}>
           <Skeleton variant="rounded" width={isFeature ? 72 : 60} height={isFeature ? 72 : 60} sx={{ borderRadius: '14px' }} />

@@ -10,7 +10,6 @@ import EmailIcon from '@mui/icons-material/Email';
 import PersonIcon from '@mui/icons-material/Person';
 import RssFeedIcon from '@mui/icons-material/RssFeed';
 import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
-import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
@@ -67,15 +66,6 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     return '邮件';
   })();
 
-  const sourceAccent = (() => {
-    const src = (contact.latest_source || 'email').toLowerCase();
-    if (src.includes('github')) return theme.palette.info.main;
-    if (src === 'x' || src.includes('x/')) return '#4F7DFF';
-    if (src.includes('bilibili')) return '#3AA8FF';
-    if (src.includes('rss')) return theme.palette.warning.main;
-    return theme.palette.primary.main;
-  })();
-
   const parsedPreview = React.useMemo(
     () => parseContentPreview(contact.latest_preview),
     [contact.latest_preview]
@@ -120,35 +110,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           overflow: 'hidden',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           border: '1px solid',
-          borderColor: alpha(sourceAccent, 0.24),
-          background: `
-            linear-gradient(156deg, ${alpha(theme.palette.background.paper, 0.98)} 0%, ${alpha(theme.palette.background.default, 0.94)} 100%),
-            radial-gradient(circle at 88% 14%, ${alpha(sourceAccent, theme.palette.mode === 'dark' ? 0.24 : 0.16)} 0%, transparent 35%)
-          `,
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            inset: 0,
-            pointerEvents: 'none',
-            background: `repeating-linear-gradient(132deg, transparent 0 11px, ${alpha(sourceAccent, 0.04)} 11px 12px)`,
-            opacity: theme.palette.mode === 'dark' ? 0.55 : 0.34,
-          },
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: '100%',
-            height: 4,
-            background: `linear-gradient(90deg, ${alpha(sourceAccent, 0.95)} 0%, ${alpha(sourceAccent, 0.2)} 58%, transparent 100%)`,
-          },
+          borderColor: 'divider',
           '&:hover': {
             ...(disabled
               ? {}
               : {
-                  transform: isFeature ? 'translateY(-4px) scale(1.004)' : 'translateY(-5px) scale(1.006)',
-                  borderColor: alpha(sourceAccent, 0.58),
-                  boxShadow: `0 16px 38px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.45 : 0.18)}`,
+                  transform: isFeature ? 'translateY(-3px)' : 'translateY(-4px)',
+                  borderColor: 'primary.main',
+                  boxShadow: theme.shadows[4],
                 }),
           }
         }}
@@ -194,51 +163,24 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
         <CardContent
           sx={{
-            position: 'relative',
-            zIndex: 1,
             p: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 },
             '&:last-child': { pb: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 } }
           }}
         >
           <Box display="flex" alignItems="center" mb={2}>
-            <Box sx={{ position: 'relative' }}>
-              <Avatar 
-                src={contact.avatar_url || undefined} 
-                sx={{ 
-                    bgcolor: alpha(sourceAccent, 0.12), 
-                    color: sourceAccent,
-                    width: isFeature ? 72 : 60, 
-                    height: isFeature ? 72 : 60,
-                    fontWeight: 700,
-                    borderRadius: isFeature ? '16px' : '14px',
-                    border: '1px solid',
-                    borderColor: alpha(sourceAccent, 0.32),
-                    boxShadow: `0 8px 20px ${alpha(sourceAccent, 0.24)}`,
-                }}
-              >
-                {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
-              </Avatar>
-              <Box
-                sx={{
-                  position: 'absolute',
-                  right: -4,
-                  bottom: -4,
-                  width: 24,
-                  height: 24,
-                  borderRadius: '999px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  bgcolor: alpha(theme.palette.background.paper, 0.95),
-                  color: sourceAccent,
-                  border: '1px solid',
-                  borderColor: alpha(sourceAccent, 0.5),
-                  boxShadow: `0 5px 10px ${alpha(sourceAccent, 0.26)}`,
-                }}
-              >
-                {getSourceIcon(contact.latest_source)}
-              </Box>
-            </Box>
+            <Avatar 
+              src={contact.avatar_url || undefined} 
+              sx={{ 
+                  bgcolor: alpha(theme.palette.primary.main, 0.1), 
+                  color: theme.palette.primary.main,
+                  width: isFeature ? 72 : 60, 
+                  height: isFeature ? 72 : 60,
+                  fontWeight: 600,
+                  borderRadius: isFeature ? '16px' : '14px'
+              }}
+            >
+              {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
+            </Avatar>
             <Box ml={2} overflow="hidden">
               <Typography
                 variant={isFeature ? 'h5' : 'h6'}
@@ -246,7 +188,6 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 sx={{
                   fontSize: isFeature ? { xs: '1.25rem', md: '1.4rem' } : { xs: '1.1rem', md: '1.18rem' },
                   fontWeight: 700,
-                  letterSpacing: '-0.01em',
                 }}
               >
                 {contact.display_name}
@@ -260,25 +201,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 {contact.handle}
               </Typography>
             </Box>
-            {isFeature && (
-              <AutoAwesomeRoundedIcon
-                sx={{
-                  ml: 'auto',
-                  color: alpha(sourceAccent, 0.72),
-                  fontSize: 20,
-                }}
-              />
-            )}
           </Box>
 
           <Box 
             sx={{ 
                 p: isFeature ? { xs: 2.25, md: 2.75 } : 2, 
-                bgcolor: alpha(theme.palette.action.hover, 0.48), 
-                borderRadius: '16px',
+                bgcolor: alpha(theme.palette.action.hover, 0.5), 
+                borderRadius: '14px',
                 mb: isFeature ? 2.5 : 2,
-                border: '1px solid',
-                borderColor: alpha(sourceAccent, 0.16),
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (
@@ -288,10 +218,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                   overflow: 'hidden',
                   mb: isFeature ? 2 : 1.5,
                   border: '1px solid',
-                  borderColor: alpha(sourceAccent, 0.3),
-                  bgcolor: alpha(sourceAccent, 0.07),
+                  borderColor: alpha(theme.palette.primary.main, 0.2),
+                  bgcolor: alpha(theme.palette.primary.main, 0.08),
                   aspectRatio: isFeature ? '16 / 8.8' : '16 / 9',
-                  boxShadow: `0 8px 20px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.34 : 0.12)}`,
                 }}
               >
                 <Box
@@ -360,17 +289,13 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
           <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
             <Chip 
-              icon={<AutoAwesomeRoundedIcon sx={{ fontSize: 16 }} />} 
+              icon={getSourceIcon(contact.latest_source)} 
               label={sourceLabel} 
               size="small" 
               sx={{ 
                   borderRadius: '8px', 
                   fontWeight: 500,
-                  color: sourceAccent,
-                  border: '1px solid',
-                  borderColor: alpha(sourceAccent, 0.3),
-                  bgcolor: alpha(sourceAccent, 0.08),
-                  '& .MuiChip-icon': { color: 'inherit' },
+                  '& .MuiChip-icon': { color: 'inherit' }
               }} 
             />
             <Typography variant="caption" color="textSecondary">
