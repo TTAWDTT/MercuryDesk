@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.db import get_engine
 from app.models import Base
-from app.routers import accounts, agent, auth, contacts, messages
+from app.routers import accounts, agent, auth, contacts, inbound, messages
 from app.settings import settings
 
 
@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(contacts.router, prefix="/api/v1")
     app.include_router(messages.router, prefix="/api/v1")
     app.include_router(agent.router, prefix="/api/v1")
+    app.include_router(inbound.router, prefix="/api/v1")
 
     return app
 

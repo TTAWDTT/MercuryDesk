@@ -124,6 +124,33 @@ def test_register_login_sync_and_list():
         )
         assert x_acct.status_code == 200, x_acct.text
 
+        forward_acct = client.post(
+            "/api/v1/accounts",
+            json={"provider": "forward", "identifier": "from@example.com"},
+            headers=headers,
+        )
+        assert forward_acct.status_code == 200, forward_acct.text
+
+        forward_id = forward_acct.json()["id"]
+        forward_info = client.get(f"/api/v1/accounts/{forward_id}/forward-info", headers=headers)
+        assert forward_info.status_code == 200, forward_info.text
+        forward_address = forward_info.json()["forward_address"]
+        assert "@" in forward_address
+        inbound_url = forward_info.json()["inbound_url"]
+        assert inbound_url.endswith("/api/v1/inbound/forward")
+
+        inbound_path = "/api/v1/inbound/forward"
+        push = client.post(
+            inbound_path,
+            json={
+                "recipient": forward_address,
+                "from": "noreply@example.com",
+                "subject": "Forward Test",
+                "body": "Forward body",
+            },
+        )
+        assert push.status_code == 200, push.text
+
         # Sync it
         sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
         assert sync.status_code == 200, sync.text
@@ -133,7 +160,7 @@ def test_register_login_sync_and_list():
         assert accounts.status_code == 200, accounts.text
         assert any(a["provider"] == "imap" for a in accounts.json())
         providers = {a["provider"] for a in accounts.json()}
-        assert {"rss", "bilibili", "x"}.issubset(providers)
+        assert {"rss", "bilibili", "x", "forward"}.issubset(providers)
 
         # List contacts
         contacts = client.get("/api/v1/contacts", headers=headers)
@@ -178,6 +205,9 @@ def test_register_login_sync_and_list():
         catalog = client.get("/api/v1/agent/catalog", headers=headers)
         assert catalog.status_code == 200, catalog.text
         assert isinstance(catalog.json().get("providers"), list)
+
+        oauth_start = client.get("/api/v1/accounts/oauth/gmail/start", headers=headers)
+        assert oauth_start.status_code == 400, oauth_start.text
 
         sm = client.post("/api/v1/agent/summarize", json={"text": "这是一封很长的邮件内容，用于测试摘要功能。"}, headers=headers)
         assert sm.status_code == 200, sm.text

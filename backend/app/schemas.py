@@ -51,6 +51,8 @@ class ConnectedAccountCreate(BaseModel):
     feed_display_name: Optional[str] = Field(None, min_length=1, max_length=255)
     bilibili_uid: Optional[str] = Field(None, min_length=1, max_length=64)
     x_username: Optional[str] = Field(None, min_length=1, max_length=64)
+    forward_display_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    forward_source_email: Optional[EmailStr] = None
 
 
 class ConnectedAccountOut(BaseModel):
@@ -61,6 +63,20 @@ class ConnectedAccountOut(BaseModel):
     identifier: str
     last_synced_at: Optional[datetime] = None
     created_at: datetime
+
+
+class AccountOAuthStartResponse(BaseModel):
+    provider: str
+    auth_url: str
+
+
+class ForwardAccountInfo(BaseModel):
+    account_id: int
+    provider: str
+    identifier: str
+    source_email: EmailStr
+    forward_address: str
+    inbound_url: str
 
 
 class ContactOut(BaseModel):

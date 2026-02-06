@@ -57,6 +57,11 @@ class ConnectedAccount(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    forward_config: Mapped[Optional["ForwardAccountConfig"]] = relationship(
+        back_populates="account",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class ImapAccountConfig(Base):
@@ -92,6 +97,20 @@ class FeedAccountConfig(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     account: Mapped["ConnectedAccount"] = relationship(back_populates="feed_config")
+
+
+class ForwardAccountConfig(Base):
+    __tablename__ = "forward_account_configs"
+    __table_args__ = (UniqueConstraint("inbound_secret", name="uq_forward_inbound_secret"),)
+
+    account_id: Mapped[int] = mapped_column(
+        ForeignKey("connected_accounts.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    inbound_secret: Mapped[str] = mapped_column(String(255), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    account: Mapped["ConnectedAccount"] = relationship(back_populates="forward_config")
 
 
 class AgentConfig(Base):

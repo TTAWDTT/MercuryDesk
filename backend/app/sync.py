@@ -6,9 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.connectors.feed import FeedConnector
+from app.connectors.gmail import GmailConnector
 from app.connectors.github import GitHubNotificationsConnector
 from app.connectors.imap import ImapConnector
 from app.connectors.mock import MockConnector
+from app.connectors.outlook import OutlookConnector
 from app.crud import (
     create_message,
     decrypt_account_tokens,
@@ -16,7 +18,8 @@ from app.crud import (
     touch_contact_last_message,
 )
 from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message
-from app.services.encryption import decrypt_optional
+from app.services.encryption import decrypt_optional, encrypt_optional
+from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
 
 
@@ -26,10 +29,24 @@ def _connector_for(db: Session, account: ConnectedAccount):
 
     if provider == "mock":
         return MockConnector()
+    if provider == "forward":
+        class _NoopConnector:
+            def fetch_new_messages(self, *, since):
+                return []
+
+        return _NoopConnector()
     if provider == "github":
         if not access_token:
             raise ValueError("GitHub account requires access_token")
         return GitHubNotificationsConnector(access_token)
+    if provider == "gmail":
+        if not access_token:
+            raise ValueError("Gmail account requires access_token")
+        return GmailConnector(access_token=access_token)
+    if provider == "outlook":
+        if not access_token:
+            raise ValueError("Outlook account requires access_token")
+        return OutlookConnector(access_token=access_token)
     if provider == "imap":
         config = db.get(ImapAccountConfig, account.id)
         if config is None:
@@ -60,12 +77,38 @@ def _connector_for(db: Session, account: ConnectedAccount):
     raise ValueError(f"Unknown provider: {account.provider}")
 
 
+def _try_refresh_oauth_token(db: Session, *, account: ConnectedAccount) -> bool:
+    provider = account.provider.lower().strip()
+    if provider not in {"gmail", "outlook"}:
+        return False
+    _access_token, refresh_token = decrypt_account_tokens(account)
+    if not refresh_token:
+        return False
+    try:
+        next_access, next_refresh = refresh_access_token(provider=provider, refresh_token=refresh_token)
+    except Exception:
+        return False
+    account.access_token = encrypt_optional(next_access)
+    if next_refresh:
+        account.refresh_token = encrypt_optional(next_refresh)
+    db.add(account)
+    db.flush()
+    return True
+
+
 def sync_account(db: Session, *, account: ConnectedAccount) -> int:
     connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
     since = account.last_synced_at
 
-    incoming_messages = connector.fetch_new_messages(since=since)
+    try:
+        incoming_messages = connector.fetch_new_messages(since=since)
+    except ValueError as error:
+        if _try_refresh_oauth_token(db, account=account):
+            connector = _connector_for(db, account)
+            incoming_messages = connector.fetch_new_messages(since=since)
+        else:
+            raise error
     if not incoming_messages:
         touch_account_sync(db, account=account)
         db.commit()

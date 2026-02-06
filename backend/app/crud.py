@@ -5,7 +5,16 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.models import AgentConfig, ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message, User
+from app.models import (
+    AgentConfig,
+    ConnectedAccount,
+    Contact,
+    FeedAccountConfig,
+    ForwardAccountConfig,
+    ImapAccountConfig,
+    Message,
+    User,
+)
 from app.security import get_password_hash, verify_password
 from app.services.encryption import decrypt_optional, encrypt_optional
 
@@ -44,6 +53,7 @@ def create_connected_account(
     feed_url: str | None = None,
     feed_homepage_url: str | None = None,
     feed_display_name: str | None = None,
+    forward_inbound_secret: str | None = None,
 ) -> ConnectedAccount:
     provider_norm = provider.lower().strip()
     identifier_norm = identifier.strip()
@@ -82,6 +92,15 @@ def create_connected_account(
             display_name=feed_display_name.strip() if feed_display_name else None,
         )
         db.add(feed_config)
+    elif provider_norm == "forward":
+        if not forward_inbound_secret:
+            raise ValueError("forward account requires inbound secret")
+        db.add(
+            ForwardAccountConfig(
+                account_id=account.id,
+                inbound_secret=forward_inbound_secret.strip(),
+            )
+        )
     db.commit()
     db.refresh(account)
     return account
@@ -94,6 +113,56 @@ def list_accounts(db: Session, *, user_id: int) -> list[ConnectedAccount]:
 def get_account(db: Session, *, user_id: int, account_id: int) -> ConnectedAccount | None:
     return db.scalar(
         select(ConnectedAccount).where(ConnectedAccount.user_id == user_id, ConnectedAccount.id == account_id)
+    )
+
+
+def get_account_by_provider_identifier(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+    identifier: str,
+) -> ConnectedAccount | None:
+    provider_norm = provider.lower().strip()
+    identifier_norm = identifier.strip()
+    return db.scalar(
+        select(ConnectedAccount).where(
+            ConnectedAccount.user_id == user_id,
+            ConnectedAccount.provider == provider_norm,
+            ConnectedAccount.identifier == identifier_norm,
+        )
+    )
+
+
+def upsert_oauth_account(
+    db: Session,
+    *,
+    user_id: int,
+    provider: str,
+    identifier: str,
+    access_token: str | None,
+    refresh_token: str | None,
+) -> ConnectedAccount:
+    existing = get_account_by_provider_identifier(
+        db,
+        user_id=user_id,
+        provider=provider,
+        identifier=identifier,
+    )
+    if existing is not None:
+        existing.access_token = encrypt_optional(access_token)
+        existing.refresh_token = encrypt_optional(refresh_token)
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+        return existing
+    return create_connected_account(
+        db,
+        user_id=user_id,
+        provider=provider,
+        identifier=identifier,
+        access_token=access_token,
+        refresh_token=refresh_token,
     )
 
 
