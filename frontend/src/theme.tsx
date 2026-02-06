@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useContext, useMemo, useState } from 'react';
 import { ThemeProvider as MuiThemeProvider, createTheme, alpha } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
@@ -30,31 +30,56 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  const lightPalette = {
+    primary: '#7A4B2A',
+    secondary: '#B68457',
+    background: '#ECE2CF',
+    paper: '#F4E8D5',
+    textPrimary: '#2A1F14',
+    textSecondary: '#6B5845',
+    divider: '#D4C3AB',
+    hover: '#8B5E3C',
+  };
+
+  const darkPalette = {
+    primary: '#E8D9C2',
+    secondary: '#B7A48D',
+    background: '#000000',
+    paper: '#000000',
+    textPrimary: '#F5EFE5',
+    textSecondary: '#A89E91',
+    divider: '#1A1A1A',
+    hover: '#E8D9C2',
+  };
+
+  const colors = mode === 'light' ? lightPalette : darkPalette;
+
   const theme = useMemo(() => createTheme({
     palette: {
       mode,
       primary: {
-        main: '#6366f1', // Indigo 500
-        light: '#818cf8',
-        dark: '#4338ca',
-        contrastText: '#ffffff',
+        main: colors.primary,
+        light: mode === 'light' ? '#9A6A46' : '#F1E5D2',
+        dark: mode === 'light' ? '#60391D' : '#D1BFA7',
+        contrastText: mode === 'light' ? '#fffaf2' : '#101010',
       },
       secondary: {
-        main: '#ec4899', // Pink 500
-        light: '#f472b6',
-        dark: '#db2777',
+        main: colors.secondary,
+        light: mode === 'light' ? '#CCA37F' : '#CCBCA7',
+        dark: mode === 'light' ? '#9D6E44' : '#9E8B73',
       },
       background: {
-        default: mode === 'light' ? '#f8fafc' : '#0f172a', // Slate 50 / Slate 900
-        paper: mode === 'light' ? '#ffffff' : '#1e293b',   // White / Slate 800
+        default: colors.background,
+        paper: colors.paper,
       },
       text: {
-        primary: mode === 'light' ? '#1e293b' : '#f8fafc', // Slate 800 / Slate 50
-        secondary: mode === 'light' ? '#64748b' : '#94a3b8', // Slate 500 / Slate 400
+        primary: colors.textPrimary,
+        secondary: colors.textSecondary,
       },
+      divider: colors.divider,
       action: {
-        hover: alpha('#6366f1', 0.08),
-        selected: alpha('#6366f1', 0.12),
+        hover: alpha(colors.hover, mode === 'light' ? 0.12 : 0.1),
+        selected: alpha(colors.hover, mode === 'light' ? 0.18 : 0.16),
       },
     },
     typography: {
@@ -67,18 +92,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       body1: { lineHeight: 1.6 },
       button: { fontWeight: 600, textTransform: 'none' },
     },
-    // Keep a small base radius so sx values like `borderRadius: 3` stay reasonable.
-    shape: { borderRadius: 4 },
+    shape: { borderRadius: 10 },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
-            backgroundColor: mode === 'light' ? '#f8fafc' : '#0f172a',
-            scrollbarColor: mode === 'light' ? '#94a3b8 #f1f5f9' : '#475569 #1e293b',
+            backgroundColor: colors.background,
+            color: colors.textPrimary,
+            scrollbarColor: mode === 'light' ? '#A98D6F #E7DCC9' : '#585858 #000000',
             '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { backgroundColor: mode === 'light' ? '#f1f5f9' : '#1e293b' },
+            '&::-webkit-scrollbar-track': { backgroundColor: mode === 'light' ? '#E7DCC9' : '#000000' },
             '&::-webkit-scrollbar-thumb': { 
-                backgroundColor: mode === 'light' ? '#94a3b8' : '#475569',
+                backgroundColor: mode === 'light' ? '#A98D6F' : '#585858',
                 borderRadius: '4px',
             },
           },
@@ -87,12 +112,12 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 16,
-            backgroundImage: 'none', // Disable default elevation gradient in dark mode
+            borderRadius: 18,
+            backgroundImage: 'none',
             boxShadow: mode === 'light' 
-                ? '0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05)'
-                : '0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2)',
-            border: `1px solid ${mode === 'light' ? alpha('#e2e8f0', 0.8) : alpha('#334155', 0.6)}`,
+                ? '0 8px 20px rgba(66, 40, 16, 0.08)'
+                : 'none',
+            border: `1px solid ${mode === 'light' ? alpha('#C8B396', 0.8) : '#1A1A1A'}`,
           },
         },
       },
@@ -103,21 +128,29 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             padding: '8px 16px',
             boxShadow: 'none',
             '&:hover': {
-              boxShadow: `0 4px 12px ${alpha('#6366f1', 0.2)}`,
+              boxShadow: mode === 'light' ? `0 6px 14px ${alpha('#6B4C2F', 0.2)}` : 'none',
               transform: 'translateY(-1px)',
             },
           },
           containedPrimary: {
-             background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
+            background: mode === 'light' ? '#6F4527' : '#E8D9C2',
+            color: mode === 'light' ? '#FFF8ED' : '#121212',
+            '&:hover': {
+              background: mode === 'light' ? '#5F3A20' : '#E1D1B8',
+            },
           }
         },
       },
       MuiPaper: {
         styleOverrides: {
+          root: {
+            backgroundImage: 'none',
+          },
           elevation1: {
              boxShadow: mode === 'light'
-                ? '0 1px 3px 0 rgb(0 0 0 / 0.05), 0 1px 2px -1px rgb(0 0 0 / 0.05)'
+                ? '0 2px 6px rgba(57, 34, 14, 0.05)'
                 : 'none',
+            border: `1px solid ${mode === 'light' ? alpha('#CCB79A', 0.65) : '#1A1A1A'}`,
           }
         }
       },
@@ -125,10 +158,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             boxShadow: 'none',
-            borderBottom: `1px solid ${mode === 'light' ? '#e2e8f0' : '#1e293b'}`,
+            borderBottom: `1px solid ${mode === 'light' ? '#D7C7B2' : '#1A1A1A'}`,
             backdropFilter: 'blur(12px)',
-            backgroundColor: mode === 'light' ? alpha('#ffffff', 0.8) : alpha('#0f172a', 0.8),
-            color: mode === 'light' ? '#1e293b' : '#f8fafc',
+            backgroundColor: mode === 'light' ? alpha('#F4E8D5', 0.88) : alpha('#000000', 0.92),
+            color: colors.textPrimary,
           },
         },
       },
@@ -144,12 +177,12 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiOutlinedInput: {
           styleOverrides: {
               notchedOutline: {
-                  borderColor: mode === 'light' ? 'rgba(0, 0, 0, 0.23)' : 'rgba(255, 255, 255, 0.23)',
+                  borderColor: mode === 'light' ? '#BDA688' : '#2B2B2B',
               }
           }
       }
     },
-  }), [mode]);
+  }), [colors.background, colors.divider, colors.hover, colors.paper, colors.primary, colors.secondary, colors.textPrimary, colors.textSecondary, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

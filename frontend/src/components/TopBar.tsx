@@ -17,9 +17,9 @@ import { useNavigate } from 'react-router-dom';
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
   borderRadius: 99, // Pill shape
-  backgroundColor: alpha(theme.palette.common.black, 0.04),
+  backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.06 : 0.12),
   '&:hover': {
-    backgroundColor: alpha(theme.palette.common.black, 0.06),
+    backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.09 : 0.18),
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -71,6 +71,7 @@ interface TopBarProps {
 export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, loading, hideSearch = false, hideSync = false }) => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const isLight = theme.palette.mode === 'light';
 
   return (
     <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100 }}>
@@ -82,14 +83,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             alignItems: 'center', 
             mr: 2,
             cursor: 'pointer',
-            background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+            background: isLight ? '#2F2115' : '#EFE3CF',
             borderRadius: 3,
             width: 36,
             height: 36,
             justifyContent: 'center',
-            color: 'white',
+            color: isLight ? '#F6EADA' : '#1A140E',
             fontWeight: 'bold',
-            boxShadow: '0 4px 6px -1px rgba(99, 102, 241, 0.3)'
+            boxShadow: 'none'
           }}
         >
           M
@@ -126,7 +127,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
         <Box sx={{ flexGrow: 1 }} />
         
         {!hideSync && (
-          <Tooltip title="同步账户">
+          <Tooltip title="同步全部来源">
             <IconButton
               size="large"
               onClick={onRefresh}
@@ -134,7 +135,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
               sx={{ 
                   mr: 1, 
                   color: 'text.secondary',
-                  '&:hover': { color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) } 
+                  '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } 
               }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
@@ -149,7 +150,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             sx={{ 
                 mr: 1, 
                 color: 'text.secondary',
-                '&:hover': { color: 'primary.main', bgcolor: alpha(theme.palette.primary.main, 0.1) } 
+                '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } 
             }}
           >
             <SettingsIcon />

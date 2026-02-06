@@ -9,6 +9,8 @@ import Chip from '@mui/material/Chip';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import EmailIcon from '@mui/icons-material/Email';
 import PersonIcon from '@mui/icons-material/Person';
+import RssFeedIcon from '@mui/icons-material/RssFeed';
+import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
@@ -37,7 +39,11 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
   const getSourceIcon = (source?: string | null) => {
     if (!source) return <EmailIcon fontSize="small" />;
-    if (source.includes('github')) return <GitHubIcon fontSize="small" />;
+    const normalized = source.toLowerCase();
+    if (normalized.includes('github')) return <GitHubIcon fontSize="small" />;
+    if (normalized.includes('rss')) return <RssFeedIcon fontSize="small" />;
+    if (normalized === 'x' || normalized.includes('x/')) return <AlternateEmailIcon fontSize="small" />;
+    if (normalized.includes('bilibili')) return <PersonIcon fontSize="small" />;
     return <EmailIcon fontSize="small" />;
   };
 
@@ -48,6 +54,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({
   const sourceLabel = (() => {
     const src = (contact.latest_source || 'email').toLowerCase();
     if (src.includes('github')) return 'GitHub';
+    if (src.includes('rss')) return 'Blog/RSS';
+    if (src === 'x' || src.includes('x/')) return 'X';
+    if (src.includes('bilibili')) return 'Bilibili';
     if (src.includes('mock')) return '演示';
     return '邮件';
   })();

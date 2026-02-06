@@ -1,10 +1,26 @@
-# MercuryDesk (MVP)
+# MercuryDesk
 
-基于 `report.md` 的一个可运行 MVP：后端提供统一消息模型与“按发信人聚合”的 API，前端提供联系人（发信人）聚合视图，并支持 `mock` / `github` / `imap`（真实邮箱）连接器。
+面向个人工作流的统一收件箱：按发信人聚合消息，前端为杂志式卡片布局，支持邮箱与多种订阅源。
 
-## 快速开始（本机）
+## 已实现能力
 
-### 后端
+- 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
+- 数据来源：
+  - 邮箱 IMAP（真实邮箱）
+  - GitHub 通知
+  - RSS / Blog 订阅
+  - Bilibili 指定 UP 主动态（基于 RSSHub）
+  - X 指定用户更新（基于 RSSHub）
+  - Mock 演示数据
+- 主题：浅色牛皮纸、深色纯黑，整体保持杂志化排版风格。
+- Agent 配置：
+  - 支持内置规则模式
+  - 支持 OpenAI-Compatible 调用链路
+  - 模型目录来自 `https://models.dev/api.json`（后端缓存）
+
+## 快速启动
+
+### 1) 后端
 
 ```powershell
 cd backend
@@ -12,7 +28,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-### 前端
+### 2) 前端
 
 ```powershell
 cd frontend
@@ -20,45 +36,62 @@ npm install
 npm run dev
 ```
 
-浏览器打开 `http://localhost:5173`，使用 `Register + Login` 创建账号后，点击顶部 `Sync`（无账号时会自动创建 mock/demo 并拉取演示消息）。
-也可以在 `Settings` 里连接 IMAP/GitHub，然后点击顶部 `Sync` 同步所有已连接账户。
+打开 `http://localhost:5173`，注册并登录后即可在「设置」中连接来源。
 
-## 连接 IMAP 邮箱（真实邮件）
+## 最简配置流程（中文界面）
 
-在 `Settings → Connected Accounts` 里选择 `IMAP`，填写主机/端口/用户名/密码后点击 `Add`。
-常见示例：
+### 连接真实邮箱（IMAP）
 
-- Gmail：`imap.gmail.com:993`（SSL），建议使用 App Password
-- Outlook：`outlook.office365.com:993`（SSL）
+1. 进入 `设置 -> 已连接来源 -> 选择邮箱（IMAP）`
+2. 选择邮箱服务商，填写邮箱与授权码/密码
+3. 点击「连接并同步」
 
-如需加密存储 IMAP 密码/Token，请在后端配置 `MERCURYDESK_FERNET_KEY`。
+常用 IMAP：
 
-## 头像上传
+- Gmail: `imap.gmail.com:993` (SSL)
+- Outlook/M365: `outlook.office365.com:993` (SSL)
+- QQ: `imap.qq.com:993` (SSL)
+- 163: `imap.163.com:993` (SSL)
 
-`Settings → Profile` 支持直接选择图片上传头像（后端通过 `/media` 提供静态访问，前端开发环境已代理 `/media`）。
+### 连接订阅源
 
-## AI 助手（可选）
+- RSS/Blog：输入 feed URL（可一键填入 Claude Blog）
+- Bilibili：输入 UP 主 UID
+- X：输入用户名（`@` 可省略）
 
-在 `Settings → AI 助手` 中可选择：
+## Agent / LLM 配置
 
-- `内置规则`：默认模式，不调用外部 API
-- `OpenAI / 兼容接口`：填写 `API Key`（可选改 `Base URL / Model / Temperature`），保存后可点击“测试连接”
+- 模型目录接口：`GET /api/v1/agent/catalog`
+- 配置接口：`GET/PATCH /api/v1/agent/config`
+- 测试接口：`POST /api/v1/agent/test`
 
-如需加密保存 API Key，请在后端配置 `MERCURYDESK_FERNET_KEY`。
+在前端设置页可直接：
 
-## 测试
+1. 选择服务商（来自 models.dev）
+2. 选择模型（若该服务商公开模型列表）
+3. 填写 Base URL / API Key
+4. 保存并测试连接
 
-### 后端测试
+> 当前执行链路为 OpenAI-Compatible 请求格式，请保证所选服务商与 Base URL、模型 ID 一致。
+
+## 环境变量（后端）
+
+- `MERCURYDESK_DATABASE_URL`
+- `MERCURYDESK_SECRET_KEY`
+- `MERCURYDESK_FERNET_KEY`（可选，建议开启，用于加密保存 Token/密码/API Key）
+- `MERCURYDESK_CORS_ORIGINS`
+- `MERCURYDESK_MEDIA_DIR`
+- `MERCURYDESK_RSSHUB_BASE_URL`（默认 `https://rsshub.app`）
+- `MERCURYDESK_MODELS_CATALOG_URL`（默认 `https://models.dev/api.json`）
+- `MERCURYDESK_MODELS_CATALOG_REFRESH_SECONDS`（默认 `3600`）
+
+## 验证命令
 
 ```powershell
 cd backend
 pytest
-```
 
-### 前端测试与构建
-
-```powershell
-cd frontend
+cd ../frontend
 npm test
 npm run build
 ```

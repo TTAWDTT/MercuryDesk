@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Container from '@mui/material/Container';
@@ -15,11 +15,16 @@ import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
 import Switch from '@mui/material/Switch';
 import Collapse from '@mui/material/Collapse';
+import Link from '@mui/material/Link';
 import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import EmailIcon from '@mui/icons-material/Email';
 import SyncIcon from '@mui/icons-material/Sync';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import RssFeedIcon from '@mui/icons-material/RssFeed';
+import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
+import PersonIcon from '@mui/icons-material/Person';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import useSWR from 'swr';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -27,9 +32,11 @@ import { useColorMode } from '../theme';
 import { 
     AgentConfig,
     ConnectedAccount, 
+    ModelCatalogResponse,
     User, 
     createAccount, 
     deleteAccount, 
+    getAgentCatalog,
     testAgent,
     updateAgentConfig,
     syncAccount, 
@@ -44,15 +51,31 @@ interface SettingsProps {
     onLogout: () => void;
 }
 
+type SourceProvider = 'mock' | 'github' | 'imap' | 'rss' | 'bilibili' | 'x';
+
+function accountIcon(provider: string) {
+    const normalized = provider.toLowerCase();
+    if (normalized === 'github') return <GitHubIcon />;
+    if (normalized === 'rss') return <RssFeedIcon />;
+    if (normalized === 'bilibili') return <PersonIcon />;
+    if (normalized === 'x') return <AlternateEmailIcon />;
+    return <EmailIcon />;
+}
+
 export default function Settings({ onLogout }: SettingsProps) {
     const navigate = useNavigate();
     const { mode, toggleColorMode } = useColorMode();
     const { data: user, mutate: mutateUser } = useSWR<User>('/api/v1/auth/me');
     const { data: accounts, mutate: mutateAccounts } = useSWR<ConnectedAccount[]>('/api/v1/accounts');
     const { data: agentConfig, mutate: mutateAgentConfig } = useSWR<AgentConfig>('/api/v1/agent/config');
+    const { data: modelCatalog, mutate: mutateModelCatalog } = useSWR<ModelCatalogResponse>(
+        'agent-catalog',
+        () => getAgentCatalog(false)
+    );
     
     const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
     const [syncing, setSyncing] = useState<number | null>(null);
+    const [refreshingCatalog, setRefreshingCatalog] = useState(false);
     
     // Profile State
     const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -61,7 +84,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
     // Account State
     const [newIdentifier, setNewIdentifier] = useState('');
-    const [newProvider, setNewProvider] = useState<'mock' | 'github' | 'imap'>('imap');
+    const [newProvider, setNewProvider] = useState<SourceProvider>('imap');
     const [newToken, setNewToken] = useState('');
     const [imapPreset, setImapPreset] = useState<'gmail' | 'outlook' | 'icloud' | 'qq' | '163' | 'custom'>('gmail');
     const [showImapAdvanced, setShowImapAdvanced] = useState(false);
@@ -71,16 +94,26 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [imapUsername, setImapUsername] = useState('');
     const [imapPassword, setImapPassword] = useState('');
     const [imapMailbox, setImapMailbox] = useState('INBOX');
+    const [rssFeedUrl, setRssFeedUrl] = useState('');
+    const [rssHomepageUrl, setRssHomepageUrl] = useState('');
+    const [rssDisplayName, setRssDisplayName] = useState('');
+    const [bilibiliUid, setBilibiliUid] = useState('');
+    const [xUsername, setXUsername] = useState('');
     const [addingAccount, setAddingAccount] = useState(false);
 
     // Agent State
-    const [agentProvider, setAgentProvider] = useState<'rule_based' | 'openai'>('rule_based');
+    const [agentProvider, setAgentProvider] = useState('rule_based');
     const [agentBaseUrl, setAgentBaseUrl] = useState('https://api.openai.com/v1');
     const [agentModel, setAgentModel] = useState('gpt-4o-mini');
     const [agentTemperature, setAgentTemperature] = useState(0.2);
     const [agentApiKey, setAgentApiKey] = useState('');
     const [savingAgent, setSavingAgent] = useState(false);
     const [testingAgent, setTestingAgent] = useState(false);
+
+    const selectedModelProvider = useMemo(
+        () => modelCatalog?.providers.find((provider) => provider.id === agentProvider) ?? null,
+        [modelCatalog, agentProvider]
+    );
 
     useEffect(() => {
         if (!avatarFile) {
@@ -119,12 +152,24 @@ export default function Settings({ onLogout }: SettingsProps) {
 
     useEffect(() => {
         if (!agentConfig) return;
-        const provider = (agentConfig.provider || 'rule_based').toLowerCase().includes('openai') ? 'openai' : 'rule_based';
-        setAgentProvider(provider);
+        setAgentProvider((agentConfig.provider || 'rule_based').toLowerCase());
         setAgentBaseUrl(agentConfig.base_url || 'https://api.openai.com/v1');
         setAgentModel(agentConfig.model || 'gpt-4o-mini');
         setAgentTemperature(Number.isFinite(agentConfig.temperature) ? agentConfig.temperature : 0.2);
     }, [agentConfig]);
+
+    useEffect(() => {
+        if (agentProvider === 'rule_based' || !selectedModelProvider) return;
+        if (!agentBaseUrl.trim() && selectedModelProvider.api) {
+            setAgentBaseUrl(selectedModelProvider.api);
+        }
+        if (
+            selectedModelProvider.models.length > 0 &&
+            !selectedModelProvider.models.some((model) => model.id === agentModel)
+        ) {
+            setAgentModel(selectedModelProvider.models[0].id);
+        }
+    }, [agentBaseUrl, agentModel, agentProvider, selectedModelProvider]);
 
     const handleUploadAvatar = async () => {
         if (!avatarFile) return;
@@ -141,16 +186,37 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
+    const handleRefreshCatalog = async () => {
+        setRefreshingCatalog(true);
+        try {
+            const fresh = await getAgentCatalog(true);
+            mutateModelCatalog(fresh, { revalidate: false });
+            setToast({ message: `模型目录已刷新（${fresh.providers.length} 个服务商）`, severity: 'success' });
+        } catch (e) {
+            setToast({ message: e instanceof Error ? e.message : '刷新失败', severity: 'error' });
+        } finally {
+            setRefreshingCatalog(false);
+        }
+    };
+
     const handleSaveAgent = async () => {
         setSavingAgent(true);
         try {
-            const payload: any = {
+            const payload: {
+                provider: string;
+                base_url?: string;
+                model?: string;
+                temperature: number;
+                api_key?: string;
+            } = {
                 provider: agentProvider,
-                base_url: agentBaseUrl.trim(),
-                model: agentModel.trim(),
-                temperature: agentTemperature,
+                temperature: Number.isFinite(agentTemperature) ? agentTemperature : 0.2,
             };
-            if (agentProvider === 'openai' && agentApiKey.trim()) payload.api_key = agentApiKey.trim();
+            if (agentProvider !== 'rule_based') {
+                payload.base_url = agentBaseUrl.trim();
+                payload.model = agentModel.trim();
+            }
+            if (agentApiKey.trim()) payload.api_key = agentApiKey.trim();
 
             const updated = await updateAgentConfig(payload);
             mutateAgentConfig(updated, { revalidate: false });
@@ -175,71 +241,113 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
+    const connectAndSync = async (payload: Parameters<typeof createAccount>[0], connectedLabel: string) => {
+        const account = await createAccount(payload);
+        try {
+            const res = await syncAccount(account.id);
+            setToast({ message: `${connectedLabel}已连接并同步：+${res.inserted}`, severity: 'success' });
+        } catch (e) {
+            setToast({
+                message: e instanceof Error ? `${connectedLabel}已连接，但同步失败：${e.message}` : `${connectedLabel}已连接，但同步失败`,
+                severity: 'error',
+            });
+        }
+    };
+
     const handleAddAccount = async () => {
         setAddingAccount(true);
         try {
-            const provider = newProvider;
-
-            if (provider === 'imap') {
+            if (newProvider === 'imap') {
                 const email = imapUsername.trim();
                 const host = imapHost.trim();
                 const mailbox = (imapMailbox || 'INBOX').trim();
-                if (!email || !imapPassword) {
-                    throw new Error('请填写邮箱与授权码/密码');
-                }
-                if (!host) {
-                    throw new Error('请先选择邮箱服务商，或在高级设置里填写 IMAP 主机');
-                }
+                if (!email || !imapPassword) throw new Error('请填写邮箱与授权码/密码');
+                if (!host) throw new Error('请先选择邮箱服务商，或在高级设置中填写 IMAP 主机');
+
                 const port = Number(imapPort || 993);
-                const account = await createAccount({
-                    provider,
-                    identifier: email,
-                    imap_host: host,
-                    imap_port: Number.isFinite(port) ? port : 993,
-                    imap_use_ssl: imapUseSsl,
-                    imap_username: email,
-                    imap_password: imapPassword,
-                    imap_mailbox: mailbox,
-                });
-                try {
-                    const res = await syncAccount(account.id);
-                    setToast({ message: `邮箱已连接，同步完成：+${res.inserted}`, severity: 'success' });
-                } catch (e) {
-                    setToast({
-                        message: e instanceof Error ? `邮箱已连接，但同步失败：${e.message}` : '邮箱已连接，但同步失败',
-                        severity: 'error',
-                    });
-                }
-            } else if (provider === 'github') {
+                await connectAndSync(
+                    {
+                        provider: 'imap',
+                        identifier: email,
+                        imap_host: host,
+                        imap_port: Number.isFinite(port) ? port : 993,
+                        imap_use_ssl: imapUseSsl,
+                        imap_username: email,
+                        imap_password: imapPassword,
+                        imap_mailbox: mailbox,
+                    },
+                    '邮箱'
+                );
+            } else if (newProvider === 'github') {
                 const identifier = newIdentifier.trim() || 'me';
                 if (!newToken.trim()) throw new Error('请填写 GitHub Token');
-                const account = await createAccount({
-                    provider,
-                    identifier,
-                    access_token: newToken.trim(),
-                });
-                try {
-                    const res = await syncAccount(account.id);
-                    setToast({ message: `GitHub 已连接，同步完成：+${res.inserted}`, severity: 'success' });
-                } catch (e) {
-                    setToast({
-                        message: e instanceof Error ? `GitHub 已连接，但同步失败：${e.message}` : 'GitHub 已连接，但同步失败',
-                        severity: 'error',
-                    });
-                }
+                await connectAndSync(
+                    {
+                        provider: 'github',
+                        identifier,
+                        access_token: newToken.trim(),
+                    },
+                    'GitHub'
+                );
+            } else if (newProvider === 'rss') {
+                const feedUrl = rssFeedUrl.trim();
+                if (!feedUrl) throw new Error('请填写 RSS / Atom 订阅链接');
+                const displayName = rssDisplayName.trim();
+                const homepage = rssHomepageUrl.trim();
+                await connectAndSync(
+                    {
+                        provider: 'rss',
+                        identifier: displayName || homepage || feedUrl,
+                        feed_url: feedUrl,
+                        feed_homepage_url: homepage || undefined,
+                        feed_display_name: displayName || undefined,
+                    },
+                    'RSS/Blog'
+                );
+            } else if (newProvider === 'bilibili') {
+                const uid = bilibiliUid.trim();
+                if (!uid) throw new Error('请填写 Bilibili UP 主 UID');
+                await connectAndSync(
+                    {
+                        provider: 'bilibili',
+                        identifier: uid,
+                        bilibili_uid: uid,
+                        feed_display_name: `B站 UP ${uid}`,
+                    },
+                    'Bilibili'
+                );
+            } else if (newProvider === 'x') {
+                const username = xUsername.trim().replace(/^@/, '');
+                if (!username) throw new Error('请填写 X 用户名');
+                await connectAndSync(
+                    {
+                        provider: 'x',
+                        identifier: username,
+                        x_username: username,
+                        feed_display_name: `X @${username}`,
+                    },
+                    'X'
+                );
             } else {
-                const account = await createAccount({
-                    provider: 'mock',
-                    identifier: 'demo',
-                    access_token: 'x',
-                });
-                const res = await syncAccount(account.id);
-                setToast({ message: `演示账户已连接，同步完成：+${res.inserted}`, severity: 'success' });
+                await connectAndSync(
+                    {
+                        provider: 'mock',
+                        identifier: 'demo',
+                        access_token: 'x',
+                    },
+                    '演示数据'
+                );
             }
+
             mutateAccounts();
             setNewIdentifier('');
             setNewToken('');
             setImapPassword('');
+            setRssFeedUrl('');
+            setRssHomepageUrl('');
+            setRssDisplayName('');
+            setBilibiliUid('');
+            setXUsername('');
         } catch (e) {
             setToast({ message: e instanceof Error ? e.message : '连接失败', severity: 'error' });
         } finally {
@@ -346,7 +454,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                             <Box>
                                 <Typography variant="h6">外观</Typography>
                                 <Typography variant="body2" color="textSecondary">
-                                    切换浅色 / 深色主题
+                                    浅色：牛皮纸；深色：纯黑
                                 </Typography>
                             </Box>
                             <Box display="flex" alignItems="center" gap={1}>
@@ -362,7 +470,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                         <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>已连接账户</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
-                                管理你的消息来源。目前支持：演示（Mock）、GitHub、邮箱（IMAP）。
+                                管理你的消息来源。目前支持：邮箱（IMAP）、GitHub、RSS/Blog、Bilibili、X、演示数据。
                             </Typography>
                             
                             <List>
@@ -387,7 +495,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                         >
                                             <ListItemAvatar>
                                                 <Avatar sx={{ bgcolor: 'action.hover', color: 'text.primary' }}>
-                                                    {account.provider === 'github' ? <GitHubIcon /> : <EmailIcon />}
+                                                    {accountIcon(account.provider)}
                                                 </Avatar>
                                             </ListItemAvatar>
                                             <ListItemText 
@@ -401,9 +509,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                             </List>
 
                             <Box mt={4} p={3} bgcolor="action.hover" borderRadius={4}>
-                                <Typography variant="subtitle2" fontWeight="bold" mb={0.5}>连接新账户</Typography>
+                                <Typography variant="subtitle2" fontWeight="bold" mb={0.5}>连接新来源（简化版）</Typography>
                                 <Typography variant="caption" color="textSecondary">
-                                    选择一个来源并一键连接；连接成功后会自动尝试同步一次以验证配置。
+                                    只填必要字段，连接后自动同步一次验证。
                                 </Typography>
 
                                 <Box mt={2.5}>
@@ -415,11 +523,14 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 size="small"
                                                 label="来源类型"
                                                 value={newProvider}
-                                                onChange={(e) => setNewProvider(e.target.value as any)}
+                                                onChange={(e) => setNewProvider(e.target.value as SourceProvider)}
                                                 SelectProps={{ native: true }}
                                             >
                                                 <option value="imap">邮箱（IMAP）</option>
                                                 <option value="github">GitHub 通知</option>
+                                                <option value="rss">RSS / Blog</option>
+                                                <option value="bilibili">Bilibili UP 动态</option>
+                                                <option value="x">X 用户更新</option>
                                                 <option value="mock">演示数据</option>
                                             </TextField>
                                         </Grid>
@@ -494,7 +605,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="info" sx={{ borderRadius: 3 }}>
-                                                        Gmail / Outlook 通常需要“应用专用密码（App Password）”。若连接失败，请先确认：已开启 IMAP、账号已生成授权码、并使用正确的 IMAP 主机与端口。
+                                                        三步完成：① 开启 IMAP；② 生成授权码；③ 填写邮箱 + 授权码。连接失败时再展开高级设置核对主机与端口。
                                                     </Alert>
                                                 </Grid>
 
@@ -560,6 +671,94 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             </>
                                         )}
 
+                                        {newProvider === 'rss' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 8 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="RSS / Atom 地址"
+                                                        value={rssFeedUrl}
+                                                        onChange={(e) => setRssFeedUrl(e.target.value)}
+                                                        placeholder="https://example.com/feed.xml"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 4 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        onClick={() => {
+                                                            setRssFeedUrl('https://www.anthropic.com/news/rss.xml');
+                                                            setRssHomepageUrl('https://www.anthropic.com/news');
+                                                            setRssDisplayName('Claude Blog');
+                                                        }}
+                                                    >
+                                                        一键填入 Claude Blog
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="显示名称（可选）"
+                                                        value={rssDisplayName}
+                                                        onChange={(e) => setRssDisplayName(e.target.value)}
+                                                        placeholder="例如：Claude Blog"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="主页链接（可选）"
+                                                        value={rssHomepageUrl}
+                                                        onChange={(e) => setRssHomepageUrl(e.target.value)}
+                                                        placeholder="https://example.com"
+                                                    />
+                                                </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'bilibili' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="UP 主 UID"
+                                                        value={bilibiliUid}
+                                                        onChange={(e) => setBilibiliUid(e.target.value)}
+                                                        placeholder="如：546195"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        使用 RSSHub 订阅 B 站动态，只需 UID，系统会自动生成抓取地址。
+                                                    </Alert>
+                                                </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'x' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="X 用户名"
+                                                        value={xUsername}
+                                                        onChange={(e) => setXUsername(e.target.value)}
+                                                        placeholder="@openai 或 openai"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        使用 RSSHub 订阅 X 更新，只需用户名，系统会自动生成抓取地址。
+                                                    </Alert>
+                                                </Grid>
+                                            </>
+                                        )}
+
                                         {newProvider === 'mock' && (
                                             <Grid size={{ xs: 12 }}>
                                                 <Alert severity="success" sx={{ borderRadius: 3 }}>
@@ -587,29 +786,73 @@ export default function Settings({ onLogout }: SettingsProps) {
                     {/* Agent */}
                     <Grid size={{ xs: 12 }}>
                         <Paper sx={{ p: 4 }}>
-                            <Typography variant="h6" gutterBottom>AI 助手</Typography>
-                            <Typography variant="body2" color="textSecondary" mb={3}>
-                                配置摘要与回复草拟。默认使用内置规则（不会调用外部 API）。
-                            </Typography>
+                            <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
+                                <Box>
+                                    <Typography variant="h6" gutterBottom>AI 助手 / Agent</Typography>
+                                    <Typography variant="body2" color="textSecondary">
+                                        模型列表自动来自 models.dev，可直接选择服务商与模型。
+                                    </Typography>
+                                </Box>
+                                <Button
+                                    variant="outlined"
+                                    startIcon={refreshingCatalog ? <CircularProgress size={16} /> : <RefreshIcon />}
+                                    onClick={handleRefreshCatalog}
+                                    disabled={refreshingCatalog}
+                                >
+                                    刷新模型目录
+                                </Button>
+                            </Box>
 
-                            <Grid container spacing={2} alignItems="center">
+                            <Grid container spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
                                 <Grid size={{ xs: 12, sm: 4 }}>
                                     <TextField
                                         select
                                         fullWidth
                                         size="small"
-                                        label="模式"
+                                        label="服务商"
                                         value={agentProvider}
-                                        onChange={(e) => setAgentProvider(e.target.value as any)}
+                                        onChange={(e) => setAgentProvider(e.target.value)}
                                         SelectProps={{ native: true }}
                                     >
                                         <option value="rule_based">内置规则（免费）</option>
-                                        <option value="openai">OpenAI / 兼容接口</option>
+                                        {(modelCatalog?.providers ?? []).map((provider) => (
+                                            <option key={provider.id} value={provider.id}>
+                                                {provider.name} ({provider.id})
+                                            </option>
+                                        ))}
                                     </TextField>
                                 </Grid>
 
-                                {agentProvider === 'openai' && (
+                                {agentProvider !== 'rule_based' && (
                                     <>
+                                        <Grid size={{ xs: 12, sm: 4 }}>
+                                            {selectedModelProvider?.models?.length ? (
+                                                <TextField
+                                                    select
+                                                    fullWidth
+                                                    size="small"
+                                                    label="模型"
+                                                    value={agentModel}
+                                                    onChange={(e) => setAgentModel(e.target.value)}
+                                                    SelectProps={{ native: true }}
+                                                >
+                                                    {selectedModelProvider.models.map((model) => (
+                                                        <option key={model.id} value={model.id}>
+                                                            {model.name} ({model.id})
+                                                        </option>
+                                                    ))}
+                                                </TextField>
+                                            ) : (
+                                                <TextField
+                                                    fullWidth
+                                                    size="small"
+                                                    label="模型"
+                                                    value={agentModel}
+                                                    onChange={(e) => setAgentModel(e.target.value)}
+                                                    placeholder="输入模型 ID"
+                                                />
+                                            )}
+                                        </Grid>
                                         <Grid size={{ xs: 12, sm: 4 }}>
                                             <TextField
                                                 fullWidth
@@ -617,17 +860,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 label="接口地址（Base URL）"
                                                 value={agentBaseUrl}
                                                 onChange={(e) => setAgentBaseUrl(e.target.value)}
-                                                placeholder="https://api.openai.com/v1"
-                                            />
-                                        </Grid>
-                                        <Grid size={{ xs: 12, sm: 4 }}>
-                                            <TextField
-                                                fullWidth
-                                                size="small"
-                                                label="模型（Model）"
-                                                value={agentModel}
-                                                onChange={(e) => setAgentModel(e.target.value)}
-                                                placeholder="gpt-4o-mini"
+                                                placeholder={selectedModelProvider?.api ?? 'https://api.openai.com/v1'}
                                             />
                                         </Grid>
                                         <Grid size={{ xs: 12, sm: 4 }}>
@@ -637,7 +870,10 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 type="number"
                                                 label="随机度（Temperature）"
                                                 value={agentTemperature}
-                                                onChange={(e) => setAgentTemperature(Number(e.target.value))}
+                                                onChange={(e) => {
+                                                    const value = Number(e.target.value);
+                                                    setAgentTemperature(Number.isFinite(value) ? value : 0.2);
+                                                }}
                                                 inputProps={{ min: 0, max: 2, step: 0.1 }}
                                             />
                                         </Grid>
@@ -646,16 +882,28 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 fullWidth
                                                 size="small"
                                                 type="password"
-                                                label="API Key（可选：留空则沿用已保存的 Key）"
+                                                label="API Key（留空则沿用已保存 Key）"
                                                 value={agentApiKey}
                                                 onChange={(e) => setAgentApiKey(e.target.value)}
                                                 placeholder={agentConfig?.has_api_key ? '已保存（不显示）' : 'sk-...'}
-                                                helperText="建议在后端设置 MERCURYDESK_FERNET_KEY 以加密保存。"
+                                                helperText={
+                                                    selectedModelProvider?.env?.length
+                                                        ? `常用环境变量：${selectedModelProvider.env.join(', ')}`
+                                                        : '建议在后端设置 MERCURYDESK_FERNET_KEY 以加密保存。'
+                                                }
                                             />
                                         </Grid>
                                         <Grid size={{ xs: 12 }}>
                                             <Alert severity="warning" sx={{ borderRadius: 3 }}>
-                                                该配置会保存在本地数据库中。不要在不可信机器上保存 API Key。
+                                                当前通过 OpenAI-Compatible 接口调用模型。请确保 Base URL 与模型 ID 对应同一服务商。
+                                                {selectedModelProvider?.doc && (
+                                                    <>
+                                                        {' '}文档：
+                                                        <Link href={selectedModelProvider.doc} target="_blank" rel="noopener noreferrer">
+                                                            {selectedModelProvider.doc}
+                                                        </Link>
+                                                    </>
+                                                )}
                                             </Alert>
                                         </Grid>
                                     </>
@@ -680,7 +928,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                 <Snackbar 
                     open={!!toast} 
-                    autoHideDuration={4000} 
+                    autoHideDuration={4500} 
                     onClose={() => setToast(null)}
                     anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
                 >

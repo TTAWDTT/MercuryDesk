@@ -7,12 +7,36 @@ import CloseIcon from '@mui/icons-material/Close';
 import CircularProgress from '@mui/material/CircularProgress';
 import Paper from '@mui/material/Paper';
 import Avatar from '@mui/material/Avatar';
+import Link from '@mui/material/Link';
 import { Contact, Message, listMessages, markContactRead } from '../api';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useTheme, alpha } from '@mui/material/styles';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion, AnimatePresence } from 'framer-motion';
+
+const URL_PATTERN = /(https?:\/\/[^\s)]+)(?=[\s)]|$)/g;
+
+function renderTextWithLinks(text: string) {
+  return text.split(URL_PATTERN).map((part, index) => {
+    if (!part) return null;
+    if (part.startsWith('http://') || part.startsWith('https://')) {
+      return (
+        <Link
+          key={`${part}-${index}`}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          underline="hover"
+          sx={{ wordBreak: 'break-all' }}
+        >
+          {part}
+        </Link>
+      );
+    }
+    return <React.Fragment key={`${index}-${part.slice(0, 12)}`}>{part}</React.Fragment>;
+  });
+}
 
 interface ConversationDrawerProps {
   open: boolean;
@@ -163,8 +187,12 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
                   {msg.subject}
                 </Typography>
                 
-                <Typography variant="body2" color="textSecondary" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                  {msg.body_preview}
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, wordBreak: 'break-word' }}
+                >
+                  {renderTextWithLinks(msg.body_preview)}
                 </Typography>
 
                 {msg.summary && (

@@ -60,6 +60,31 @@ export type AgentConfig = {
   has_api_key: boolean;
 };
 
+export type ModelInfo = {
+  id: string;
+  name: string;
+  family?: string | null;
+  reasoning?: boolean | null;
+  tool_call?: boolean | null;
+  temperature?: boolean | null;
+};
+
+export type ModelProviderInfo = {
+  id: string;
+  name: string;
+  api?: string | null;
+  doc?: string | null;
+  env: string[];
+  model_count: number;
+  models: ModelInfo[];
+};
+
+export type ModelCatalogResponse = {
+  source_url: string;
+  fetched_at: string;
+  providers: ModelProviderInfo[];
+};
+
 const TOKEN_KEY = "mercurydesk_token";
 let tokenCache: string | null | undefined;
 
@@ -149,6 +174,11 @@ export async function createAccount(payload: {
   imap_username?: string | null;
   imap_password?: string | null;
   imap_mailbox?: string | null;
+  feed_url?: string | null;
+  feed_homepage_url?: string | null;
+  feed_display_name?: string | null;
+  bilibili_uid?: string | null;
+  x_username?: string | null;
 }): Promise<ConnectedAccount> {
   return await fetchJson<ConnectedAccount>("/api/v1/accounts", {
     method: "POST",
@@ -259,4 +289,9 @@ export async function testAgent(): Promise<{ ok: boolean; provider: string; mess
   return await fetchJson<{ ok: boolean; provider: string; message: string }>("/api/v1/agent/test", {
     method: "POST"
   });
+}
+
+export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalogResponse> {
+  const qs = forceRefresh ? "?force_refresh=true" : "";
+  return await fetchJson<ModelCatalogResponse>(`/api/v1/agent/catalog${qs}`);
 }

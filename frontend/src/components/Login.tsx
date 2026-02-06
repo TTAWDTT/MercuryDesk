@@ -59,33 +59,11 @@ export default function Login(props: { onAuthed: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: `radial-gradient(circle at 50% 50%, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${theme.palette.background.default} 50%)`,
+        background: `radial-gradient(circle at 20% 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.1 : 0.16)} 0%, ${theme.palette.background.default} 45%)`,
         position: 'relative',
         overflow: 'hidden',
       }}
     >
-      {/* Decorative background elements */}
-      <Box 
-        component={motion.div}
-        animate={{ 
-          scale: [1, 1.2, 1],
-          rotate: [0, 90, 0],
-          opacity: [0.3, 0.5, 0.3] 
-        }}
-        transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-        sx={{
-          position: 'absolute',
-          top: '-10%',
-          right: '-5%',
-          width: '500px',
-          height: '500px',
-          borderRadius: '50%',
-          background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.2)} 0%, transparent 70%)`,
-          filter: 'blur(60px)',
-          zIndex: 0,
-        }} 
-      />
-      
       <Container maxWidth="xs" sx={{ zIndex: 1 }}>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -99,10 +77,11 @@ export default function Login(props: { onAuthed: () => void }) {
               p: 5, 
               width: '100%', 
               borderRadius: 4,
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-              backdropFilter: 'blur(20px)',
-              background: alpha(theme.palette.background.paper, 0.8),
-              boxShadow: '0 20px 40px -10px rgba(0,0,0,0.1)',
+              border: '1px solid',
+              borderColor: 'divider',
+              backdropFilter: 'blur(10px)',
+              background: alpha(theme.palette.background.paper, theme.palette.mode === 'light' ? 0.88 : 0.92),
+              boxShadow: theme.palette.mode === 'light' ? '0 20px 40px -10px rgba(58,32,12,0.12)' : 'none',
             }}
           >
             <Box textAlign="center" mb={4}>
@@ -111,12 +90,12 @@ export default function Login(props: { onAuthed: () => void }) {
                   width: 48, 
                   height: 48, 
                   borderRadius: 3, 
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+                  background: theme.palette.mode === 'light' ? '#2F2115' : '#EFE3CF',
                   margin: '0 auto 16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: 'white',
+                  color: theme.palette.mode === 'light' ? '#F6EADA' : '#1A140E',
                   fontWeight: 'bold',
                   fontSize: '24px'
                 }}
