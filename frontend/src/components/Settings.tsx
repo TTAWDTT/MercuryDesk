@@ -543,7 +543,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             } else if (newProvider === 'forward') {
                 const sourceEmail = forwardSourceEmail.trim().toLowerCase();
                 if (!sourceEmail) throw new Error('请填写要接入的邮箱地址');
-                if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(sourceEmail)) {
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sourceEmail)) {
                     throw new Error('请输入有效的邮箱地址');
                 }
                 const created = await createAccount({
@@ -1256,7 +1256,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="info" sx={{ borderRadius: 3 }}>
-                                                        使用 RSSHub 订阅 B 站动态，只需 UID，系统会自动生成抓取地址。
+                                                        使用 B 站公开页面抓取 UP 最新视频动态；若抓取失败会自动回退订阅源抓取。
                                                     </Alert>
                                                 </Grid>
                                             </>

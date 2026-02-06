@@ -12,6 +12,7 @@ from app.connectors.github import GitHubNotificationsConnector
 from app.connectors.imap import ImapConnector
 from app.connectors.mock import MockConnector
 from app.connectors.outlook import OutlookConnector
+from app.connectors.bilibili import BilibiliConnector
 from app.connectors.x import XConnector
 from app.crud import (
     create_message,
@@ -96,7 +97,26 @@ def _connector_for(db: Session, account: ConnectedAccount):
             fallback_feed_url=normalized_feed_url,
             default_sender=(config.display_name or account.identifier or "x"),
         )
-    if provider in {"rss", "bilibili"}:
+    if provider == "bilibili":
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None:
+            raise ValueError("bilibili account requires feed configuration")
+        normalized_feed_url = normalize_feed_url(config.feed_url) if config.feed_url else None
+        if normalized_feed_url and normalized_feed_url != config.feed_url:
+            config.feed_url = normalized_feed_url
+            db.add(config)
+            db.flush()
+        uid_hint = account.identifier
+        if not uid_hint and config.homepage_url:
+            uid_hint = config.homepage_url
+        if not uid_hint and config.feed_url:
+            uid_hint = config.feed_url
+        return BilibiliConnector(
+            uid=uid_hint or "",
+            fallback_feed_url=normalized_feed_url,
+            default_sender=(config.display_name or account.identifier or "Bilibili"),
+        )
+    if provider == "rss":
         config = db.get(FeedAccountConfig, account.id)
         if config is None or not config.feed_url:
             raise ValueError(f"{provider} account requires feed configuration")

@@ -156,7 +156,8 @@ class ImapConnector:
     ) -> list[IncomingMessage]:
         messages: list[IncomingMessage] = []
         client_factory = IMAP4_SSL if self._use_ssl else IMAP4
-        with client_factory(self._host, self._port) as imap:
+        imap = client_factory(self._host, self._port)
+        try:
             imap.login(self._username, password)
             typ, _data = imap.select(self._mailbox, readonly=True)
             if typ != "OK":
@@ -208,6 +209,11 @@ class ImapConnector:
                         received_at=received_at,
                     )
                 )
+        finally:
+            try:
+                imap.logout()
+            except Exception:
+                pass
         return messages
 
     def fetch_new_messages(self, *, since: datetime | None) -> list[IncomingMessage]:
