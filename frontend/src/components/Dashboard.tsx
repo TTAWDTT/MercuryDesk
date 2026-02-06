@@ -3,6 +3,12 @@ import useSWR from 'swr';
 import Box from '@mui/material/Box';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import Dialog from '@mui/material/Dialog';
+import DialogTitle from '@mui/material/DialogTitle';
+import DialogContent from '@mui/material/DialogContent';
+import DialogActions from '@mui/material/DialogActions';
+import Typography from '@mui/material/Typography';
+import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Divider from '@mui/material/Divider';
@@ -11,7 +17,7 @@ import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
 import { GuideCards } from './GuideCards';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { Contact, ConnectedAccount, createAccount, syncAccount } from '../api';
+import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
@@ -24,7 +30,9 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(null);
+  const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
+  const [gmailPromptOpen, setGmailPromptOpen] = useState(false);
+  const [bindingGmail, setBindingGmail] = useState(false);
 
   const debouncedQuery = useDebouncedValue(searchQuery, 300);
 
@@ -37,6 +45,119 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
   const { data: contacts, mutate: mutateContacts } = useSWR<Contact[]>(contactsKey);
   const { data: accounts, mutate: mutateAccounts } = useSWR<ConnectedAccount[]>('/api/v1/accounts');
+  const hasGmailAccount = useMemo(
+    () => !!accounts?.some((item) => item.provider.toLowerCase() === 'gmail'),
+    [accounts]
+  );
+
+  React.useEffect(() => {
+    if (!accounts) return;
+    if (hasGmailAccount) {
+      setGmailPromptOpen(false);
+      sessionStorage.removeItem('mercurydesk:gmail-bind-dismissed');
+      return;
+    }
+    const dismissed = sessionStorage.getItem('mercurydesk:gmail-bind-dismissed') === '1';
+    if (!dismissed) setGmailPromptOpen(true);
+  }, [accounts, hasGmailAccount]);
+
+  const syncSingleAccount = async (accountId: number, label: string) => {
+    try {
+      const res = await syncAccount(accountId);
+      setToast({ message: `${label}已连接并同步：+${res.inserted}`, severity: 'success' });
+    } catch (error) {
+      setToast({
+        message: error instanceof Error
+          ? `${label}已连接，但首次同步失败（${error.message}）。可稍后在设置中手动同步。`
+          : `${label}已连接，但首次同步失败。可稍后在设置中手动同步。`,
+        severity: 'warning',
+      });
+    }
+  };
+
+  const connectGmailFromPrompt = async () => {
+    if (bindingGmail) return;
+    setBindingGmail(true);
+    const knownIds = new Set(
+      (accounts ?? [])
+        .filter((item) => item.provider.toLowerCase() === 'gmail')
+        .map((item) => item.id)
+    );
+    let allowFallback = false;
+    try {
+      const started = await startAccountOAuth('gmail');
+      const popup = window.open(
+        started.auth_url,
+        'oauth-gmail-login-bind',
+        'width=560,height=760,menubar=no,toolbar=no,status=no'
+      );
+      if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
+      allowFallback = true;
+
+      const result = await new Promise<{ ok: boolean; account_id?: number; error?: string }>((resolve, reject) => {
+        let onMessage: (event: MessageEvent) => void;
+        let settled = false;
+        const finish = (
+          fn: (value: { ok: boolean; account_id?: number; error?: string } | Error) => void,
+          value: { ok: boolean; account_id?: number; error?: string } | Error
+        ) => {
+          if (settled) return;
+          settled = true;
+          window.clearInterval(watcher);
+          window.clearTimeout(timeout);
+          window.removeEventListener('message', onMessage);
+          fn(value);
+        };
+        const timeout = window.setTimeout(() => finish(reject, new Error('授权超时，请重试')), 180000);
+        const watcher = window.setInterval(() => {
+          if (popup.closed) {
+            window.setTimeout(() => {
+              if (!settled) finish(reject, new Error('授权窗口已关闭'));
+            }, 450);
+          }
+        }, 500);
+        onMessage = (event: MessageEvent) => {
+          const data = event.data as { source?: string; ok?: boolean; account_id?: number; error?: string };
+          if (data?.source !== 'mercurydesk-oauth') return;
+          finish(resolve, { ok: !!data.ok, account_id: data.account_id, error: data.error });
+        };
+        window.addEventListener('message', onMessage);
+      });
+
+      if (!result.ok || !result.account_id) {
+        throw new Error(result.error || 'Gmail 授权失败');
+      }
+      await syncSingleAccount(result.account_id, 'Gmail');
+      setGmailPromptOpen(false);
+      sessionStorage.removeItem('mercurydesk:gmail-bind-dismissed');
+      await Promise.all([mutateAccounts(), mutateContacts()]);
+    } catch (error) {
+      if (allowFallback) {
+        const latest = await listAccounts().catch(() => accounts ?? []);
+        const fallback = latest
+          .filter((item) => item.provider.toLowerCase() === 'gmail' && !knownIds.has(item.id))
+          .sort((a, b) => b.id - a.id)[0];
+        if (fallback) {
+          await syncSingleAccount(fallback.id, 'Gmail');
+          setGmailPromptOpen(false);
+          sessionStorage.removeItem('mercurydesk:gmail-bind-dismissed');
+          await Promise.all([mutateAccounts(), mutateContacts()]);
+          return;
+        }
+      }
+      setToast({
+        message: error instanceof Error ? `Gmail 绑定失败：${error.message}` : 'Gmail 绑定失败',
+        severity: 'error',
+      });
+    } finally {
+      setBindingGmail(false);
+    }
+  };
+
+  const deferGmailBinding = () => {
+    sessionStorage.setItem('mercurydesk:gmail-bind-dismissed', '1');
+    setGmailPromptOpen(false);
+  };
 
   const handleSyncAll = async () => {
     if (syncing) return;
@@ -131,6 +252,23 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           {toast?.message}
         </Alert>
       </Snackbar>
+
+      <Dialog open={gmailPromptOpen} onClose={deferGmailBinding} maxWidth="xs" fullWidth>
+        <DialogTitle>绑定 Gmail（推荐）</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="text.secondary">
+            当前账号尚未授权 Gmail 读取权限。绑定后可自动同步邮件并集中展示在 MercuryDesk。
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={deferGmailBinding} color="inherit">
+            稍后再说
+          </Button>
+          <Button onClick={connectGmailFromPrompt} variant="contained" disabled={bindingGmail}>
+            {bindingGmail ? '授权中…' : '同意并绑定 Gmail'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -42,6 +42,8 @@ npm run dev
 
 ### 连接 Gmail / Outlook（一键授权，推荐）
 
+登录后如果检测到尚未绑定 Gmail，首页会自动弹窗提示授权绑定（可稍后跳过）。
+
 1. 在 Google Cloud / Microsoft Entra 创建 OAuth 应用（Web）
 2. 将回调地址配置为：
    - `http://127.0.0.1:8000/api/v1/accounts/oauth/gmail/callback`
