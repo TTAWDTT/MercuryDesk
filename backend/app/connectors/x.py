@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import re
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape, unescape
 from typing import Any
 
@@ -130,6 +130,36 @@ def _iter_item_contents(entry: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(module_content, dict):
             result.append(module_content)
     return result
+
+
+def _extract_timeline_entries(instructions: object) -> list[dict[str, Any]]:
+    if not isinstance(instructions, list):
+        return []
+    entries: list[dict[str, Any]] = []
+    for instruction in instructions:
+        if not isinstance(instruction, dict):
+            continue
+        single_entry = instruction.get("entry")
+        if isinstance(single_entry, dict):
+            entries.append(single_entry)
+        listed_entries = instruction.get("entries")
+        if isinstance(listed_entries, list):
+            entries.extend([entry for entry in listed_entries if isinstance(entry, dict)])
+    return entries
+
+
+def _extract_bottom_cursor(entries: list[dict[str, Any]]) -> str | None:
+    for entry in entries:
+        entry_id = str(entry.get("entryId") or "").strip().lower()
+        if not entry_id.startswith("cursor-bottom"):
+            continue
+        content = entry.get("content")
+        if not isinstance(content, dict):
+            continue
+        value = str(content.get("value") or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _extract_first_image_url(legacy: dict[str, Any]) -> str | None:
@@ -362,47 +392,55 @@ class XConnector:
             canonical_name = str(user_legacy.get("name") or f"@{canonical_screen_name}").strip() or f"@{canonical_screen_name}"
             canonical_avatar_url = _extract_user_avatar_url(user_result, user_legacy)
             timeline_count = min(max(self._max_items * 2, 40), 200)
+            max_pages = 4
+            entries: list[dict[str, Any]] = []
+            cursor: str | None = None
+            seen_cursors: set[str] = set()
 
-            tweets_payload = self._call_graphql(
-                client=client,
-                operation_name="UserTweets",
-                query_id=tweets_query_id,
-                variables={
+            for _ in range(max_pages):
+                variables: dict[str, Any] = {
                     "userId": rest_id,
                     "count": timeline_count,
                     "includePromotedContent": False,
                     "withQuickPromoteEligibilityTweetFields": True,
                     "withVoice": True,
                     "withV2Timeline": True,
-                },
-                feature_switches=tweets_features,
-                field_toggles=tweets_toggles,
-                headers=api_headers,
-            )
+                }
+                if cursor:
+                    variables["cursor"] = cursor
 
-        timeline = (
-            tweets_payload.get("data", {})
-            .get("user", {})
-            .get("result", {})
-            .get("timeline", {})
-            .get("timeline", {})
-        )
-        instructions = timeline.get("instructions") if isinstance(timeline, dict) else None
-        if not isinstance(instructions, list):
-            return []
+                tweets_payload = self._call_graphql(
+                    client=client,
+                    operation_name="UserTweets",
+                    query_id=tweets_query_id,
+                    variables=variables,
+                    feature_switches=tweets_features,
+                    field_toggles=tweets_toggles,
+                    headers=api_headers,
+                )
 
-        entries: list[dict[str, Any]] = []
-        for instruction in instructions:
-            if not isinstance(instruction, dict):
-                continue
-            single_entry = instruction.get("entry")
-            if isinstance(single_entry, dict):
-                entries.append(single_entry)
-            listed_entries = instruction.get("entries")
-            if isinstance(listed_entries, list):
-                entries.extend([entry for entry in listed_entries if isinstance(entry, dict)])
+                timeline = (
+                    tweets_payload.get("data", {})
+                    .get("user", {})
+                    .get("result", {})
+                    .get("timeline", {})
+                    .get("timeline", {})
+                )
+                instructions = timeline.get("instructions") if isinstance(timeline, dict) else None
+                page_entries = _extract_timeline_entries(instructions)
+                if not page_entries:
+                    break
+                entries.extend(page_entries)
+
+                next_cursor = _extract_bottom_cursor(page_entries)
+                if not next_cursor or next_cursor in seen_cursors:
+                    break
+                seen_cursors.add(next_cursor)
+                cursor = next_cursor
 
         since_utc = since.astimezone(timezone.utc) if since is not None else None
+        if since_utc is not None:
+            since_utc = since_utc - timedelta(hours=24)
         messages: list[IncomingMessage] = []
         seen_ids: set[str] = set()
         for entry in entries:

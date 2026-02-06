@@ -148,9 +148,11 @@ _TWEETS_RESPONSE = {
 def _build_transport(
     user_response: dict | None = None,
     tweets_response: dict | None = None,
+    tweets_pages: dict[str | None, dict] | None = None,
 ) -> httpx.MockTransport:
     effective_user_response = user_response or _USER_RESPONSE
     effective_tweets_response = tweets_response or _TWEETS_RESPONSE
+    effective_tweets_pages = tweets_pages or {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if (
@@ -175,6 +177,12 @@ def _build_transport(
             field_toggles = json.loads(request.url.params.get("fieldToggles", "{}"))
             assert features == {"tf_1": False}
             assert field_toggles == {"tt_1": False, "tt_2": False}
+            variables = json.loads(request.url.params.get("variables", "{}"))
+            cursor = variables.get("cursor")
+            if cursor in effective_tweets_pages:
+                return httpx.Response(200, json=effective_tweets_pages[cursor])
+            if cursor is None and None in effective_tweets_pages:
+                return httpx.Response(200, json=effective_tweets_pages[None])
             return httpx.Response(200, json=effective_tweets_response)
 
         raise AssertionError(f"unexpected request: {request.method} {request.url!s}")
@@ -209,7 +217,7 @@ def test_x_connector_applies_since_filter():
     since = datetime(2026, 2, 5, 9, 0, tzinfo=timezone.utc)
     messages = connector.fetch_new_messages(since=since)
 
-    assert [message.external_id for message in messages] == ["201"]
+    assert [message.external_id for message in messages] == ["201", "200"]
 
 
 def test_x_connector_accepts_partial_dependency_error_when_data_exists():
@@ -298,3 +306,94 @@ def test_x_connector_uses_snowflake_time_and_sorts_latest_first():
     messages = connector.fetch_new_messages(since=None)
 
     assert [message.external_id for message in messages][:2] == ["2010000000000000000", "2000000000000000000"]
+
+
+def test_x_connector_follows_bottom_cursor_for_next_page():
+    first_page = {
+        "data": {
+            "user": {
+                "result": {
+                    "timeline": {
+                        "timeline": {
+                            "instructions": [
+                                {
+                                    "type": "TimelineAddEntries",
+                                    "entries": [
+                                        {
+                                            "entryId": "tweet-2020000000000000000",
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {
+                                                        "result": {
+                                                            "__typename": "Tweet",
+                                                            "rest_id": "2020000000000000000",
+                                                            "legacy": {"full_text": "page1", "entities": {}},
+                                                            "core": {"user_results": {"result": {"legacy": {"screen_name": "openai"}}}},
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        },
+                                        {
+                                            "entryId": "cursor-bottom-1",
+                                            "content": {"value": "CURSOR_2", "cursorType": "Bottom"},
+                                        },
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+    second_page = {
+        "data": {
+            "user": {
+                "result": {
+                    "timeline": {
+                        "timeline": {
+                            "instructions": [
+                                {
+                                    "type": "TimelineAddEntries",
+                                    "entries": [
+                                        {
+                                            "entryId": "tweet-2030000000000000000",
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {
+                                                        "result": {
+                                                            "__typename": "Tweet",
+                                                            "rest_id": "2030000000000000000",
+                                                            "legacy": {"full_text": "page2", "entities": {}},
+                                                            "core": {"user_results": {"result": {"legacy": {"screen_name": "openai"}}}},
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    connector = XConnector(
+        username="openai",
+        transport=_build_transport(
+            tweets_pages={
+                None: first_page,
+                "CURSOR_2": second_page,
+            }
+        ),
+        max_items=10,
+    )
+    messages = connector.fetch_new_messages(since=None)
+
+    external_ids = [message.external_id for message in messages]
+    assert "2020000000000000000" in external_ids
+    assert "2030000000000000000" in external_ids
