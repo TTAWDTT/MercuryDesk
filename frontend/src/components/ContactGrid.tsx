@@ -37,7 +37,20 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
 
   if (loading || !contacts) {
       return (
-        <Box p={{ xs: 2, md: 5 }}>
+        <Box
+          p={{ xs: 2, md: 5 }}
+          sx={{
+            position: 'relative',
+            '&::before': {
+              content: '""',
+              position: 'absolute',
+              inset: { xs: 12, md: 22 },
+              borderRadius: 6,
+              pointerEvents: 'none',
+              background: 'radial-gradient(circle at 6% 6%, rgba(86, 134, 255, 0.12) 0%, rgba(86, 134, 255, 0) 50%), radial-gradient(circle at 95% 12%, rgba(34, 188, 246, 0.1) 0%, rgba(34, 188, 246, 0) 46%)',
+            },
+          }}
+        >
             <Box
               sx={{
                 display: 'grid',
@@ -99,6 +112,17 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         exit={{ opacity: 0 }}
         transition={{ duration: 0.5 }}
         p={{ xs: 2, md: 5 }}
+        sx={{
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: { xs: 8, md: 18 },
+            borderRadius: { xs: 3, md: 5 },
+            pointerEvents: 'none',
+            background: 'radial-gradient(circle at 10% 8%, rgba(86, 134, 255, 0.13) 0%, transparent 46%), radial-gradient(circle at 92% 9%, rgba(0, 184, 212, 0.12) 0%, transparent 42%), linear-gradient(132deg, rgba(255,255,255,0.02) 0%, rgba(86,134,255,0.04) 100%)',
+          },
+        }}
       >
         <Box sx={{ mb: { xs: 2.5, md: 3 } }}>
           <Typography
@@ -155,13 +179,25 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
   }
 
   return (
-    <Box 
+      <Box 
         component={motion.div}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.5 }}
         p={{ xs: 2, md: 5 }}
+        sx={{
+          position: 'relative',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            inset: { xs: 10, md: 20 },
+            borderRadius: { xs: 3, md: 6 },
+            pointerEvents: 'none',
+            background:
+              'radial-gradient(circle at 8% 10%, rgba(86, 134, 255, 0.13) 0%, transparent 44%), radial-gradient(circle at 90% 8%, rgba(0, 174, 255, 0.1) 0%, transparent 40%)',
+          },
+        }}
     >
         <Box
           sx={{
