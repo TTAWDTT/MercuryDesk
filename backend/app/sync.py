@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +23,14 @@ from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccount
 from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
+
+
+def _normalize_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _connector_for(db: Session, account: ConnectedAccount):
@@ -111,7 +120,7 @@ def _try_refresh_oauth_token(db: Session, *, account: ConnectedAccount) -> bool:
 def sync_account(db: Session, *, account: ConnectedAccount) -> int:
     connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
-    since = account.last_synced_at
+    since = _normalize_utc(account.last_synced_at)
 
     try:
         incoming_messages = connector.fetch_new_messages(since=since)
@@ -164,6 +173,7 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
         if incoming.external_id and incoming.external_id in existing_external_ids.get(incoming.source, set()):
             continue
 
+        received_at = _normalize_utc(incoming.received_at) or datetime.now(timezone.utc)
         contact = contacts_by_handle[incoming.sender]
         summary = summarizer.summarize(incoming.body)
         msg = create_message(
@@ -175,14 +185,14 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
             sender=incoming.sender,
             subject=incoming.subject,
             body=incoming.body,
-            received_at=incoming.received_at,
+            received_at=received_at,
             summary=summary,
             skip_external_id_check=True,
         )
         if msg is None:
             continue
         inserted += 1
-        touch_contact_last_message(db, contact=contact, received_at=incoming.received_at)
+        touch_contact_last_message(db, contact=contact, received_at=received_at)
 
     touch_account_sync(db, account=account)
     db.commit()

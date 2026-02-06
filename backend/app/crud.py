@@ -455,8 +455,12 @@ def upsert_agent_config(
 
 
 def touch_contact_last_message(db: Session, *, contact: Contact, received_at: datetime) -> None:
-    if contact.last_message_at is None or received_at > contact.last_message_at:
-        contact.last_message_at = received_at
+    received_utc = received_at if received_at.tzinfo else received_at.replace(tzinfo=timezone.utc)
+    current = contact.last_message_at
+    if current is not None and current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    if current is None or received_utc > current:
+        contact.last_message_at = received_utc
 
 
 def touch_account_sync(db: Session, *, account: ConnectedAccount) -> None:

@@ -28,5 +28,5 @@ class MockConnector:
         ]
         if since is None:
             return msgs
-        return [m for m in msgs if m.received_at > since]
-
+        since_utc = since if since.tzinfo else since.replace(tzinfo=timezone.utc)
+        return [m for m in msgs if m.received_at > since_utc]

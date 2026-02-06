@@ -155,6 +155,8 @@ def test_register_login_sync_and_list():
         sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
         assert sync.status_code == 200, sync.text
         assert sync.json()["inserted"] >= 1
+        sync_again = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
+        assert sync_again.status_code == 200, sync_again.text
 
         accounts = client.get("/api/v1/accounts", headers=headers)
         assert accounts.status_code == 200, accounts.text
