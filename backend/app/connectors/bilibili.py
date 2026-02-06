@@ -14,6 +14,7 @@ from app.services.avatar import normalize_http_avatar_url
 _UID_RE = re.compile(r"\d{3,20}")
 _SPACE_UID_RE = re.compile(r"space\.bilibili\.com/(\d{3,20})", flags=re.IGNORECASE)
 _BVID_RE = re.compile(r"\b(BV[0-9A-Za-z]{10})\b")
+_FACE_URL_RE = re.compile(r"(https?://[^\s)\]]*/bfs/face/[^\s)\]]+)", flags=re.IGNORECASE)
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -102,7 +103,7 @@ class BilibiliConnector:
         self._max_items = max(1, max_items)
         self._transport = transport
 
-    def _discover_bvids(self, *, client: httpx.Client) -> list[str]:
+    def _discover_bvids(self, *, client: httpx.Client) -> tuple[list[str], str | None]:
         if not self._uid:
             raise ValueError("Bilibili 订阅缺少有效 UID")
 
@@ -122,8 +123,14 @@ class BilibiliConnector:
                 continue
             body = response.text or ""
             bvids = _unique_bvids(_BVID_RE.findall(body))
+            face_match = _FACE_URL_RE.search(body)
+            fallback_avatar = (
+                normalize_http_avatar_url(face_match.group(1))
+                if face_match
+                else None
+            )
             if bvids:
-                return bvids
+                return bvids, fallback_avatar
 
         raise ValueError("未能从 B 站页面解析到视频列表")
 
@@ -155,7 +162,7 @@ class BilibiliConnector:
             headers={"User-Agent": _DEFAULT_USER_AGENT},
             transport=self._transport,
         ) as client:
-            bvids = self._discover_bvids(client=client)
+            bvids, fallback_avatar = self._discover_bvids(client=client)
             messages: list[IncomingMessage] = []
             for bvid in bvids:
                 detail = self._fetch_video_detail(client=client, bvid=bvid)
@@ -173,7 +180,7 @@ class BilibiliConnector:
                 cover = normalize_http_avatar_url(detail.get("pic"))
                 owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
                 sender = str(owner.get("name") or self._default_sender).strip() or self._default_sender
-                sender_avatar_url = normalize_http_avatar_url(owner.get("face"))
+                sender_avatar_url = normalize_http_avatar_url(owner.get("face")) or fallback_avatar
 
                 messages.append(
                     IncomingMessage(

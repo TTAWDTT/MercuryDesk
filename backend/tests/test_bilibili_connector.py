@@ -10,6 +10,7 @@ _VIDEO_PAGE_MARKDOWN = """
 Title: test
 
 Markdown Content:
+![UP avatar](https://i2.hdslb.com/bfs/face/fallback_up.jpg)
 [video a](https://www.bilibili.com/video/BV1111111111/)
 [video a duplicate](https://www.bilibili.com/video/BV1111111111/)
 [video b](https://www.bilibili.com/video/BV2222222222/)
@@ -62,6 +63,33 @@ def _build_transport() -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
+def _build_transport_without_owner_face() -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "r.jina.ai":
+            return httpx.Response(200, text=_VIDEO_PAGE_MARKDOWN)
+
+        if request.url.host == "api.bilibili.com" and request.url.path.endswith("/x/web-interface/view"):
+            bvid = str(request.url.params.get("bvid") or "")
+            return httpx.Response(
+                200,
+                json={
+                    "code": 0,
+                    "data": {
+                        "bvid": bvid,
+                        "title": f"Video {bvid}",
+                        "desc": "desc",
+                        "pubdate": 1700001000,
+                        "pic": "http://img.example.com/cover.jpg",
+                        "owner": {"name": "UP No Face"},
+                    },
+                },
+            )
+
+        raise AssertionError(f"unexpected request: {request.method} {request.url!s}")
+
+    return httpx.MockTransport(handler)
+
+
 def test_bilibili_connector_fetches_and_deduplicates_bvids():
     connector = BilibiliConnector(
         uid="bilibili:174501086",
@@ -90,3 +118,16 @@ def test_bilibili_connector_applies_since_filter():
     messages = connector.fetch_new_messages(since=since)
 
     assert [message.external_id for message in messages] == ["BV2222222222"]
+
+
+def test_bilibili_connector_uses_page_avatar_fallback():
+    connector = BilibiliConnector(
+        uid="174501086",
+        transport=_build_transport_without_owner_face(),
+        max_items=1,
+    )
+
+    messages = connector.fetch_new_messages(since=None)
+
+    assert len(messages) == 1
+    assert messages[0].sender_avatar_url == "https://i2.hdslb.com/bfs/face/fallback_up.jpg"
