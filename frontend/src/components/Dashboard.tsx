@@ -75,6 +75,24 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     }
   };
 
+  const showGmailOAuthSetupGuide = (popup: Window, message: string): boolean => {
+    if (!message.includes('未配置 client_id/client_secret')) return false;
+    popup.document.title = 'Gmail OAuth 未配置';
+    popup.document.body.innerHTML = `
+      <div style="font-family:system-ui;padding:20px;line-height:1.65">
+        <h3 style="margin:0 0 8px">未完成 Gmail OAuth 配置</h3>
+        <p style="margin:0 0 12px">${message}</p>
+        <ol style="margin:0 0 12px;padding-left:20px">
+          <li>在后端配置：<code>MERCURYDESK_GMAIL_CLIENT_ID</code> 与 <code>MERCURYDESK_GMAIL_CLIENT_SECRET</code></li>
+          <li>Google 回调地址：<code>http://127.0.0.1:8000/api/v1/accounts/oauth/gmail/callback</code></li>
+          <li>重启后端后再次点击“同意并绑定 Gmail”</li>
+        </ol>
+        <p style="margin:0;color:#6b7280">建议在 <code>backend</code> 目录启动后端，确保读取到环境变量。</p>
+      </div>
+    `;
+    return true;
+  };
+
   const connectGmailFromPrompt = async () => {
     if (bindingGmail) return;
     setBindingGmail(true);
@@ -137,7 +155,8 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       sessionStorage.removeItem('mercurydesk:gmail-bind-dismissed');
       await Promise.all([mutateAccounts(), mutateContacts()]);
     } catch (error) {
-      if (popup && !popup.closed) popup.close();
+      const message = error instanceof Error ? error.message : String(error);
+      if (popup && !popup.closed && !showGmailOAuthSetupGuide(popup, message)) popup.close();
       if (allowFallback) {
         const latest = await listAccounts().catch(() => accounts ?? []);
         const fallback = latest
@@ -152,7 +171,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         }
       }
       setToast({
-        message: error instanceof Error ? `Gmail 绑定失败：${error.message}` : 'Gmail 绑定失败',
+        message: `Gmail 绑定失败：${message}`,
         severity: 'error',
       });
     } finally {

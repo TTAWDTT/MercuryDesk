@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_DIR = Path(__file__).resolve().parents[1]
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="MERCURYDESK_",
-        env_file=(".env", "backend/.env"),
+        env_file=(str(_BACKEND_DIR / ".env"), ".env", "backend/.env"),
         extra="ignore",
     )
 

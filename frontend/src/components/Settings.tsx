@@ -292,6 +292,29 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
+    const showOAuthSetupGuide = (popup: Window, provider: 'gmail' | 'outlook', message: string): boolean => {
+        if (!message.includes('未配置 client_id/client_secret')) return false;
+        const envHint =
+            provider === 'gmail'
+                ? 'MERCURYDESK_GMAIL_CLIENT_ID / MERCURYDESK_GMAIL_CLIENT_SECRET'
+                : 'MERCURYDESK_OUTLOOK_CLIENT_ID / MERCURYDESK_OUTLOOK_CLIENT_SECRET';
+        const callbackUrl = `http://127.0.0.1:8000/api/v1/accounts/oauth/${provider}/callback`;
+        popup.document.title = 'OAuth 未配置';
+        popup.document.body.innerHTML = `
+          <div style="font-family:system-ui;padding:20px;line-height:1.65">
+            <h3 style="margin:0 0 8px">未完成 ${provider === 'gmail' ? 'Gmail' : 'Outlook'} OAuth 配置</h3>
+            <p style="margin:0 0 12px">${message}</p>
+            <ol style="margin:0 0 12px;padding-left:20px">
+              <li>在后端环境变量设置：<code>${envHint}</code></li>
+              <li>OAuth 回调地址填：<code>${callbackUrl}</code></li>
+              <li>重启后端后再次点击授权</li>
+            </ol>
+            <p style="margin:0;color:#6b7280">提示：建议在 <code>backend</code> 目录启动后端。</p>
+          </div>
+        `;
+        return true;
+    };
+
     const connectOAuth = async (provider: 'gmail' | 'outlook') => {
         setOauthConnecting(provider);
         const knownAccountIds = new Set<number>();
@@ -365,7 +388,8 @@ export default function Settings({ onLogout }: SettingsProps) {
             await postConnectSync(result.account_id, provider === 'gmail' ? 'Gmail' : 'Outlook');
             mutateAccounts();
         } catch (error) {
-            if (popup && !popup.closed) popup.close();
+            const message = error instanceof Error ? error.message : String(error);
+            if (popup && !popup.closed && !showOAuthSetupGuide(popup, provider, message)) popup.close();
             if (allowFallback) {
                 const fallbackAccount = await findNewOAuthAccount(provider, knownAccountIds);
                 if (fallbackAccount) {
@@ -373,7 +397,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     return;
                 }
             }
-            throw error;
+            throw new Error(message);
         } finally {
             setOauthConnecting(null);
         }

@@ -62,6 +62,15 @@ npm run dev
   - `MERCURYDESK_GMAIL_CLIENT_SECRET`
 - 确认后端进程重启后生效，并且使用与回调地址一致的启动方式（推荐在 `backend` 目录启动）。
 
+PowerShell 临时设置示例（当前终端有效）：
+
+```powershell
+$env:MERCURYDESK_GMAIL_CLIENT_ID="你的_client_id"
+$env:MERCURYDESK_GMAIL_CLIENT_SECRET="你的_client_secret"
+cd backend
+python -m uvicorn app.main:app --reload --port 8000
+```
+
 ### 连接真实邮箱（IMAP）
 
 1. 进入 `设置 -> 已连接来源 -> 选择邮箱（IMAP）`
