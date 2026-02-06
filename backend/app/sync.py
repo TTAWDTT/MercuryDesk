@@ -218,11 +218,17 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
 
     inserted = 0
     for incoming in incoming_messages:
+        contact = contacts_by_handle[incoming.sender]
+        if incoming.sender_avatar_url:
+            normalized_avatar = incoming.sender_avatar_url.strip()
+            if normalized_avatar and contact.avatar_url != normalized_avatar:
+                contact.avatar_url = normalized_avatar
+                db.add(contact)
+
         if incoming.external_id and incoming.external_id in existing_external_ids.get(incoming.source, set()):
             continue
 
         received_at = _normalize_utc(incoming.received_at) or datetime.now(timezone.utc)
-        contact = contacts_by_handle[incoming.sender]
         summary = None if incoming.source in {"rss", "bilibili", "x"} else summarizer.summarize(incoming.body)
         msg = create_message(
             db,

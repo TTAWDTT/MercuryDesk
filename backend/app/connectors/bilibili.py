@@ -9,6 +9,7 @@ import httpx
 
 from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
+from app.services.avatar import normalize_http_avatar_url
 
 _UID_RE = re.compile(r"\d{3,20}")
 _SPACE_UID_RE = re.compile(r"space\.bilibili\.com/(\d{3,20})", flags=re.IGNORECASE)
@@ -34,19 +35,6 @@ def _extract_uid(value: str) -> str:
 
     first_digits = _UID_RE.search(candidate)
     return first_digits.group(0) if first_digits else ""
-
-
-def _normalize_cover_url(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    if text.startswith("//"):
-        text = f"https:{text}"
-    if text.startswith("http://") or text.startswith("https://"):
-        return text
-    return None
 
 
 def _to_datetime(value: object) -> datetime:
@@ -182,9 +170,10 @@ class BilibiliConnector:
                 if not description:
                     description = f"UP 主发布了新视频：{title}"
                 link = f"https://www.bilibili.com/video/{bvid}/"
-                cover = _normalize_cover_url(detail.get("pic"))
+                cover = normalize_http_avatar_url(detail.get("pic"))
                 owner = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
                 sender = str(owner.get("name") or self._default_sender).strip() or self._default_sender
+                sender_avatar_url = normalize_http_avatar_url(owner.get("face"))
 
                 messages.append(
                     IncomingMessage(
@@ -199,6 +188,7 @@ class BilibiliConnector:
                             cover_url=cover,
                         ),
                         received_at=received_at,
+                        sender_avatar_url=sender_avatar_url,
                     )
                 )
                 if len(messages) >= self._max_items:

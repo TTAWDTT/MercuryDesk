@@ -13,8 +13,8 @@ class IncomingMessage:
     subject: str
     body: str
     received_at: datetime
+    sender_avatar_url: str | None = None
 
 
 class Connector(Protocol):
     def fetch_new_messages(self, *, since: datetime | None) -> list[IncomingMessage]: ...
-

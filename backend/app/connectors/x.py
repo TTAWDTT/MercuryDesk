@@ -11,6 +11,7 @@ import httpx
 
 from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
+from app.services.avatar import normalize_http_avatar_url
 
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -78,6 +79,17 @@ def _parse_x_datetime(value: object) -> datetime | None:
     try:
         return datetime.strptime(text, _TWITTER_DATETIME_FORMAT).astimezone(timezone.utc)
     except ValueError:
+        return None
+
+
+def _snowflake_datetime_from_id(value: str) -> datetime | None:
+    text = (value or "").strip()
+    if not text.isdigit():
+        return None
+    try:
+        timestamp_ms = (int(text) >> 22) + 1288834974657
+        return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
+    except Exception:
         return None
 
 
@@ -192,6 +204,19 @@ def _build_preview_body(*, title: str, description: str, link: str, preview_imag
     )
     parts.append("</article>")
     return "".join(parts)
+
+
+def _extract_user_avatar_url(user: dict[str, Any], user_legacy: dict[str, Any]) -> str | None:
+    avatar_obj = user.get("avatar")
+    if isinstance(avatar_obj, dict):
+        normalized = normalize_http_avatar_url(avatar_obj.get("image_url"))
+        if normalized:
+            return normalized
+    for key in ("profile_image_url_https", "profile_image_url"):
+        normalized = normalize_http_avatar_url(user_legacy.get(key))
+        if normalized:
+            return normalized
+    return None
 
 
 class XConnector:
@@ -335,6 +360,8 @@ class XConnector:
                 user_legacy = {}
             canonical_screen_name = str(user_legacy.get("screen_name") or self._username).strip() or self._username
             canonical_name = str(user_legacy.get("name") or f"@{canonical_screen_name}").strip() or f"@{canonical_screen_name}"
+            canonical_avatar_url = _extract_user_avatar_url(user_result, user_legacy)
+            timeline_count = min(max(self._max_items * 2, 40), 200)
 
             tweets_payload = self._call_graphql(
                 client=client,
@@ -342,7 +369,7 @@ class XConnector:
                 query_id=tweets_query_id,
                 variables={
                     "userId": rest_id,
-                    "count": self._max_items,
+                    "count": timeline_count,
                     "includePromotedContent": False,
                     "withQuickPromoteEligibilityTweetFields": True,
                     "withVoice": True,
@@ -391,7 +418,11 @@ class XConnector:
                 tweet_id = str(tweet.get("rest_id") or tweet_legacy.get("id_str") or "").strip()
                 if not tweet_id or tweet_id in seen_ids:
                     continue
-                created_at = _parse_x_datetime(tweet_legacy.get("created_at")) or datetime.now(timezone.utc)
+                created_at = (
+                    _parse_x_datetime(tweet_legacy.get("created_at"))
+                    or _snowflake_datetime_from_id(tweet_id)
+                    or datetime.now(timezone.utc)
+                )
                 if since_utc is not None and created_at <= since_utc:
                     continue
 
@@ -405,6 +436,7 @@ class XConnector:
                 tweet_user_legacy = tweet_user.get("legacy")
                 if not isinstance(tweet_user_legacy, dict):
                     tweet_user_legacy = {}
+                sender_avatar_url = _extract_user_avatar_url(tweet_user, tweet_user_legacy) or canonical_avatar_url
 
                 screen_name = str(tweet_user_legacy.get("screen_name") or canonical_screen_name).strip() or canonical_screen_name
                 sender = f"@{screen_name}"
@@ -433,11 +465,11 @@ class XConnector:
                         subject=subject or f"{sender} 更新",
                         body=body,
                         received_at=created_at,
+                        sender_avatar_url=sender_avatar_url,
                     )
                 )
-                if len(messages) >= self._max_items:
-                    return messages
-        return messages
+        messages.sort(key=lambda item: (item.received_at, item.external_id or ""), reverse=True)
+        return messages[: self._max_items]
 
     def fetch_new_messages(self, *, since: datetime | None) -> list[IncomingMessage]:
         try:

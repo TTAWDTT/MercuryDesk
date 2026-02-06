@@ -36,7 +36,7 @@ def _build_transport() -> httpx.MockTransport:
                             "desc": "desc 1",
                             "pubdate": 1700000000,
                             "pic": "//img.example.com/1.jpg",
-                            "owner": {"name": "UP One"},
+                            "owner": {"name": "UP One", "face": "https://img.example.com/up.jpg"},
                         },
                     },
                 )
@@ -51,7 +51,7 @@ def _build_transport() -> httpx.MockTransport:
                             "desc": "desc 2",
                             "pubdate": 1700001000,
                             "pic": "http://img.example.com/2.jpg",
-                            "owner": {"name": "UP One"},
+                            "owner": {"name": "UP One", "face": "https://img.example.com/up.jpg"},
                         },
                     },
                 )
@@ -76,6 +76,7 @@ def test_bilibili_connector_fetches_and_deduplicates_bvids():
     assert messages[0].received_at.tzinfo is not None
     assert "https://www.bilibili.com/video/BV1111111111/" in messages[0].body
     assert "https://img.example.com/1.jpg" in messages[0].body
+    assert messages[0].sender_avatar_url == "https://img.example.com/up.jpg"
 
 
 def test_bilibili_connector_applies_since_filter():

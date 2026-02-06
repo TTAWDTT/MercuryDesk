@@ -9,6 +9,7 @@ from imaplib import IMAP4, IMAP4_SSL
 import re
 
 from app.connectors.base import IncomingMessage
+from app.services.avatar import gravatar_url_for_email
 
 
 class ImapConnector:
@@ -192,6 +193,7 @@ class ImapConnector:
                 msg = BytesParser().parsebytes(raw)
                 name, addr = parseaddr((msg.get("From") or "").strip())
                 sender = addr or name or "unknown"
+                sender_avatar_url = gravatar_url_for_email(addr or sender)
                 subject = self._decode_header_value((msg.get("Subject") or "").strip())
                 body = self._extract_body(msg)
                 received_at = self._parse_received_at(msg)
@@ -207,6 +209,7 @@ class ImapConnector:
                         subject=subject,
                         body=body,
                         received_at=received_at,
+                        sender_avatar_url=sender_avatar_url,
                     )
                 )
         finally:

@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.connectors.base import IncomingMessage
+from app.services.avatar import gravatar_url_for_email
 
 
 def _header_map(headers: list[dict[str, Any]] | None) -> dict[str, str]:
@@ -114,6 +115,7 @@ class GmailConnector:
                 from_value = headers_map.get("from", "")
                 sender_name, sender_email = parseaddr(from_value)
                 sender = sender_email or sender_name or "unknown"
+                sender_avatar_url = gravatar_url_for_email(sender_email or sender)
                 subject = headers_map.get("subject", "")
                 body = _extract_plain(payload)
                 if not body:
@@ -129,6 +131,7 @@ class GmailConnector:
                         subject=subject[:998],
                         body=body,
                         received_at=received_at,
+                        sender_avatar_url=sender_avatar_url,
                     )
                 )
         return incoming

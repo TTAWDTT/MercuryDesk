@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from app.connectors.base import IncomingMessage
+from app.services.avatar import gravatar_url_for_email
 
 
 def _strip_html(text: str) -> str:
@@ -84,6 +85,7 @@ class OutlookConnector:
                     else None
                 )
                 sender = str(sender_address or sender_name or "unknown")
+                sender_avatar_url = gravatar_url_for_email(sender_address or sender)
                 subject = str(item.get("subject") or "").strip()
                 body = str(item.get("bodyPreview") or "").strip()
                 body_obj = item.get("body")
@@ -102,6 +104,7 @@ class OutlookConnector:
                         subject=subject[:998],
                         body=body,
                         received_at=received_at,
+                        sender_avatar_url=sender_avatar_url,
                     )
                 )
         return messages

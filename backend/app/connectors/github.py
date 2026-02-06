@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import httpx
 
 from app.connectors.base import IncomingMessage
+from app.services.avatar import normalize_http_avatar_url
 
 
 class GitHubNotificationsConnector:
@@ -33,6 +34,8 @@ class GitHubNotificationsConnector:
                 datetime.fromisoformat(updated_at.replace("Z", "+00:00")) if updated_at else datetime.now(timezone.utc)
             )
             repo = (item.get("repository") or {}).get("full_name") or "github"
+            owner = (item.get("repository") or {}).get("owner") or {}
+            avatar_url = normalize_http_avatar_url(owner.get("avatar_url"))
             subject = ((item.get("subject") or {}).get("title")) or "GitHub notification"
             external_id = item.get("id")
             sender = repo
@@ -45,7 +48,7 @@ class GitHubNotificationsConnector:
                     subject=subject,
                     body=body,
                     received_at=received_at,
+                    sender_avatar_url=avatar_url,
                 )
             )
         return messages
-

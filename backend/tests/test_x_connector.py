@@ -33,9 +33,11 @@ _USER_RESPONSE = {
         "user": {
             "result": {
                 "rest_id": "4398626122",
+                "avatar": {"image_url": "https://pbs.twimg.com/profile_images/openai_normal.jpg"},
                 "legacy": {
                     "screen_name": "openai",
                     "name": "OpenAI",
+                    "profile_image_url_https": "https://pbs.twimg.com/profile_images/openai_legacy_normal.jpg",
                 },
             }
         }
@@ -84,6 +86,7 @@ _TWEETS_RESPONSE = {
                                                                     "legacy": {
                                                                         "screen_name": "openai",
                                                                         "name": "OpenAI",
+                                                                        "profile_image_url_https": "https://pbs.twimg.com/profile_images/user_normal.jpg",
                                                                     }
                                                                 }
                                                             }
@@ -117,6 +120,7 @@ _TWEETS_RESPONSE = {
                                                                                     "legacy": {
                                                                                         "screen_name": "openai",
                                                                                         "name": "OpenAI",
+                                                                                        "profile_image_url_https": "https://pbs.twimg.com/profile_images/user_normal.jpg",
                                                                                     }
                                                                                 }
                                                                             }
@@ -141,8 +145,12 @@ _TWEETS_RESPONSE = {
 }
 
 
-def _build_transport(user_response: dict | None = None) -> httpx.MockTransport:
+def _build_transport(
+    user_response: dict | None = None,
+    tweets_response: dict | None = None,
+) -> httpx.MockTransport:
     effective_user_response = user_response or _USER_RESPONSE
+    effective_tweets_response = tweets_response or _TWEETS_RESPONSE
 
     def handler(request: httpx.Request) -> httpx.Response:
         if (
@@ -167,7 +175,7 @@ def _build_transport(user_response: dict | None = None) -> httpx.MockTransport:
             field_toggles = json.loads(request.url.params.get("fieldToggles", "{}"))
             assert features == {"tf_1": False}
             assert field_toggles == {"tt_1": False, "tt_2": False}
-            return httpx.Response(200, json=_TWEETS_RESPONSE)
+            return httpx.Response(200, json=effective_tweets_response)
 
         raise AssertionError(f"unexpected request: {request.method} {request.url!s}")
 
@@ -182,13 +190,14 @@ def test_x_connector_fetches_from_x_graphql():
     )
     messages = connector.fetch_new_messages(since=None)
 
-    assert [message.external_id for message in messages] == ["200", "201"]
+    assert [message.external_id for message in messages] == ["201", "200"]
     assert all(message.source == "x" for message in messages)
     assert all(message.sender == "@openai" for message in messages)
-    assert "https://example.com/alpha" in messages[0].body
-    assert "https://img.example.com/alpha.jpg" in messages[0].body
-    assert "https://t.co/media1" not in messages[0].subject
+    assert any("https://example.com/alpha" in message.body for message in messages)
+    assert any("https://img.example.com/alpha.jpg" in message.body for message in messages)
+    assert all("https://t.co/media1" not in message.subject for message in messages)
     assert messages[0].received_at.tzinfo is not None
+    assert all(message.sender_avatar_url == "https://pbs.twimg.com/profile_images/user_normal.jpg" for message in messages)
 
 
 def test_x_connector_applies_since_filter():
@@ -221,4 +230,71 @@ def test_x_connector_accepts_partial_dependency_error_when_data_exists():
 
     messages = connector.fetch_new_messages(since=None)
 
-    assert [message.external_id for message in messages] == ["200", "201"]
+    assert [message.external_id for message in messages] == ["201", "200"]
+
+
+def test_x_connector_uses_snowflake_time_and_sorts_latest_first():
+    response_with_missing_created_at = {
+        "data": {
+            "user": {
+                "result": {
+                    "timeline": {
+                        "timeline": {
+                            "instructions": [
+                                {
+                                    "type": "TimelineAddEntries",
+                                    "entries": [
+                                        {
+                                            "entryId": "tweet-2000000000000000000",
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {
+                                                        "result": {
+                                                            "__typename": "Tweet",
+                                                            "rest_id": "2000000000000000000",
+                                                            "legacy": {
+                                                                "full_text": "older",
+                                                                "entities": {},
+                                                            },
+                                                            "core": {"user_results": {"result": {"legacy": {"screen_name": "openai"}}}},
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        },
+                                        {
+                                            "entryId": "tweet-2010000000000000000",
+                                            "content": {
+                                                "itemContent": {
+                                                    "tweet_results": {
+                                                        "result": {
+                                                            "__typename": "Tweet",
+                                                            "rest_id": "2010000000000000000",
+                                                            "legacy": {
+                                                                "full_text": "newer",
+                                                                "entities": {},
+                                                            },
+                                                            "core": {"user_results": {"result": {"legacy": {"screen_name": "openai"}}}},
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                        },
+                                    ],
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    connector = XConnector(
+        username="openai",
+        transport=_build_transport(tweets_response=response_with_missing_created_at),
+        max_items=10,
+    )
+    messages = connector.fetch_new_messages(since=None)
+
+    assert [message.external_id for message in messages][:2] == ["2010000000000000000", "2000000000000000000"]
