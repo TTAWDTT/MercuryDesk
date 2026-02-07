@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import re
+import urllib.parse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.connectors.base import IncomingMessage
@@ -28,6 +30,8 @@ from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
 from app.services.avatar import gravatar_url_for_email, normalize_http_avatar_url
+
+_X_USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,15}")
 
 
 def _normalize_utc(value: datetime | None) -> datetime | None:
@@ -172,14 +176,13 @@ def _refresh_contact_avatars(
     *,
     user_id: int,
     incoming_messages: list[IncomingMessage],
-) -> int:
+) -> None:
     handles = {message.sender for message in incoming_messages if message.sender and message.sender_avatar_url}
     if not handles:
-        return 0
+        return
 
     contacts = list(db.scalars(select(Contact).where(Contact.user_id == user_id, Contact.handle.in_(handles))))
     contacts_by_handle = {contact.handle: contact for contact in contacts}
-    updated = 0
     for message in incoming_messages:
         if not message.sender_avatar_url:
             continue
@@ -190,14 +193,58 @@ def _refresh_contact_avatars(
         if normalized_avatar and contact.avatar_url != normalized_avatar:
             contact.avatar_url = normalized_avatar
             db.add(contact)
-            updated += 1
-    return updated
+
+
+def _x_sender_hint(value: str | None) -> str | None:
+    candidate = (value or "").strip()
+    if not candidate:
+        return None
+    if candidate.lower().startswith("x:"):
+        candidate = candidate[2:]
+    if "://" in candidate or "x.com/" in candidate.lower() or "twitter.com/" in candidate.lower():
+        parsed = urllib.parse.urlparse(candidate if "://" in candidate else f"https://{candidate}")
+        host = (parsed.netloc or "").lower().strip()
+        parts = [part for part in (parsed.path or "").split("/") if part]
+        if host.endswith("x.com") or host.endswith("twitter.com"):
+            candidate = parts[0] if parts else candidate
+    candidate = candidate.lstrip("@").strip()
+    matched = _X_USERNAME_RE.search(candidate)
+    if not matched:
+        return None
+    return f"@{matched.group(0).lower()}"
+
+
+def _needs_source_backfill(db: Session, *, account: ConnectedAccount) -> bool:
+    provider = account.provider.lower().strip()
+    if provider == "x":
+        sender_hint = _x_sender_hint(account.identifier)
+        if not sender_hint:
+            return True
+        exists = db.scalar(
+            select(Message.id).where(
+                Message.user_id == account.user_id,
+                Message.source == "x",
+                func.lower(Message.sender) == sender_hint,
+            ).limit(1)
+        )
+        return exists is None
+    if provider == "bilibili":
+        exists = db.scalar(
+            select(Message.id).where(
+                Message.user_id == account.user_id,
+                Message.source == "bilibili",
+            ).limit(1)
+        )
+        return exists is None
+    return False
 
 
 def sync_account(db: Session, *, account: ConnectedAccount) -> int:
     connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
     since = _normalize_utc(account.last_synced_at)
+    provider = account.provider.lower().strip()
+    recent_messages: list[IncomingMessage] = []
 
     try:
         incoming_messages = connector.fetch_new_messages(since=since)
@@ -207,13 +254,25 @@ def sync_account(db: Session, *, account: ConnectedAccount) -> int:
             incoming_messages = connector.fetch_new_messages(since=since)
         else:
             raise error
+    if (
+        not incoming_messages
+        and since is not None
+        and provider in {"x", "bilibili"}
+        and _needs_source_backfill(db, account=account)
+    ):
+        try:
+            recent_messages = connector.fetch_new_messages(since=None)
+        except Exception:
+            recent_messages = []
+        if recent_messages:
+            incoming_messages = recent_messages
     if not incoming_messages:
-        provider = account.provider.lower().strip()
         if provider in {"x", "bilibili", "rss"}:
-            try:
-                recent_messages = connector.fetch_new_messages(since=None)
-            except Exception:
-                recent_messages = []
+            if not recent_messages:
+                try:
+                    recent_messages = connector.fetch_new_messages(since=None)
+                except Exception:
+                    recent_messages = []
             _refresh_contact_avatars(
                 db,
                 user_id=account.user_id,

@@ -170,6 +170,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           <Box display="flex" alignItems="center" mb={2}>
             <Avatar 
               src={contact.avatar_url || undefined} 
+              imgProps={{ referrerPolicy: 'no-referrer' }}
               sx={{ 
                   bgcolor: alpha(theme.palette.primary.main, 0.1), 
                   color: theme.palette.primary.main,

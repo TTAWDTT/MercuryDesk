@@ -14,5 +14,6 @@ frontend/.vite/
 
 .DS_Store
 Thumbs.db
+tmpclaude-*-cwd
 
 .obsidian/

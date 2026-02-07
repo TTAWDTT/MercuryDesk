@@ -109,6 +109,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
         <Box display="flex" alignItems="center">
           <Avatar 
             src={contact.avatar_url || undefined} 
+            imgProps={{ referrerPolicy: 'no-referrer' }}
             sx={{ 
                 mr: 2, 
                 width: 48, 
