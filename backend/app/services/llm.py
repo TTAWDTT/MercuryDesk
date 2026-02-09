@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import Iterator
+import json
+from typing import Iterator, Any
 
 import openai
 from app.schemas import AgentConfigOut
@@ -66,7 +67,7 @@ class LLMService:
 
     def chat_stream(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
         tool_executor: Any = None,
     ) -> Iterator[str]:
@@ -121,6 +122,7 @@ class LLMService:
         # 2. Check if we have tool calls to execute
         if tool_calls and tool_executor:
             # Append assistant's tool_call message to history
+            # Convert tool_calls dicts to appropriate format if needed, but the structure matches
             messages.append({
                 "role": "assistant",
                 "tool_calls": tool_calls
@@ -129,17 +131,18 @@ class LLMService:
             # Execute each tool
             for tc in tool_calls:
                 func_name = tc["function"]["name"]
-                args = tc["function"]["arguments"]
+                args_str = tc["function"]["arguments"]
 
                 # Notify frontend we are executing
                 yield f"\n\n> ⚙️ Executing: {func_name}...\n\n"
 
-                result = tool_executor.execute(func_name, args)
+                # Execute
+                result_content = tool_executor.execute(func_name, args_str)
 
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tc["id"],
-                    "content": str(result)
+                    "content": str(result_content)
                 })
 
             # 3. Second Call (with tool results)
@@ -156,6 +159,7 @@ class LLMService:
             except Exception as e:
                 yield f"Error calling tool response: {str(e)}"
 
+    def summarize(self, text: str, stream: bool = False) -> str | Iterator[str]:
         messages = [
             {
                 "role": "system",

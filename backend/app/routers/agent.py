@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Iterator, Literal
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -93,12 +94,44 @@ def chat_stream(
     # Inject Context if needed
     messages = payload.messages
     if payload.context_contact_id:
-        # Fetch simple context about the contact
-        # In a real scenario, we might fetch last N messages here
-        pass
+        contact = crud.get_contact_by_id(db, user_id=current_user.id, contact_id=payload.context_contact_id)
+        if contact:
+            # Fetch recent messages for context
+            recent_msgs = crud.list_messages(db, user_id=current_user.id, contact_id=contact.id, limit=10)
+            context_str = f"Current Contact Context:\nName: {contact.display_name}\nHandle: {contact.handle}\n"
+            if recent_msgs:
+                context_str += "Recent Interactions:\n"
+                for m in reversed(recent_msgs):
+                    context_str += f"- [{m.received_at.strftime('%Y-%m-%d %H:%M')}] {m.sender}: {m.body_preview[:200]}\n"
+            else:
+                context_str += "No recent messages.\n"
+
+            # Insert context as a system message at the beginning
+            messages.insert(0, {"role": "system", "content": context_str})
 
     # Initialize Tool Executor
     executor = ToolExecutor(db, current_user.id)
+
+    # Core System Prompt
+    system_prompt = """You are MercuryDesk AI, an intelligent assistant for a unified messaging platform.
+Your goal is to help the user manage their communications efficiently.
+
+Capabilities:
+1.  **Search**: You can search through the user's message history (emails, DMs, etc.) using the `search_messages` tool.
+2.  **Contact Info**: You can look up details about contacts using `get_contact_info`.
+3.  **Drafting**: You can help draft replies.
+4.  **Summarization**: You can summarize long conversation threads.
+
+Guidelines:
+-   **Be Concise**: Users are busy. Keep responses brief and to the point unless asked for details.
+-   **Context Aware**: Use the provided contact context to answer questions like "What was the last thing he sent?" or "Summarize our chat".
+-   **Proactive**: If a user asks a vague question like "Any updates from John?", use your tools to find out.
+-   **Tone**: Professional yet helpful and friendly.
+
+Current Time: {current_time}
+""".format(current_time=datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+    messages.insert(0, {"role": "system", "content": system_prompt})
 
     try:
         generator = service.chat_stream(

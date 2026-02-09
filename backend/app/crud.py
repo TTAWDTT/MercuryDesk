@@ -359,6 +359,10 @@ def list_contacts(
     ]
 
 
+def get_contact_by_id(db: Session, *, user_id: int, contact_id: int) -> Contact | None:
+    return db.scalar(select(Contact).where(Contact.user_id == user_id, Contact.id == contact_id))
+
+
 def list_messages(
     db: Session,
     *,
