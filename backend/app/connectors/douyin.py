@@ -1,0 +1,532 @@
+"""抖音用户视频订阅连接器
+
+策略链:
+1. Playwright 无头浏览器 — 通过真实 Chromium 渲染页面，自动通过反爬验证，
+   拦截页面 XHR 请求直接获取结构化 JSON 数据。最可靠。
+2. RSSHub 镜像 — 轻量回退，适用于自建 RSSHub 实例配置了 DOUYIN_COOKIE 的情况。
+
+安装:
+    pip install playwright
+    playwright install chromium
+"""
+from __future__ import annotations
+
+import logging
+import os
+import re
+import json
+import threading
+from datetime import datetime, timezone
+from html import escape
+from typing import Any
+
+import httpx
+
+from app.connectors.base import IncomingMessage
+from app.connectors.feed import FeedConnector
+from app.services.avatar import normalize_http_avatar_url
+
+try:
+    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
+    from playwright.sync_api import Error as PlaywrightError
+
+    _HAS_PLAYWRIGHT = True
+except ImportError:
+    sync_playwright = None  # type: ignore[assignment]
+    PlaywrightTimeout = TimeoutError  # type: ignore[assignment, misc]
+    PlaywrightError = Exception  # type: ignore[assignment, misc]
+    _HAS_PLAYWRIGHT = False
+
+logger = logging.getLogger(__name__)
+
+_SEC_UID_RE = re.compile(r"sec_uid=([A-Za-z0-9_-]+)")
+_USER_ID_RE = re.compile(r"user/([A-Za-z0-9_-]+)")
+
+# 浏览器 User-Agent（与 Playwright 里保持一致）
+_CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+# RSSHub 公共镜像（仅作最后回退；自建实例请通过 settings 配置）
+_RSSHUB_MIRRORS: list[str] = [
+    "https://rsshub.rssforever.com",
+    "https://rsshub.moeyy.cn",
+    "https://rsshub-instance.zeabur.app",
+    "https://rsshub.pseudoyu.com",
+]
+
+# API URL 片段，用于从浏览器网络请求中识别视频列表响应
+_POST_API_PATTERN = "/aweme/v1/web/aweme/post/"
+
+
+# =====================================================================
+# 工具函数
+# =====================================================================
+
+
+def _extract_sec_uid(value: str) -> str:
+    """从各种格式的输入中提取抖音 sec_uid 或抖音号"""
+    candidate = (value or "").strip()
+    if not candidate:
+        return ""
+
+    if candidate.lower().startswith("douyin:"):
+        candidate = candidate.split(":", 1)[1].strip()
+
+    # 从 URL 中提取 sec_uid 参数
+    sec_uid_match = _SEC_UID_RE.search(candidate)
+    if sec_uid_match:
+        return sec_uid_match.group(1)
+
+    # 从 URL 路径中提取 user ID
+    user_match = _USER_ID_RE.search(candidate)
+    if user_match:
+        return user_match.group(1)
+
+    # 直接返回输入（可能是抖音号或 sec_uid）
+    return candidate
+
+
+def _to_datetime(value: object) -> datetime:
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc)
+        except Exception:
+            pass
+    return datetime.now(timezone.utc)
+
+
+def _build_preview_html(
+    *, title: str, description: str, link: str, cover_url: str | None
+) -> str:
+    title_safe = escape((title or "").strip() or "抖音更新")
+    description_safe = escape((description or "").strip())
+    link_safe = escape((link or "").strip(), quote=True)
+    cover_safe = (
+        escape((cover_url or "").strip(), quote=True) if cover_url else ""
+    )
+
+    parts = [
+        '<article class="md-link-preview">',
+        f'<meta property="og:title" content="{title_safe}" />',
+        f'<meta property="og:description" content="{description_safe}" />',
+        f'<meta property="og:url" content="{link_safe}" />',
+    ]
+    if cover_safe:
+        parts.append(f'<meta property="og:image" content="{cover_safe}" />')
+        parts.append(f'<img src="{cover_safe}" alt="{title_safe}" />')
+    parts.append(f"<h3>{title_safe}</h3>")
+    if description_safe:
+        parts.append(f"<p>{description_safe}</p>")
+    parts.append(
+        '<p><a href="'
+        + link_safe
+        + '" target="_blank" rel="noopener noreferrer">查看视频</a></p>'
+    )
+    parts.append("</article>")
+    return "".join(parts)
+
+
+# =====================================================================
+# DouyinConnector
+# =====================================================================
+
+
+class DouyinConnector:
+    """抖音用户视频订阅连接器 — Playwright 无头浏览器 + RSSHub 回退"""
+
+    def __init__(
+        self,
+        *,
+        sec_uid: str,
+        fallback_feed_url: str | None = None,
+        default_sender: str | None = None,
+        timeout_seconds: int = 60,
+        max_items: int = 50,
+        transport: httpx.BaseTransport | None = None,
+    ):
+        self._sec_uid = _extract_sec_uid(sec_uid)
+        self._fallback_feed_url = (fallback_feed_url or "").strip() or None
+        self._default_sender = (default_sender or "抖音用户").strip()
+        self._timeout_seconds = max(10, timeout_seconds)
+        self._max_items = max(1, max_items)
+        self._transport = transport
+
+    # ------------------------------------------------------------------
+    # 策略 1: Playwright 无头浏览器
+    # ------------------------------------------------------------------
+
+    def _fetch_via_playwright(
+        self, *, since: datetime | None
+    ) -> list[IncomingMessage]:
+        """
+        使用 Playwright 打开抖音用户页面，拦截浏览器发出的
+        /aweme/v1/web/aweme/post/ XHR 请求，直接获取 JSON 数据。
+
+        优点:
+        - 自动通过 byted_acrawler JS 反爬验证
+        - 无需实现 a_bogus 签名算法
+        - 无需维护 cookie 生命周期
+        """
+        if not _HAS_PLAYWRIGHT:
+            raise RuntimeError(
+                "playwright 未安装。请运行:\n"
+                "  pip install playwright\n"
+                "  playwright install chromium"
+            )
+
+        sec_uid = self._sec_uid
+        if not sec_uid:
+            raise ValueError("缺少有效的 sec_uid")
+
+        url = f"https://www.douyin.com/user/{sec_uid}"
+        collected: list[dict[str, Any]] = []
+        lock = threading.Lock()
+
+        def _on_response(response: Any) -> None:
+            """拦截视频列表 API 响应"""
+            try:
+                if _POST_API_PATTERN not in response.url:
+                    return
+                if response.status != 200:
+                    return
+                body = response.json()
+                if isinstance(body, dict) and body.get("aweme_list"):
+                    with lock:
+                        collected.append(body)
+            except Exception:
+                pass  # 静默忽略非 JSON 响应
+
+        timeout_ms = self._timeout_seconds * 1000
+
+        try:
+            with sync_playwright() as pw:
+                browser = pw.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ],
+                )
+                context = browser.new_context(
+                    user_agent=_CHROME_UA,
+                    viewport={"width": 1920, "height": 1080},
+                    locale="zh-CN",
+                    timezone_id="Asia/Shanghai",
+                )
+                # 移除 webdriver 标记以降低被检测概率
+                context.add_init_script(
+                    """
+                    Object.defineProperty(navigator, 'webdriver', {
+                        get: () => undefined
+                    });
+                    """
+                )
+
+                page = context.new_page()
+                page.on("response", _on_response)
+
+                logger.info("Playwright: 正在打开 %s", url)
+                page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+
+                # 等待视频列表 API 响应到达（最多等 20 秒）
+                _wait_deadline = min(20_000, timeout_ms)
+                try:
+                    page.wait_for_function(
+                        """() => {
+                            const items = document.querySelectorAll(
+                                '[data-e2e="user-post-list"] li, '
+                                + '.ECMy_TNn, '
+                                + '[class*="user-post"] li'
+                            );
+                            return items.length > 0;
+                        }""",
+                        timeout=_wait_deadline,
+                    )
+                except PlaywrightTimeout:
+                    logger.debug("Playwright: 等待视频列表 DOM 超时，尝试滚动")
+
+                # 轻微滚动以触发懒加载 / 额外 API 调用
+                page.evaluate("window.scrollTo(0, 600)")
+                page.wait_for_timeout(2000)
+
+                # ------- 回退: 如果拦截未命中，尝试从 RENDER_DATA 提取 -------
+                if not collected:
+                    logger.debug("Playwright: XHR 拦截未获得数据，尝试 RENDER_DATA")
+                    raw = page.evaluate(
+                        """() => {
+                            const el = document.getElementById('RENDER_DATA');
+                            return el ? el.textContent : null;
+                        }"""
+                    )
+                    if raw:
+                        try:
+                            import urllib.parse as _up
+
+                            render = json.loads(_up.unquote(raw))
+                            collected.extend(
+                                self._extract_from_render_data(render)
+                            )
+                        except Exception as exc:
+                            logger.debug("RENDER_DATA 解析失败: %s", exc)
+
+                browser.close()
+
+        except PlaywrightError as exc:
+            msg = str(exc)
+            if "Executable doesn't exist" in msg or "browserType.launch" in msg:
+                raise RuntimeError(
+                    "Playwright 浏览器未安装。请运行:\n"
+                    "  playwright install chromium"
+                ) from exc
+            raise
+
+        if not collected:
+            raise ValueError(
+                "Playwright 未能获取抖音视频数据。"
+                "可能原因: 页面需要登录、用户不存在、或网络超时"
+            )
+
+        return self._parse_aweme_responses(collected, since=since)
+
+    # ------------------------------------------------------------------
+    # Playwright 辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_from_render_data(
+        render: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """
+        从页面 RENDER_DATA 中提取 aweme_list 格式的数据。
+        RENDER_DATA 结构: {<route_key>: {post: {data: [...]}}} (可能变化)
+        """
+        results: list[dict[str, Any]] = []
+        if not isinstance(render, dict):
+            return results
+
+        def _walk(obj: Any) -> None:
+            if isinstance(obj, dict):
+                # 直接找 aweme_list
+                if "aweme_list" in obj and isinstance(obj["aweme_list"], list):
+                    results.append(obj)
+                    return
+                # 适配新版 RENDER_DATA 结构
+                post = obj.get("post") or obj.get("awemeData")
+                if isinstance(post, dict):
+                    data = post.get("data") or post.get("aweme_list")
+                    if isinstance(data, list) and data:
+                        results.append({"aweme_list": data})
+                        return
+                for v in obj.values():
+                    _walk(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _walk(item)
+
+        _walk(render)
+        return results
+
+    def _parse_aweme_responses(
+        self,
+        responses: list[dict[str, Any]],
+        *,
+        since: datetime | None,
+    ) -> list[IncomingMessage]:
+        """
+        将拦截到的 /aweme/v1/web/aweme/post/ JSON 响应
+        转换为 IncomingMessage 列表。
+        """
+        since_utc = since.astimezone(timezone.utc) if since else None
+        seen_ids: set[str] = set()
+        messages: list[IncomingMessage] = []
+
+        for resp in responses:
+            aweme_list = resp.get("aweme_list") or []
+            for aweme in aweme_list:
+                if not isinstance(aweme, dict):
+                    continue
+                aweme_id = str(aweme.get("aweme_id") or "")
+                if not aweme_id or aweme_id in seen_ids:
+                    continue
+                seen_ids.add(aweme_id)
+
+                # 时间
+                create_time = aweme.get("create_time")
+                received_at = _to_datetime(create_time)
+                if since_utc and received_at <= since_utc:
+                    continue
+
+                # 标题
+                desc = str(aweme.get("desc") or "").strip()
+                title = desc or "抖音视频"
+
+                # 作者
+                author = aweme.get("author") or {}
+                nickname = str(
+                    author.get("nickname") or self._default_sender
+                ).strip()
+
+                # 头像
+                avatar_url: str | None = None
+                avatar_info = author.get("avatar_thumb") or author.get(
+                    "avatar_medium"
+                )
+                if isinstance(avatar_info, dict):
+                    url_list = avatar_info.get("url_list") or []
+                    if url_list:
+                        avatar_url = normalize_http_avatar_url(
+                            str(url_list[0])
+                        )
+
+                # 封面
+                cover_url: str | None = None
+                video = aweme.get("video") or {}
+                cover_info = video.get("origin_cover") or video.get("cover")
+                if isinstance(cover_info, dict):
+                    cov_list = cover_info.get("url_list") or []
+                    if cov_list:
+                        cover_url = str(cov_list[0])
+
+                link = f"https://www.douyin.com/video/{aweme_id}"
+
+                messages.append(
+                    IncomingMessage(
+                        source="douyin",
+                        external_id=aweme_id,
+                        sender=nickname,
+                        subject=title[:998],
+                        body=_build_preview_html(
+                            title=title[:300],
+                            description=desc[:1500],
+                            link=link,
+                            cover_url=cover_url,
+                        ),
+                        received_at=received_at,
+                        sender_avatar_url=avatar_url,
+                    )
+                )
+                if len(messages) >= self._max_items:
+                    return messages
+
+        return messages
+
+    # ------------------------------------------------------------------
+    # 策略 2: RSSHub 镜像（回退）
+    # ------------------------------------------------------------------
+
+    def _try_rsshub_feed(
+        self, *, feed_url: str, since: datetime | None
+    ) -> list[IncomingMessage]:
+        return FeedConnector(
+            feed_url=feed_url,
+            source="douyin",
+            default_sender=self._default_sender,
+            timeout_seconds=min(15, self._timeout_seconds),
+            max_entries=self._max_items,
+        ).fetch_new_messages(since=since)
+
+    def _collect_rsshub_urls(self) -> list[str]:
+        """收集所有可尝试的 RSSHub URL"""
+        urls: list[str] = []
+
+        if self._fallback_feed_url:
+            effective = self._fallback_feed_url
+            if (
+                self._sec_uid
+                and self._sec_uid.startswith("MS4")
+                and "/user/" in effective
+            ):
+                base = effective.split("/user/")[0]
+                effective = f"{base}/user/{self._sec_uid}"
+            urls.append(effective)
+
+        sec_uid = self._sec_uid
+        if sec_uid:
+            seen: set[str] = set()
+            for u in urls:
+                if "/douyin/user/" in u:
+                    seen.add(u.split("/douyin/user/")[0].rstrip("/"))
+            for mirror in _RSSHUB_MIRRORS:
+                base = mirror.rstrip("/")
+                if base not in seen:
+                    urls.append(f"{base}/douyin/user/{sec_uid}")
+                    seen.add(base)
+
+        return urls
+
+    # ------------------------------------------------------------------
+    # 公开入口
+    # ------------------------------------------------------------------
+
+    def fetch_new_messages(
+        self, *, since: datetime | None
+    ) -> list[IncomingMessage]:
+        errors: list[str] = []
+
+        # ── 主策略: Playwright 无头浏览器 ──
+        if _HAS_PLAYWRIGHT:
+            try:
+                messages = self._fetch_via_playwright(since=since)
+                if messages:
+                    logger.info(
+                        "Playwright 成功获取 %d 条抖音消息", len(messages)
+                    )
+                    return messages
+                errors.append("Playwright 返回空视频列表")
+            except Exception as e:
+                errors.append(f"Playwright: {e}")
+                logger.warning("Playwright 抖音抓取失败: %s", e)
+        else:
+            errors.append(
+                "playwright 未安装 — pip install playwright && "
+                "playwright install chromium"
+            )
+            logger.warning(
+                "playwright 未安装，跳过浏览器策略。"
+                "请运行: pip install playwright && playwright install chromium"
+            )
+
+        # ── 回退: RSSHub 镜像 ──
+        rsshub_urls = self._collect_rsshub_urls()
+        last_err: Exception | None = None
+        for i, feed_url in enumerate(rsshub_urls):
+            try:
+                logger.info(
+                    "尝试 RSSHub [%d/%d]: %s",
+                    i + 1,
+                    len(rsshub_urls),
+                    feed_url,
+                )
+                messages = self._try_rsshub_feed(
+                    feed_url=feed_url, since=since
+                )
+                if messages:
+                    logger.info(
+                        "RSSHub 成功: %s (%d 条消息)",
+                        feed_url,
+                        len(messages),
+                    )
+                    return messages
+            except Exception as e:
+                last_err = e
+                logger.debug("RSSHub 失败 [%s]: %s", feed_url, e)
+
+        if rsshub_urls:
+            errors.append(
+                f"已尝试 {len(rsshub_urls)} 个 RSSHub 镜像均失败"
+                + (f": {last_err}" if last_err else "")
+            )
+
+        raise ValueError(
+            "抖音同步失败: " + "; ".join(errors) + "\n\n"
+            "推荐解决方案:\n"
+            "1. 安装 Playwright: pip install playwright && "
+            "playwright install chromium\n"
+            "2. 或自建 RSSHub 并配置 DOUYIN_COOKIE 环境变量"
+        )
+
