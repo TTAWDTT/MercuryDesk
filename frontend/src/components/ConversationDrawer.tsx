@@ -128,24 +128,31 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
+      initial={{ opacity: 0, y: 30, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{
+        delay: index * 0.08,
+        duration: 0.5,
+        type: 'spring',
+        stiffness: 100,
+        damping: 15
+      }}
     >
       <Paper
         elevation={0}
         sx={{
             p: { xs: 3, md: 3.5 },
             borderRadius: 0,
-            border: '2px solid',
+            border: '3px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
-            transition: 'box-shadow 0.2s',
+            transition: 'all 0.2s',
             position: 'relative',
             overflow: 'hidden',
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
             '&:hover': {
-                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
+                boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
+                transform: 'translate(-1px, -1px)'
             }
         }}
       >
@@ -160,27 +167,28 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             }}
         />
         <Box display="flex" justifyContent="space-between" mb={1.5} alignItems="flex-start">
-            <Typography variant="subtitle2" fontWeight="bold" color="textPrimary">
+            <Typography variant="subtitle2" fontWeight="900" color="textPrimary">
                 {msg.sender}
             </Typography>
-            <Typography variant="caption" color="textSecondary" sx={{ whiteSpace: 'nowrap', ml: 1 }}>
+            <Typography variant="caption" color="textSecondary" fontWeight="600" sx={{ whiteSpace: 'nowrap', ml: 1 }}>
                 {format(new Date(msg.received_at), 'M月d日 HH:mm', { locale: zhCN })}
             </Typography>
         </Box>
 
-        <Typography variant="h6" gutterBottom fontSize="1.05rem" fontWeight="600">
+        <Typography variant="h6" gutterBottom fontSize="1.1rem" fontWeight="900" sx={{ letterSpacing: '0.02em' }}>
           {displayTitle}
         </Typography>
 
         {(previewImageUrl || previewUrl) && (
           <Box
             sx={{
-              border: '2px solid',
+              border: '3px solid',
               borderColor: 'divider',
               borderRadius: 0,
               p: 1.5,
               mb: 2,
               bgcolor: 'transparent',
+              boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
             }}
           >
             {previewImageUrl && (
@@ -271,9 +279,9 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             gap={2}
             position="relative"
             sx={{
-                border: '2px solid',
+                border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
+                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
             }}
           >
              <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
@@ -313,9 +321,9 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             display="flex"
             gap={2}
             sx={{
-                border: '2px solid',
+                border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
+                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
             }}
           >
              <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />

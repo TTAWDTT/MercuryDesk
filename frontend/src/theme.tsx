@@ -69,18 +69,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Hatching Patterns - Saturated / Dense
   // 45deg dense lines for background
-  const hatchingLight = 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 6px)';
-  const hatchingDark = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 6px)';
+  const hatchingLight = 'repeating-linear-gradient(45deg, rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px, transparent 1px, transparent 4px)';
+  const hatchingDark = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 4px)';
   const hatchingBg = mode === 'light' ? hatchingLight : hatchingDark;
 
   // Cross-hatching for interaction states
   const crossHatchLight = `
-    repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 4px),
-    repeating-linear-gradient(-45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 4px)
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px)
   `;
   const crossHatchDark = `
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 4px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 4px)
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.15) 0px, rgba(255,255,255,0.15) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.15) 0px, rgba(255,255,255,0.15) 1px, transparent 1px, transparent 3px)
   `;
   const activeHatch = mode === 'light' ? crossHatchLight : crossHatchDark;
 
@@ -108,19 +108,19 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     },
     typography: {
       fontFamily: bodyFont,
-      h1: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h2: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h3: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h4: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.02em' },
-      h5: { fontFamily: headingFont, fontWeight: 700 },
-      h6: { fontFamily: headingFont, fontWeight: 700 },
-      subtitle1: { fontFamily: headingFont, fontWeight: 600 },
-      subtitle2: { fontFamily: headingFont, fontWeight: 600 },
-      body1: { fontFamily: bodyFont, fontWeight: 500, lineHeight: 1.6 },
-      body2: { fontFamily: bodyFont, fontWeight: 500 },
-      button: { fontFamily: headingFont, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' },
-      caption: { fontFamily: bodyFont, fontWeight: 500 },
-      overline: { fontFamily: headingFont, fontWeight: 700 },
+      h1: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h2: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h3: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h4: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '0.02em' },
+      h5: { fontFamily: headingFont, fontWeight: 800 },
+      h6: { fontFamily: headingFont, fontWeight: 800 },
+      subtitle1: { fontFamily: headingFont, fontWeight: 700 },
+      subtitle2: { fontFamily: headingFont, fontWeight: 700 },
+      body1: { fontFamily: bodyFont, fontWeight: 600, lineHeight: 1.6 },
+      body2: { fontFamily: bodyFont, fontWeight: 600 },
+      button: { fontFamily: headingFont, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' },
+      caption: { fontFamily: bodyFont, fontWeight: 600 },
+      overline: { fontFamily: headingFont, fontWeight: 800 },
     },
     shape: { borderRadius: 0 }, // Strict Square
     components: {
@@ -138,31 +138,32 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             backgroundImage: 'none',
-            border: `2px solid ${colors.divider}`,
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            border: `3px solid ${colors.divider}`,
+            boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
             borderRadius: 0,
           },
-          elevation1: { boxShadow: `4px 4px 0 0 ${colors.divider}` },
-          elevation2: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
-          elevation3: { boxShadow: `8px 8px 0 0 ${colors.divider}` },
+          elevation1: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
+          elevation2: { boxShadow: `8px 8px 0 0 ${colors.divider}` },
+          elevation3: { boxShadow: `10px 10px 0 0 ${colors.divider}` },
         }
       },
       MuiButton: {
         styleOverrides: {
           root: {
-            border: `2px solid ${colors.primary}`,
+            border: `3px solid ${colors.primary}`,
             borderRadius: 0,
-            boxShadow: `3px 3px 0 0 ${colors.primary}`,
+            boxShadow: `4px 4px 0 0 ${colors.primary}`,
             textTransform: 'none',
+            fontWeight: 800,
             '&:hover': {
               transform: 'translate(-1px, -1px)',
-              boxShadow: `5px 5px 0 0 ${colors.primary}`,
+              boxShadow: `6px 6px 0 0 ${colors.primary}`,
               backgroundColor: 'transparent',
               backgroundImage: activeHatch, // Cross-hatching on hover
             },
             '&:active': {
               transform: 'translate(2px, 2px)',
-              boxShadow: '1px 1px 0 0 ${colors.primary}',
+              boxShadow: '2px 2px 0 0 ${colors.primary}',
             },
           },
           contained: {
@@ -191,9 +192,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             backgroundColor: colors.background,
-            fontWeight: 700,
+            fontWeight: 800,
             borderRadius: 0,
-            boxShadow: `2px 2px 0 0 ${colors.divider}`,
+            boxShadow: `3px 3px 0 0 ${colors.divider}`,
           },
           filled: {
             backgroundImage: hatchingBg,
@@ -218,17 +219,17 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
               borderRadius: 0,
               backgroundColor: colors.background,
               '& fieldset': {
-                borderWidth: '2px',
+                borderWidth: '3px',
                 borderColor: colors.divider,
               },
               '&:hover fieldset': {
-                borderWidth: '2px',
+                borderWidth: '3px',
                 borderColor: colors.textPrimary,
               },
               '&.Mui-focused fieldset': {
-                borderWidth: '2px',
+                borderWidth: '3px',
                 borderColor: colors.textPrimary,
-                boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
+                boxShadow: `6px 6px 0 0 ${colors.textPrimary}`,
               },
             },
           }
@@ -237,25 +238,25 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiDrawer: {
         styleOverrides: {
           paper: {
-            borderLeft: `3px solid ${colors.divider}`,
+            borderLeft: `4px solid ${colors.divider}`,
           }
         }
       },
       MuiDivider: {
         styleOverrides: {
           root: {
-            borderBottomWidth: '2px',
+            borderBottomWidth: '3px',
             borderColor: colors.divider,
-            borderStyle: 'solid', // Solid lines for high contrast
+            borderStyle: 'solid',
           }
         }
       },
       MuiAlert: {
         styleOverrides: {
           root: {
-            border: `2px solid ${colors.divider}`,
+            border: `3px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `4px 4px 0 0 ${colors.divider}`,
+            boxShadow: `6px 6px 0 0 ${colors.divider}`,
             backgroundImage: hatchingBg,
           },
           standardInfo: { backgroundColor: colors.background, color: colors.textPrimary },
