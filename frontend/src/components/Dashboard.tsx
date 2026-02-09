@@ -231,15 +231,16 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       />
       
       <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Paper 
+        <Paper
           elevation={0}
-          sx={{ 
-            borderRadius: '20px', 
+          sx={{
+            borderRadius: 0,
             bgcolor: 'background.paper',
             minHeight: '70vh',
-            border: '1px solid',
-            borderColor: 'divider',
-            overflow: 'hidden'
+            border: '3px solid',
+            borderColor: 'text.primary',
+            overflow: 'hidden',
+            boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
           }}
         >
           <Box p={{ xs: 2, md: 2.5 }}>

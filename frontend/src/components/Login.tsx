@@ -59,7 +59,9 @@ export default function Login(props: { onAuthed: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: `radial-gradient(circle at 20% 0%, ${alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.1 : 0.16)} 0%, ${theme.palette.background.default} 45%)`,
+        background: 'radial-gradient(#000000 1px, transparent 1px)',
+        backgroundSize: '20px 20px',
+        backgroundColor: 'background.default',
         position: 'relative',
         overflow: 'hidden',
       }}
@@ -71,33 +73,35 @@ export default function Login(props: { onAuthed: () => void }) {
           exit={{ opacity: 0, y: -20 }}
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
-          <Paper 
-            elevation={0} 
-            sx={{ 
-              p: 5, 
-              width: '100%', 
-              borderRadius: 4,
-              border: '1px solid',
-              borderColor: 'divider',
-              backdropFilter: 'blur(10px)',
-              background: alpha(theme.palette.background.paper, theme.palette.mode === 'light' ? 0.88 : 0.92),
-              boxShadow: theme.palette.mode === 'light' ? '0 20px 40px -10px rgba(54,95,181,0.18)' : 'none',
+          <Paper
+            elevation={0}
+            sx={{
+              p: 5,
+              width: '100%',
+              borderRadius: 0,
+              border: '3px solid',
+              borderColor: 'text.primary',
+              background: 'background.paper',
+              boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
             }}
           >
             <Box textAlign="center" mb={4}>
-              <Box 
-                sx={{ 
-                  width: 48, 
-                  height: 48, 
-                  borderRadius: 3, 
-                  background: theme.palette.mode === 'light' ? theme.palette.primary.dark : theme.palette.primary.main,
+              <Box
+                sx={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 0,
+                  border: '2px solid',
+                  borderColor: 'text.primary',
+                  background: 'transparent',
                   margin: '0 auto 16px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  color: theme.palette.primary.contrastText,
-                  fontWeight: 'bold',
-                  fontSize: '24px'
+                  color: 'text.primary',
+                  fontWeight: '900',
+                  fontSize: '24px',
+                  boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
                 }}
               >
                 M

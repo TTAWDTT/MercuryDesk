@@ -16,10 +16,12 @@ import { useNavigate } from 'react-router-dom';
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
-  borderRadius: 99, // Pill shape
-  backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.06 : 0.12),
+  borderRadius: 0, // Comic style
+  border: `2px solid ${theme.palette.text.primary}`,
+  backgroundColor: theme.palette.background.paper,
   '&:hover': {
-    backgroundColor: alpha(theme.palette.text.primary, theme.palette.mode === 'light' ? 0.09 : 0.18),
+    backgroundColor: theme.palette.action.hover,
+    boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -74,23 +76,30 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
   const isLight = theme.palette.mode === 'light';
 
   return (
-    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100 }}>
+    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '2px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
       <Toolbar sx={{ height: 72 }}>
-        <Box 
+        <Box
           onClick={() => navigate('/')}
-          sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
             mr: 2,
             cursor: 'pointer',
-            background: isLight ? theme.palette.primary.dark : theme.palette.primary.main,
-            borderRadius: 3,
+            background: 'transparent',
+            border: '2px solid',
+            borderColor: 'text.primary',
+            borderRadius: 0,
             width: 36,
             height: 36,
             justifyContent: 'center',
-            color: theme.palette.primary.contrastText,
-            fontWeight: 'bold',
-            boxShadow: 'none'
+            color: 'text.primary',
+            fontWeight: '900',
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            transition: 'transform 0.1s',
+            '&:active': {
+                transform: 'translate(2px, 2px)',
+                boxShadow: '2px 2px 0 0 rgba(0,0,0,1)',
+            }
           }}
         >
           M

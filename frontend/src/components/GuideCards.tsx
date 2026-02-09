@@ -45,16 +45,16 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: '18px',
-            border: '1px solid',
-            borderColor: 'divider',
+            borderRadius: 0,
+            border: '2px solid',
+            borderColor: 'text.primary',
             overflow: 'hidden',
             position: 'relative',
             transition: 'all 0.25s ease',
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
             '&:hover': {
-              transform: 'translateY(-3px)',
-              borderColor: 'primary.main',
-              boxShadow: theme.shadows[4],
+              transform: 'translate(-2px, -2px)',
+              boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
             },
           }}
         >
@@ -64,11 +64,12 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: 999,
+                borderRadius: 0,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
-                bgcolor: alpha(theme.palette.background.paper, 0.85),
-                backdropFilter: 'blur(10px)',
+                bgcolor: 'background.paper',
+                border: '2px solid',
+                borderColor: 'text.primary'
               }}
             />
           </Box>
@@ -79,12 +80,14 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 sx={{
                   width: 56,
                   height: 56,
-                  borderRadius: '16px',
+                  borderRadius: 0,
+                  border: '2px solid',
+                  borderColor: 'text.primary',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  bgcolor: alpha(theme.palette.primary.main, 0.12),
-                  color: 'primary.main',
+                  bgcolor: 'transparent',
+                  color: 'text.primary',
                 }}
               >
                 <EmailOutlinedIcon />
@@ -102,8 +105,10 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             <Box
               sx={{
                 p: 2.25,
-                borderRadius: '14px',
-                bgcolor: alpha(theme.palette.action.hover, 0.55),
+                borderRadius: 0,
+                border: '2px solid',
+                borderColor: 'divider',
+                bgcolor: 'transparent',
               }}
             >
               <Typography variant="subtitle2" fontWeight={800} gutterBottom>
@@ -133,15 +138,15 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: '18px',
-            border: '1px solid',
-            borderColor: 'divider',
+            borderRadius: 0,
+            border: '2px solid',
+            borderColor: 'text.primary',
             overflow: 'hidden',
             transition: 'all 0.25s ease',
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
             '&:hover': {
-              transform: 'translateY(-3px)',
-              borderColor: 'primary.main',
-              boxShadow: theme.shadows[4],
+              transform: 'translate(-2px, -2px)',
+              boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
             },
           }}
         >
