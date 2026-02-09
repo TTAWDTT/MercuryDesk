@@ -32,6 +32,11 @@ class User(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    x_api_config: Mapped[Optional["XApiConfig"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class ConnectedAccount(Base):
@@ -147,6 +152,20 @@ class AgentConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="agent_config")
+
+
+class XApiConfig(Base):
+    """Stores X (Twitter) API configuration per user"""
+    __tablename__ = "x_api_configs"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    bearer_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    auth_cookies: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: {"auth_token": "...", "ct0": "..."}
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="x_api_config")
 
 
 class Contact(Base):

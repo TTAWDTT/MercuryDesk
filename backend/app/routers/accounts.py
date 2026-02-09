@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import get_session
-from app.models import ForwardAccountConfig, User
+from app.models import ForwardAccountConfig, User, XApiConfig
 from app.routers.auth import get_current_user
 from app.schemas import (
     AccountOAuthStartResponse,
@@ -26,6 +26,9 @@ from app.services.oauth_clients import build_authorization_url, exchange_code_fo
 from app.services.oauth_state import consume_state
 from app.settings import settings
 from app.sync import sync_account
+from app.connectors.douyin import _extract_sec_uid as extract_douyin_uid
+from app.connectors.xiaohongshu import _extract_user_id as extract_xhs_uid
+from app.connectors.weibo import _extract_uid as extract_weibo_uid
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
@@ -141,6 +144,39 @@ def add_connected_account(
         if not feed_display_name:
             feed_display_name = f"B站 UP {uid}"
         identifier = identifier or f"bilibili:{uid}"
+    elif provider == "douyin":
+        sec_uid = extract_douyin_uid(identifier)
+        if not sec_uid:
+            raise HTTPException(status_code=400, detail="抖音订阅需要有效 sec_uid")
+        if not feed_url:
+            feed_url = _rsshub_url(f"/douyin/user/{sec_uid}")
+        if not feed_homepage_url:
+            feed_homepage_url = f"https://www.douyin.com/user/{sec_uid}"
+        if not feed_display_name:
+            feed_display_name = f"抖音用户"
+        identifier = sec_uid
+    elif provider == "xiaohongshu":
+        user_id = extract_xhs_uid(identifier)
+        if not user_id:
+            raise HTTPException(status_code=400, detail="小红书订阅需要有效 user_id")
+        if not feed_url:
+            feed_url = _rsshub_url(f"/xiaohongshu/user/{user_id}")
+        if not feed_homepage_url:
+            feed_homepage_url = f"https://www.xiaohongshu.com/user/profile/{user_id}"
+        if not feed_display_name:
+            feed_display_name = f"小红书用户"
+        identifier = user_id
+    elif provider == "weibo":
+        uid = extract_weibo_uid(identifier)
+        if not uid:
+            raise HTTPException(status_code=400, detail="微博订阅需要有效 UID")
+        if not feed_url:
+            feed_url = _rsshub_url(f"/weibo/user/{uid}")
+        if not feed_homepage_url:
+            feed_homepage_url = f"https://weibo.com/u/{uid}"
+        if not feed_display_name:
+            feed_display_name = f"微博用户"
+        identifier = uid
     elif provider == "x":
         username = (payload.x_username or identifier).strip().lstrip("@")
         if not username:
@@ -203,6 +239,17 @@ def add_connected_account(
         )
         if existing is None:
             raise HTTPException(status_code=409, detail="账户已存在，请刷新页面后重试")
+
+        # Self-healing: Ensure feed config exists for feed-based providers
+        if provider in {"rss", "bilibili", "x", "douyin", "xiaohongshu", "weibo"}:
+            crud.ensure_feed_account_config(
+                db,
+                account_id=existing.id,
+                feed_url=feed_url,
+                homepage_url=feed_homepage_url,
+                display_name=feed_display_name,
+            )
+
         account = existing
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -377,14 +424,23 @@ def get_forward_info(
 @router.post("/{account_id}/sync")
 def sync_connected_account(
     account_id: int,
+    force_full: bool = False,
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
     account = crud.get_account(db, user_id=current_user.id, account_id=account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
+
+    # Self-healing: Ensure feed config exists before syncing
+    if account.provider in {"rss", "bilibili", "x", "douyin", "xiaohongshu", "weibo"}:
+        # Check relationship; if missing, create default config
+        if not account.feed_config:
+            crud.ensure_feed_account_config(db, account_id=account.id)
+            db.refresh(account)
+
     try:
-        inserted = sync_account(db, account=account)
+        inserted = sync_account(db, account=account, force_full=force_full)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return {"inserted": inserted, "account_id": account.id}
@@ -399,3 +455,103 @@ def delete_connected_account(
     success = crud.delete_connected_account(db, user_id=current_user.id, account_id=account_id)
     if not success:
         raise HTTPException(status_code=404, detail="Account not found")
+
+
+# ============================================================
+# X API Configuration
+# ============================================================
+
+@router.get("/x/config")
+def get_x_api_config(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Get X API configuration status"""
+    config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
+    token = (config.bearer_token or "") if config else ""
+    cookies_configured = False
+    if config and config.auth_cookies:
+        import json as _json
+        try:
+            c = _json.loads(config.auth_cookies)
+            cookies_configured = bool(c.get("auth_token") and c.get("ct0"))
+        except Exception:
+            pass
+    return {
+        "configured": bool(token),
+        "token_hint": (token[:8] + "..." + token[-4:]) if len(token) > 12 else None,
+        "cookies_configured": cookies_configured,
+    }
+
+
+@router.patch("/x/config")
+def update_x_api_config(
+    payload: dict,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Update X API Bearer Token (saves to database)"""
+    bearer_token = (payload.get("bearer_token") or "").strip()
+    if not bearer_token:
+        raise HTTPException(status_code=400, detail="bearer_token is required")
+
+    # Get or create config
+    config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
+    if not config:
+        config = XApiConfig(user_id=current_user.id, bearer_token=bearer_token)
+        db.add(config)
+    else:
+        config.bearer_token = bearer_token
+
+    db.commit()
+
+    return {
+        "configured": True,
+        "token_hint": (bearer_token[:8] + "..." + bearer_token[-4:]) if len(bearer_token) > 12 else None,
+        "message": "X API Bearer Token 已保存到数据库。",
+    }
+
+
+@router.patch("/x/cookies")
+def update_x_auth_cookies(
+    payload: dict,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Update X auth cookies (auth_token + ct0) for authenticated GraphQL access"""
+    import json as _json
+
+    auth_token = (payload.get("auth_token") or "").strip()
+    ct0 = (payload.get("ct0") or "").strip()
+
+    if not auth_token or not ct0:
+        raise HTTPException(status_code=400, detail="auth_token and ct0 are both required")
+
+    cookies_json = _json.dumps({"auth_token": auth_token, "ct0": ct0})
+
+    config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
+    if not config:
+        config = XApiConfig(user_id=current_user.id, auth_cookies=cookies_json)
+        db.add(config)
+    else:
+        config.auth_cookies = cookies_json
+
+    db.commit()
+
+    return {
+        "cookies_configured": True,
+        "message": "X 认证 Cookies 已保存。将优先使用 Cookie 认证获取最新推文。",
+    }
+
+
+@router.delete("/x/cookies")
+def delete_x_auth_cookies(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete X auth cookies"""
+    config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
+    if config and config.auth_cookies:
+        config.auth_cookies = None
+        db.commit()
+    return {"cookies_configured": False, "message": "X 认证 Cookies 已删除。"}

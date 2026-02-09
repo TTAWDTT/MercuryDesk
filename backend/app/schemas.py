@@ -46,9 +46,9 @@ class ConnectedAccountCreate(BaseModel):
     imap_mailbox: Optional[str] = Field(None, min_length=1, max_length=255)
 
     # Optional provider-specific fields (used when provider in {"rss", "bilibili", "x"}).
-    feed_url: Optional[str] = Field(None, min_length=1, max_length=2048)
-    feed_homepage_url: Optional[str] = Field(None, min_length=1, max_length=2048)
-    feed_display_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    feed_url: Optional[str] = Field(None, max_length=2048)
+    feed_homepage_url: Optional[str] = Field(None, max_length=2048)
+    feed_display_name: Optional[str] = Field(None, max_length=255)
     bilibili_uid: Optional[str] = Field(None, min_length=1, max_length=64)
     x_username: Optional[str] = Field(None, min_length=1, max_length=64)
     forward_display_name: Optional[str] = Field(None, min_length=1, max_length=255)

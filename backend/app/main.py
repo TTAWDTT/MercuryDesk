@@ -1,21 +1,45 @@
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import inspect as sa_inspect, text
+from sqlalchemy.engine import Engine
 
 from app.db import get_engine
 from app.models import Base
 from app.routers import accounts, agent, auth, contacts, inbound, messages
 from app.settings import settings
 
+_log = logging.getLogger(__name__)
+
+
+def _add_missing_columns(engine: Engine) -> None:
+    """Add columns that exist in the ORM model but not yet in the DB (simple SQLite migration)."""
+    inspector = sa_inspect(engine)
+    migrations: list[tuple[str, str, str]] = [
+        # (table, column, DDL type)
+        ("x_api_configs", "auth_cookies", "TEXT"),
+    ]
+    for table, column, ddl_type in migrations:
+        if not inspector.has_table(table):
+            continue
+        existing = {col["name"] for col in inspector.get_columns(table)}
+        if column not in existing:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}"))
+            _log.info("Added column %s.%s", table, column)
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+    # Lightweight column migration for SQLite (add columns that don't exist yet)
+    _add_missing_columns(engine)
     yield
 
 

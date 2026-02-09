@@ -17,6 +17,9 @@ from app.connectors.mock import MockConnector
 from app.connectors.outlook import OutlookConnector
 from app.connectors.bilibili import BilibiliConnector
 from app.connectors.x import XConnector
+from app.connectors.douyin import DouyinConnector, _extract_sec_uid as extract_douyin_uid
+from app.connectors.xiaohongshu import XiaohongshuConnector, _extract_user_id as extract_xhs_uid
+from app.connectors.weibo import WeiboConnector, _extract_uid as extract_weibo_uid
 from app.crud import (
     create_message,
     decrypt_account_tokens,
@@ -24,12 +27,13 @@ from app.crud import (
     touch_account_sync,
     touch_contact_last_message,
 )
-from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message
+from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message, XApiConfig
 from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
 from app.services.avatar import gravatar_url_for_email, normalize_http_avatar_url
+from app.settings import settings
 
 _X_USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,15}")
 
@@ -98,10 +102,22 @@ def _connector_for(db: Session, account: ConnectedAccount):
             or (config.homepage_url or "")
             or (config.feed_url or "")
         )
+        # 从数据库读取用户配置的 X API Bearer Token 和 Cookie
+        x_api_config = db.query(XApiConfig).filter(XApiConfig.user_id == account.user_id).first()
+        bearer_token = x_api_config.bearer_token if x_api_config else None
+        auth_cookies = None
+        if x_api_config and x_api_config.auth_cookies:
+            import json as _json
+            try:
+                auth_cookies = _json.loads(x_api_config.auth_cookies)
+            except Exception:
+                auth_cookies = None
         return XConnector(
             username=username_hint,
             fallback_feed_url=normalized_feed_url,
             default_sender=(config.display_name or account.identifier or "x"),
+            bearer_token=bearer_token,
+            auth_cookies=auth_cookies,
         )
     if provider == "bilibili":
         config = db.get(FeedAccountConfig, account.id)
@@ -121,6 +137,72 @@ def _connector_for(db: Session, account: ConnectedAccount):
             uid=uid_hint or "",
             fallback_feed_url=normalized_feed_url,
             default_sender=(config.display_name or account.identifier or "Bilibili"),
+        )
+    if provider == "douyin":
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None:
+            raise ValueError("douyin account requires feed configuration")
+
+        # 自动升级为 RSSHub 模式（仅作为 fallback）
+        if not config.feed_url:
+            sec_uid = extract_douyin_uid(account.identifier)
+            if sec_uid:
+                config.feed_url = f"{settings.rsshub_base_url.rstrip('/')}/douyin/user/{sec_uid}"
+                db.add(config)
+                db.flush()
+
+        sec_uid_hint = account.identifier
+        if not sec_uid_hint and config.homepage_url:
+            sec_uid_hint = config.homepage_url
+        return DouyinConnector(
+            sec_uid=sec_uid_hint or "",
+            fallback_feed_url=normalize_feed_url(config.feed_url) if config.feed_url else None,
+            default_sender=(config.display_name or account.identifier or "抖音用户"),
+            timeout_seconds=60,
+        )
+    if provider == "xiaohongshu":
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None:
+            raise ValueError("xiaohongshu account requires feed configuration")
+
+        # 自动升级为 RSSHub 模式（仅作为 fallback）
+        if not config.feed_url:
+            user_id = extract_xhs_uid(account.identifier)
+            if user_id:
+                config.feed_url = f"{settings.rsshub_base_url.rstrip('/')}/xiaohongshu/user/{user_id}"
+                db.add(config)
+                db.flush()
+
+        user_id_hint = account.identifier
+        if not user_id_hint and config.homepage_url:
+            user_id_hint = config.homepage_url
+        return XiaohongshuConnector(
+            user_id=user_id_hint or "",
+            fallback_feed_url=normalize_feed_url(config.feed_url) if config.feed_url else None,
+            default_sender=(config.display_name or account.identifier or "小红书用户"),
+            timeout_seconds=60,
+        )
+    if provider == "weibo":
+        config = db.get(FeedAccountConfig, account.id)
+        if config is None:
+            raise ValueError("weibo account requires feed configuration")
+
+        # 自动升级为 RSSHub 模式（仅作为 fallback）
+        if not config.feed_url:
+            uid = extract_weibo_uid(account.identifier)
+            if uid:
+                config.feed_url = f"{settings.rsshub_base_url.rstrip('/')}/weibo/user/{uid}"
+                db.add(config)
+                db.flush()
+
+        uid_hint = account.identifier
+        if not uid_hint and config.homepage_url:
+            uid_hint = config.homepage_url
+        return WeiboConnector(
+            uid=uid_hint or "",
+            fallback_feed_url=normalize_feed_url(config.feed_url) if config.feed_url else None,
+            default_sender=(config.display_name or account.identifier or "微博用户"),
+            timeout_seconds=60,
         )
     if provider == "rss":
         config = db.get(FeedAccountConfig, account.id)
@@ -239,10 +321,10 @@ def _needs_source_backfill(db: Session, *, account: ConnectedAccount) -> bool:
     return False
 
 
-def sync_account(db: Session, *, account: ConnectedAccount) -> int:
+def sync_account(db: Session, *, account: ConnectedAccount, force_full: bool = False) -> int:
     connector = _connector_for(db, account)
     summarizer = RuleBasedSummarizer()
-    since = _normalize_utc(account.last_synced_at)
+    since = None if force_full else _normalize_utc(account.last_synced_at)
     provider = account.provider.lower().strip()
     recent_messages: list[IncomingMessage] = []
 

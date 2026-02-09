@@ -83,12 +83,14 @@ def create_connected_account(
             mailbox=imap_mailbox or "INBOX",
         )
         db.add(config)
-    elif provider_norm in {"rss", "bilibili", "x"}:
-        if not feed_url:
+    elif provider_norm in {"rss", "bilibili", "x", "douyin", "xiaohongshu", "weibo"}:
+        config_feed_url = feed_url.strip() if feed_url else None
+        # 抖音、小红书、微博不强制要求 feed_url，使用 identifier 作为 UID
+        if provider_norm == "rss" and not config_feed_url:
             raise ValueError(f"{provider_norm} account requires feed_url")
         feed_config = FeedAccountConfig(
             account_id=account.id,
-            feed_url=feed_url.strip(),
+            feed_url=config_feed_url or "",
             homepage_url=feed_homepage_url.strip() if feed_homepage_url else None,
             display_name=feed_display_name.strip() if feed_display_name else None,
         )
@@ -465,3 +467,27 @@ def touch_contact_last_message(db: Session, *, contact: Contact, received_at: da
 
 def touch_account_sync(db: Session, *, account: ConnectedAccount) -> None:
     account.last_synced_at = datetime.now(timezone.utc)
+
+
+def ensure_feed_account_config(
+    db: Session,
+    *,
+    account_id: int,
+    feed_url: str | None = None,
+    homepage_url: str | None = None,
+    display_name: str | None = None,
+) -> FeedAccountConfig:
+    config = db.get(FeedAccountConfig, account_id)
+    if config:
+        return config
+
+    config = FeedAccountConfig(
+        account_id=account_id,
+        feed_url=feed_url or "",
+        homepage_url=homepage_url.strip() if homepage_url else None,
+        display_name=display_name.strip() if display_name else None,
+    )
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
