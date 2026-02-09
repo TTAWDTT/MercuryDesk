@@ -64,7 +64,98 @@ class LLMService:
             _log.error("Stream Error: %s", e)
             yield f"\n[Error: {str(e)}]"
 
-    def summarize(self, text: str, stream: bool = False) -> str | Iterator[str]:
+    def chat_stream(
+        self,
+        messages: list[dict[str, str]],
+        tools: list[dict] | None = None,
+        tool_executor: Any = None,
+    ) -> Iterator[str]:
+        if not self.client:
+            yield "Agent not configured."
+            return
+
+        # 1. First Call
+        try:
+            response = self.client.chat.completions.create(
+                model=self.config.model,
+                messages=messages,
+                temperature=self.config.temperature,
+                stream=True,
+                tools=tools if tools else None,
+            )
+        except Exception as e:
+            yield f"Error: {str(e)}"
+            return
+
+        # Buffer for tool calls (since they stream in chunks)
+        tool_calls = []
+        current_tool_call = None
+
+        # We need to accumulate text to yield it,
+        # but if it's a tool call, we accumulate that instead.
+        for chunk in response:
+            delta = chunk.choices[0].delta if chunk.choices else None
+            if not delta:
+                continue
+
+            # Text content
+            if delta.content:
+                yield delta.content
+
+            # Tool calls
+            if delta.tool_calls:
+                for tc in delta.tool_calls:
+                    if tc.index is not None:
+                        # New tool call or switching index
+                        if len(tool_calls) <= tc.index:
+                            tool_calls.append({"id": "", "function": {"name": "", "arguments": ""}, "type": "function"})
+                        current_tool_call = tool_calls[tc.index]
+
+                    if tc.id:
+                        current_tool_call["id"] += tc.id
+                    if tc.function.name:
+                        current_tool_call["function"]["name"] += tc.function.name
+                    if tc.function.arguments:
+                        current_tool_call["function"]["arguments"] += tc.function.arguments
+
+        # 2. Check if we have tool calls to execute
+        if tool_calls and tool_executor:
+            # Append assistant's tool_call message to history
+            messages.append({
+                "role": "assistant",
+                "tool_calls": tool_calls
+            })
+
+            # Execute each tool
+            for tc in tool_calls:
+                func_name = tc["function"]["name"]
+                args = tc["function"]["arguments"]
+
+                # Notify frontend we are executing
+                yield f"\n\n> ⚙️ Executing: {func_name}...\n\n"
+
+                result = tool_executor.execute(func_name, args)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": str(result)
+                })
+
+            # 3. Second Call (with tool results)
+            try:
+                response2 = self.client.chat.completions.create(
+                    model=self.config.model,
+                    messages=messages,
+                    temperature=self.config.temperature,
+                    stream=True,
+                )
+                for chunk in response2:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            except Exception as e:
+                yield f"Error calling tool response: {str(e)}"
+
         messages = [
             {
                 "role": "system",

@@ -12,6 +12,7 @@ from app.db import get_session
 from app.models import User
 from app.routers.auth import get_current_user
 from app.schemas import (
+    AgentChatRequest,
     AgentConfigOut,
     AgentConfigUpdate,
     AgentSummarizeRequest,
@@ -21,6 +22,7 @@ from app.schemas import (
     DraftReplyResponse,
     ModelCatalogResponse,
 )
+from app.services.agent_tools import TOOLS_DEFINITIONS, ToolExecutor
 from app.services.encryption import decrypt_optional
 from app.services.llm import LLMService
 from app.services.model_catalog import get_model_catalog
@@ -30,7 +32,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 _summarizer = RuleBasedSummarizer()
 
-
+# ... (Previous helper functions: _default_config, _config_out, _get_llm_service) ...
 def _default_config() -> AgentConfigOut:
     return AgentConfigOut(
         provider="rule_based",
@@ -75,6 +77,42 @@ def _get_llm_service(db: Session, user: User) -> tuple[LLMService, str]:
     return LLMService(config, api_key), "openai"
 
 
+@router.post("/chat")
+def chat_stream(
+    payload: AgentChatRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    service, provider = _get_llm_service(db, current_user)
+
+    if provider == "rule_based":
+        def _iter_simple():
+            yield "目前仅支持在配置 OpenAI 兼容接口后使用对话功能。"
+        return StreamingResponse(_iter_simple(), media_type="text/event-stream")
+
+    # Inject Context if needed
+    messages = payload.messages
+    if payload.context_contact_id:
+        # Fetch simple context about the contact
+        # In a real scenario, we might fetch last N messages here
+        pass
+
+    # Initialize Tool Executor
+    executor = ToolExecutor(db, current_user.id)
+
+    try:
+        generator = service.chat_stream(
+            messages=messages,
+            tools=TOOLS_DEFINITIONS,
+            tool_executor=executor
+        )
+        return StreamingResponse(generator, media_type="text/event-stream")
+    except ValueError as e:
+         def _iter_err():
+            yield f"Error: {str(e)}"
+         return StreamingResponse(_iter_err(), media_type="text/event-stream")
+
+# ... (Rest of the router: catalog, summarize, draft-reply, config, test) ...
 @router.get("/catalog", response_model=ModelCatalogResponse)
 def model_catalog(force_refresh: bool = Query(default=False)):
     return get_model_catalog(force_refresh=force_refresh)

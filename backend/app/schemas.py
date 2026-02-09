@@ -131,6 +131,11 @@ class MessageDetail(BaseModel):
     summary: Optional[str] = None
 
 
+class AgentChatRequest(BaseModel):
+    messages: list[dict[str, str]]
+    context_contact_id: Optional[int] = None
+    stream: bool = True
+
 class AgentSummarizeRequest(BaseModel):
     text: str
 
