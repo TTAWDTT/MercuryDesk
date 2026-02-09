@@ -30,9 +30,11 @@ from app.crud import (
 from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message, XApiConfig
 from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.feed_urls import normalize_feed_url
+from app.services.llm import LLMService
 from app.services.oauth_clients import refresh_access_token
 from app.services.summarizer import RuleBasedSummarizer
 from app.services.avatar import gravatar_url_for_email, normalize_http_avatar_url
+from app.schemas import AgentConfigOut
 from app.settings import settings
 
 _X_USERNAME_RE = re.compile(r"[A-Za-z0-9_]{1,15}")
@@ -323,7 +325,26 @@ def _needs_source_backfill(db: Session, *, account: ConnectedAccount) -> bool:
 
 def sync_account(db: Session, *, account: ConnectedAccount, force_full: bool = False) -> int:
     connector = _connector_for(db, account)
-    summarizer = RuleBasedSummarizer()
+    rule_summarizer = RuleBasedSummarizer()
+
+    # Initialize LLM Service if configured
+    llm_service: LLMService | None = None
+    agent_config = crud.get_agent_config(db, user_id=account.user_id)
+    if agent_config and agent_config.provider != "rule_based":
+        api_key = decrypt_optional(agent_config.api_key)
+        if api_key and agent_config.base_url:
+            try:
+                config_out = AgentConfigOut(
+                    provider=agent_config.provider,
+                    base_url=agent_config.base_url,
+                    model=agent_config.model,
+                    temperature=agent_config.temperature,
+                    has_api_key=True
+                )
+                llm_service = LLMService(config_out, api_key)
+            except Exception:
+                pass  # Fallback to rule-based
+
     since = None if force_full else _normalize_utc(account.last_synced_at)
     provider = account.provider.lower().strip()
     recent_messages: list[IncomingMessage] = []
@@ -416,7 +437,20 @@ def sync_account(db: Session, *, account: ConnectedAccount, force_full: bool = F
             continue
 
         received_at = _normalize_utc(incoming.received_at) or datetime.now(timezone.utc)
-        summary = None if incoming.source in {"rss", "bilibili", "x"} else summarizer.summarize(incoming.body)
+
+        summary = None
+        # Skip summary for feeds unless explicitly requested (future feature)
+        # For now, we only summarize personal messages (email, etc) or if needed
+        if incoming.source not in {"rss", "bilibili", "x"}:
+            if llm_service and llm_service.is_configured():
+                try:
+                    # Synchronous summary generation
+                    summary = str(llm_service.summarize(incoming.body, stream=False))
+                except Exception:
+                    summary = rule_summarizer.summarize(incoming.body)
+            else:
+                summary = rule_summarizer.summarize(incoming.body)
+
         msg = create_message(
             db,
             user_id=account.user_id,

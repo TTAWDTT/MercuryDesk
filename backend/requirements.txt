@@ -12,3 +12,4 @@ playwright>=1.40
 
 # test
 pytest>=7.0
+openai>=1.0.0
