@@ -1,6 +1,15 @@
+"""微博用户动态订阅连接器
+
+策略链:
+1. m.weibo.cn 移动端 API — ~1-2s (需网络可达)
+2. RSSHub 镜像 — 需自建实例
+3. 自定义 RSS 回退
+"""
 from __future__ import annotations
 
+import logging
 import re
+import time
 from datetime import datetime, timezone
 from html import escape
 
@@ -10,12 +19,20 @@ from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
 
+logger = logging.getLogger(__name__)
+
 _UID_RE = re.compile(r"\d{5,15}")
 _DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) "
     "AppleWebKit/605.1.15 (KHTML, like Gecko) "
     "Version/16.6 Mobile/15E148 Safari/604.1"
 )
+_RSSHUB_MIRRORS: list[str] = [
+    "https://rsshub.rssforever.com",
+    "https://rsshub.moeyy.cn",
+    "https://rsshub-instance.zeabur.app",
+    "https://rsshub.pseudoyu.com",
+]
 
 
 def _extract_uid(value: str) -> str:
@@ -108,9 +125,14 @@ class WeiboConnector:
             return None, None
 
         try:
-            # 使用微博移动端 API
             url = f"https://m.weibo.cn/api/container/getIndex?type=uid&value={self._uid}"
-            response = client.get(url)
+            response = client.get(
+                url,
+                headers={
+                    "Referer": f"https://m.weibo.cn/u/{self._uid}",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
             if response.status_code != 200:
                 return None, None
 
@@ -148,7 +170,13 @@ class WeiboConnector:
             # 获取用户微博列表
             # 首先获取 containerid
             index_url = f"https://m.weibo.cn/api/container/getIndex?type=uid&value={self._uid}"
-            response = client.get(index_url)
+            response = client.get(
+                index_url,
+                headers={
+                    "Referer": f"https://m.weibo.cn/u/{self._uid}",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
             response.raise_for_status()
 
             payload = response.json()
@@ -169,7 +197,13 @@ class WeiboConnector:
 
             # 获取微博列表
             weibo_url = f"https://m.weibo.cn/api/container/getIndex?type=uid&value={self._uid}&containerid={containerid}"
-            response = client.get(weibo_url)
+            response = client.get(
+                weibo_url,
+                headers={
+                    "Referer": f"https://m.weibo.cn/u/{self._uid}",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+            )
             response.raise_for_status()
 
             payload = response.json()
@@ -244,21 +278,84 @@ class WeiboConnector:
 
             return messages
 
+    # ------------------------------------------------------------------
+    # 策略 2: RSSHub 镜像
+    # ------------------------------------------------------------------
+
+    def _try_rsshub(self, *, since: datetime | None) -> list[IncomingMessage]:
+        urls: list[str] = []
+        if self._fallback_feed_url:
+            urls.append(self._fallback_feed_url)
+        for mirror in _RSSHUB_MIRRORS:
+            url = f"{mirror.rstrip('/')}/weibo/user/{self._uid}"
+            if url not in urls:
+                urls.append(url)
+
+        last_error: Exception | None = None
+        for feed_url in urls:
+            try:
+                msgs = FeedConnector(
+                    feed_url=feed_url,
+                    source="weibo",
+                    default_sender=self._default_sender,
+                    timeout_seconds=min(15, self._timeout_seconds),
+                    max_entries=self._max_items,
+                ).fetch_new_messages(since=since)
+                if msgs:
+                    return msgs
+            except Exception as e:
+                last_error = e
+                logger.debug("RSSHub 微博失败 [%s]: %s", feed_url, e)
+
+        if last_error:
+            raise last_error
+        raise ValueError("所有 RSSHub 镜像均失败")
+
+    # ------------------------------------------------------------------
+    # 主入口
+    # ------------------------------------------------------------------
+
     def fetch_new_messages(self, *, since: datetime | None) -> list[IncomingMessage]:
+        errors: list[str] = []
+
+        # ── 主策略: m.weibo.cn API ──
         try:
-            return self._fetch_posts(since=since)
-        except Exception as primary_error:
-            if self._fallback_feed_url:
-                try:
-                    return FeedConnector(
-                        feed_url=self._fallback_feed_url,
-                        source="weibo",
-                        default_sender=self._default_sender,
-                        timeout_seconds=self._timeout_seconds,
-                        max_entries=self._max_items,
-                    ).fetch_new_messages(since=since)
-                except Exception as fallback_error:
-                    raise ValueError(
-                        f"微博抓取失败: {primary_error}; 订阅源回退失败: {fallback_error}"
-                    ) from fallback_error
-            raise ValueError(f"微博抓取失败: {primary_error}") from primary_error
+            t0 = time.monotonic()
+            messages = self._fetch_posts(since=since)
+            elapsed = time.monotonic() - t0
+            logger.info(
+                "微博 API 成功获取 %d 条消息 (%.2fs)",
+                len(messages),
+                elapsed,
+            )
+            return messages
+        except Exception as e:
+            errors.append(f"m.weibo.cn: {e}")
+            logger.debug("微博 API 失败: %s", e)
+
+        # ── 回退 1: RSSHub ──
+        try:
+            messages = self._try_rsshub(since=since)
+            if messages:
+                logger.info("RSSHub 成功获取 %d 条微博消息", len(messages))
+                return messages
+        except Exception as e:
+            errors.append(f"RSSHub: {e}")
+            logger.debug("RSSHub 微博失败: %s", e)
+
+        # ── 回退 2: 自定义 RSS ──
+        if self._fallback_feed_url:
+            try:
+                messages = FeedConnector(
+                    feed_url=self._fallback_feed_url,
+                    source="weibo",
+                    default_sender=self._default_sender,
+                    timeout_seconds=self._timeout_seconds,
+                    max_entries=self._max_items,
+                ).fetch_new_messages(since=since)
+                if messages:
+                    return messages
+            except Exception as e:
+                errors.append(f"RSS fallback: {e}")
+
+        raise ValueError("微博同步失败: " + "; ".join(errors))
