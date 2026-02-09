@@ -261,8 +261,9 @@ export async function uploadAvatar(file: File): Promise<User> {
   return (await resp.json()) as User;
 }
 
-export async function syncAccount(accountId: number) {
-  return await fetchJson<{ inserted: number; account_id: number }>(`/api/v1/accounts/${accountId}/sync`, {
+export async function syncAccount(accountId: number, forceFull = false) {
+  const qs = forceFull ? '?force_full=true' : '';
+  return await fetchJson<{ inserted: number; account_id: number }>(`/api/v1/accounts/${accountId}/sync${qs}`, {
     method: "POST"
   });
 }
@@ -341,4 +342,38 @@ export async function testAgent(): Promise<{ ok: boolean; provider: string; mess
 export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalogResponse> {
   const qs = forceRefresh ? "?force_refresh=true" : "";
   return await fetchJson<ModelCatalogResponse>(`/api/v1/agent/catalog${qs}`);
+}
+
+// X API Configuration
+export type XApiConfig = {
+  configured: boolean;
+  token_hint?: string | null;
+  cookies_configured?: boolean;
+  message?: string | null;
+};
+
+export async function getXApiConfig(): Promise<XApiConfig> {
+  return await fetchJson<XApiConfig>("/api/v1/accounts/x/config");
+}
+
+export async function updateXApiConfig(bearerToken: string): Promise<XApiConfig> {
+  return await fetchJson<XApiConfig>("/api/v1/accounts/x/config", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ bearer_token: bearerToken }),
+  });
+}
+
+export async function updateXAuthCookies(authToken: string, ct0: string): Promise<{ cookies_configured: boolean; message: string }> {
+  return await fetchJson("/api/v1/accounts/x/cookies", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auth_token: authToken, ct0 }),
+  });
+}
+
+export async function deleteXAuthCookies(): Promise<{ cookies_configured: boolean; message: string }> {
+  return await fetchJson("/api/v1/accounts/x/cookies", {
+    method: "DELETE",
+  });
 }

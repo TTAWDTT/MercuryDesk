@@ -15,6 +15,7 @@ import ListItemText from '@mui/material/ListItemText';
 import IconButton from '@mui/material/IconButton';
 import Switch from '@mui/material/Switch';
 import Collapse from '@mui/material/Collapse';
+import Tooltip from '@mui/material/Tooltip';
 import Link from '@mui/material/Link';
 import DeleteIcon from '@mui/icons-material/DeleteOutline';
 import GitHubIcon from '@mui/icons-material/GitHub';
@@ -29,25 +30,30 @@ import useSWR from 'swr';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useColorMode } from '../theme';
-import { 
+import {
     AgentConfig,
-    ConnectedAccount, 
+    ConnectedAccount,
     ForwardAccountInfo,
     ModelCatalogResponse,
     OAuthProvider,
     OAuthProviderConfig,
-    User, 
-    createAccount, 
-    deleteAccount, 
+    XApiConfig,
+    User,
+    createAccount,
+    deleteAccount,
     getAgentCatalog,
     getForwardAccountInfo,
     getOAuthProviderConfig,
+    getXApiConfig,
     listAccounts,
     startAccountOAuth,
     testAgent,
     updateOAuthProviderConfig,
     updateAgentConfig,
-    syncAccount, 
+    updateXApiConfig,
+    updateXAuthCookies,
+    deleteXAuthCookies,
+    syncAccount,
     uploadAvatar
 } from '../api';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -59,7 +65,7 @@ interface SettingsProps {
     onLogout: () => void;
 }
 
-type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x';
+type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x' | 'douyin' | 'xiaohongshu' | 'weibo';
 type OAuthSourceProvider = OAuthProvider;
 type GithubConnectMode = 'oauth' | 'token';
 const GMAIL_OAUTH_CONSOLE_URL = 'https://console.cloud.google.com/apis/credentials';
@@ -82,6 +88,9 @@ function accountIcon(provider: string) {
     if (normalized === 'rss') return <RssFeedIcon />;
     if (normalized === 'bilibili') return <PersonIcon />;
     if (normalized === 'x') return <AlternateEmailIcon />;
+    if (normalized === 'douyin') return <PersonIcon />;
+    if (normalized === 'xiaohongshu') return <PersonIcon />;
+    if (normalized === 'weibo') return <PersonIcon />;
     if (normalized === 'forward') return <SyncIcon />;
     return <EmailIcon />;
 }
@@ -121,6 +130,18 @@ export default function Settings({ onLogout }: SettingsProps) {
     const [rssDisplayName, setRssDisplayName] = useState('');
     const [bilibiliUid, setBilibiliUid] = useState('');
     const [xUsername, setXUsername] = useState('');
+    const [xBearerToken, setXBearerToken] = useState('');
+    const [xAuthToken, setXAuthToken] = useState('');
+    const [xCt0, setXCt0] = useState('');
+    const [savingXConfig, setSavingXConfig] = useState(false);
+    const [savingXCookies, setSavingXCookies] = useState(false);
+    const { data: xApiConfig, mutate: mutateXApiConfig } = useSWR<XApiConfig>(
+        newProvider === 'x' ? 'x-api-config' : null,
+        () => getXApiConfig()
+    );
+    const [douyinSecUid, setDouyinSecUid] = useState('');
+    const [xiaohongshuUserId, setXiaohongshuUserId] = useState('');
+    const [weiboUid, setWeiboUid] = useState('');
     const [forwardSourceEmail, setForwardSourceEmail] = useState('');
     const [githubConnectMode, setGithubConnectMode] = useState<GithubConnectMode>('oauth');
     const [githubIdentifier, setGithubIdentifier] = useState('');
@@ -614,6 +635,45 @@ export default function Settings({ onLogout }: SettingsProps) {
                     },
                     'X'
                 );
+            } else if (newProvider === 'douyin') {
+                const secUid = douyinSecUid.trim();
+                if (!secUid) throw new Error('请填写抖音号或 sec_uid');
+                await connectAndSync(
+                    {
+                        provider: 'douyin',
+                        identifier: secUid,
+                        feed_url: '',
+                        feed_homepage_url: secUid,
+                        feed_display_name: '抖音用户',
+                    },
+                    '抖音'
+                );
+            } else if (newProvider === 'xiaohongshu') {
+                const userId = xiaohongshuUserId.trim();
+                if (!userId) throw new Error('请填写小红书用户 UID');
+                await connectAndSync(
+                    {
+                        provider: 'xiaohongshu',
+                        identifier: userId,
+                        feed_url: '',
+                        feed_homepage_url: userId,
+                        feed_display_name: '小红书用户',
+                    },
+                    '小红书'
+                );
+            } else if (newProvider === 'weibo') {
+                const uid = weiboUid.trim();
+                if (!uid) throw new Error('请填写微博用户 UID');
+                await connectAndSync(
+                    {
+                        provider: 'weibo',
+                        identifier: uid,
+                        feed_url: '',
+                        feed_homepage_url: uid,
+                        feed_display_name: '微博用户',
+                    },
+                    '微博'
+                );
             } else {
                 await connectAndSync(
                     {
@@ -652,10 +712,10 @@ export default function Settings({ onLogout }: SettingsProps) {
         }
     };
 
-    const handleSync = async (id: number) => {
+    const handleSync = async (id: number, forceFull = false) => {
         setSyncing(id);
         try {
-            const res = await syncAccount(id);
+            const res = await syncAccount(id, forceFull);
             setToast({ message: `同步完成：+${res.inserted}`, severity: 'success' });
             mutateAccounts(); // Update last synced time
         } catch (e) {
@@ -780,14 +840,22 @@ export default function Settings({ onLogout }: SettingsProps) {
                                         <ListItem
                                             secondaryAction={
                                                 <Box>
+                                                    <Tooltip title="左键：增量同步 | 右键：全量重新同步" arrow>
                                                     <IconButton 
                                                         edge="end" 
                                                         onClick={() => handleSync(account.id)} 
+                                                        onContextMenu={(e) => {
+                                                            e.preventDefault();
+                                                            if (confirm('全量重新同步？将忽略上次同步时间，拉取所有历史消息。')) {
+                                                                handleSync(account.id, true);
+                                                            }
+                                                        }}
                                                         disabled={syncing === account.id}
                                                         sx={{ mr: 1 }}
                                                     >
                                                         {syncing === account.id ? <CircularProgress size={20} /> : <SyncIcon />}
                                                     </IconButton>
+                                                    </Tooltip>
                                                     <IconButton edge="end" onClick={() => handleDeleteAccount(account.id)} color="error">
                                                         <DeleteIcon />
                                                     </IconButton>
@@ -835,6 +903,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 <option value="rss">RSS / Blog</option>
                                                 <option value="bilibili">Bilibili UP 动态</option>
                                                 <option value="x">X 用户更新</option>
+                                                <option value="douyin">抖音用户动态</option>
+                                                <option value="xiaohongshu">小红书用户笔记</option>
+                                                <option value="weibo">微博用户动态</option>
                                                 <option value="mock">演示数据</option>
                                             </TextField>
                                         </Grid>
@@ -1276,7 +1347,194 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
                                                     <Alert severity="info" sx={{ borderRadius: 3 }}>
-                                                        使用 X 公共网页接口抓取更新，只需用户名即可同步；如失败会自动回退到订阅地址抓取。
+                                                        {xApiConfig?.configured
+                                                            ? `已配置官方 X API（${xApiConfig.token_hint || '已隐藏'}），将优先使用官方 API 获取推文。`
+                                                            : '默认使用公共网页接口抓取；配置官方 API Bearer Token 可获得更稳定的抓取效果。'}
+                                                    </Alert>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 8 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        type="password"
+                                                        label="X API Bearer Token（可选，推荐）"
+                                                        value={xBearerToken}
+                                                        onChange={(e) => setXBearerToken(e.target.value)}
+                                                        placeholder={xApiConfig?.configured ? '已配置（不显示）' : 'AAAA...'}
+                                                        helperText="从 developer.x.com 获取，配置后优先使用官方 API"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 4 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        disabled={!xBearerToken.trim() || savingXConfig}
+                                                        onClick={async () => {
+                                                            setSavingXConfig(true);
+                                                            try {
+                                                                const updated = await updateXApiConfig(xBearerToken.trim());
+                                                                mutateXApiConfig(updated, { revalidate: false });
+                                                                setXBearerToken('');
+                                                                setToast({ message: 'X API Token 已保存', severity: 'success' });
+                                                            } catch (e) {
+                                                                setToast({ message: e instanceof Error ? e.message : '保存失败', severity: 'error' });
+                                                            } finally {
+                                                                setSavingXConfig(false);
+                                                            }
+                                                        }}
+                                                        sx={{ height: '40px' }}
+                                                    >
+                                                        {savingXConfig ? '保存中…' : '保存 Token'}
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Button
+                                                        variant="text"
+                                                        size="small"
+                                                        onClick={() => window.open('https://developer.x.com/', '_blank', 'noopener,noreferrer')}
+                                                    >
+                                                        前往 X 开发者平台获取 Bearer Token（新窗口）
+                                                    </Button>
+                                                </Grid>
+
+                                                {/* Cookie Authentication Section */}
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity={xApiConfig?.cookies_configured ? 'success' : 'warning'} sx={{ borderRadius: 3 }}>
+                                                        {xApiConfig?.cookies_configured
+                                                            ? '已配置浏览器 Cookie 认证，将优先使用认证接口获取最新推文（支持按时间排序）。'
+                                                            : '推荐配置浏览器 Cookie：未认证接口只能获取热门推文（按互动量排序），可能遗漏最新推文。'}
+                                                    </Alert>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        type="password"
+                                                        label="auth_token Cookie"
+                                                        value={xAuthToken}
+                                                        onChange={(e) => setXAuthToken(e.target.value)}
+                                                        placeholder={xApiConfig?.cookies_configured ? '已配置（不显示）' : '粘贴 auth_token 值'}
+                                                        helperText="从浏览器 DevTools → Application → Cookies → x.com 获取"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        type="password"
+                                                        label="ct0 Cookie"
+                                                        value={xCt0}
+                                                        onChange={(e) => setXCt0(e.target.value)}
+                                                        placeholder={xApiConfig?.cookies_configured ? '已配置（不显示）' : '粘贴 ct0 值'}
+                                                        helperText="同样从 Cookies 中获取 ct0 的值"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <Button
+                                                        fullWidth
+                                                        variant="outlined"
+                                                        disabled={(!xAuthToken.trim() || !xCt0.trim()) || savingXCookies}
+                                                        onClick={async () => {
+                                                            setSavingXCookies(true);
+                                                            try {
+                                                                await updateXAuthCookies(xAuthToken.trim(), xCt0.trim());
+                                                                mutateXApiConfig();
+                                                                setXAuthToken('');
+                                                                setXCt0('');
+                                                                setToast({ message: 'X Cookie 认证已保存', severity: 'success' });
+                                                            } catch (e) {
+                                                                setToast({ message: e instanceof Error ? e.message : '保存失败', severity: 'error' });
+                                                            } finally {
+                                                                setSavingXCookies(false);
+                                                            }
+                                                        }}
+                                                        sx={{ height: '40px' }}
+                                                    >
+                                                        {savingXCookies ? '保存中…' : '保存 Cookies'}
+                                                    </Button>
+                                                </Grid>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    {xApiConfig?.cookies_configured && (
+                                                        <Button
+                                                            fullWidth
+                                                            variant="outlined"
+                                                            color="error"
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await deleteXAuthCookies();
+                                                                    mutateXApiConfig();
+                                                                    setToast({ message: 'X Cookie 已删除', severity: 'info' });
+                                                                } catch (e) {
+                                                                    setToast({ message: e instanceof Error ? e.message : '删除失败', severity: 'error' });
+                                                                }
+                                                            }}
+                                                            sx={{ height: '40px' }}
+                                                        >
+                                                            删除 Cookies
+                                                        </Button>
+                                                    )}
+                                                </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'douyin' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="抖音号或 sec_uid"
+                                                        value={douyinSecUid}
+                                                        onChange={(e) => setDouyinSecUid(e.target.value)}
+                                                        placeholder="如：douyin123 或 MS4wLjABAAAA..."
+                                                        helperText="支持直接输入抖音号，系统会自动解析"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        支持抖音号或 sec_uid，抓取用户最新视频动态。
+                                                    </Alert>
+                                                </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'xiaohongshu' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="小红书用户 UID"
+                                                        value={xiaohongshuUserId}
+                                                        onChange={(e) => setXiaohongshuUserId(e.target.value)}
+                                                        placeholder="如：5a1234567890abcdef123456"
+                                                        helperText="从用户主页链接 /user/profile/xxx 中获取"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        抓取小红书用户最新笔记动态。
+                                                    </Alert>
+                                                </Grid>
+                                            </>
+                                        )}
+
+                                        {newProvider === 'weibo' && (
+                                            <>
+                                                <Grid size={{ xs: 12, sm: 6 }}>
+                                                    <TextField
+                                                        fullWidth
+                                                        size="small"
+                                                        label="微博用户 UID"
+                                                        value={weiboUid}
+                                                        onChange={(e) => setWeiboUid(e.target.value)}
+                                                        placeholder="如：1234567890"
+                                                        helperText="从用户主页链接 weibo.com/u/xxx 中获取"
+                                                    />
+                                                </Grid>
+                                                <Grid size={{ xs: 12 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                        抓取微博用户最新动态。
                                                     </Alert>
                                                 </Grid>
                                             </>
@@ -1324,6 +1582,12 @@ export default function Settings({ onLogout }: SettingsProps) {
                                 >
                                     刷新模型目录
                                 </Button>
+                            </Box>
+
+                            <Box mt={2} mb={2}>
+                                <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                    ✨ <b>即将推出：MercuryDesk Agent</b> —— 这里的配置将用于驱动未来的智能体功能（自动分类消息、生成回复草稿、每日智能简报等）。目前仅用于简单的摘要测试。
+                                </Alert>
                             </Box>
 
                             <Grid container spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
