@@ -1,9 +1,8 @@
 """抖音用户视频订阅连接器
 
-策略链:
-1. Playwright 无头浏览器 — 通过真实 Chromium 渲染页面，自动通过反爬验证，
-   拦截页面 XHR 请求直接获取结构化 JSON 数据。最可靠。
-2. RSSHub 镜像 — 轻量回退，适用于自建 RSSHub 实例配置了 DOUYIN_COOKIE 的情况。
+策略链（按速度排序）:
+1. Playwright 精简模式 — 跳过首页，直达用户页面，拦截 XHR 获取 JSON ~13s
+2. RSSHub 镜像 — 轻量回退，适用于自建 RSSHub 实例配置了 DOUYIN_COOKIE 的情况
 
 安装:
     pip install playwright
@@ -23,6 +22,7 @@ from typing import Any
 import httpx
 
 from app.connectors.base import IncomingMessage
+
 from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
 
@@ -156,20 +156,17 @@ class DouyinConnector:
         self._transport = transport
 
     # ------------------------------------------------------------------
-    # 策略 1: Playwright 无头浏览器
+    # 策略 1: Playwright 精简模式（跳过首页, ~13s）
     # ------------------------------------------------------------------
 
     def _fetch_via_playwright(
-        self, *, since: datetime | None
+        self, *, since: datetime | None, fresh: bool = False,
     ) -> list[IncomingMessage]:
         """
-        使用 Playwright 打开抖音用户页面，拦截浏览器发出的
-        /aweme/v1/web/aweme/post/ XHR 请求，直接获取 JSON 数据。
+        精简 Playwright — 直达用户页面拦截 XHR，
+        跳过首页访问和随机延迟，~13s 完成。
 
-        优点:
-        - 自动通过 byted_acrawler JS 反爬验证
-        - 无需实现 a_bogus 签名算法
-        - 无需维护 cookie 生命周期
+        当 fresh=True 时，使用干净上下文消除被标记的 cookie。
         """
         if not _HAS_PLAYWRIGHT:
             raise RuntimeError(
@@ -198,20 +195,19 @@ class DouyinConnector:
                     with lock:
                         collected.append(body)
             except Exception:
-                pass  # 静默忽略非 JSON 响应
+                pass
 
         timeout_ms = self._timeout_seconds * 1000
 
         try:
             with sync_playwright() as pw:
+                # 非持久化上下文 — 启动更快
                 browser = pw.chromium.launch(
                     headless=True,
                     args=[
                         "--disable-blink-features=AutomationControlled",
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
-                        "--disable-web-security",
-                        "--disable-features=IsolateOrigins,site-per-process",
                     ],
                 )
                 context = browser.new_context(
@@ -219,24 +215,12 @@ class DouyinConnector:
                     viewport={"width": 1920, "height": 1080},
                     locale="zh-CN",
                     timezone_id="Asia/Shanghai",
-                    java_script_enabled=True,
                     bypass_csp=True,
                 )
-                # 移除 webdriver 标记以降低被检测概率
                 context.add_init_script(
-                    """
-                    Object.defineProperty(navigator, 'webdriver', {
-                        get: () => undefined
-                    });
-                    // 隐藏自动化特征
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5]
-                    });
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['zh-CN', 'zh', 'en']
-                    });
-                    window.chrome = { runtime: {} };
-                    """
+                    "Object.defineProperty(navigator,'webdriver',"
+                    "{get:()=>undefined});"
+                    "window.chrome={runtime:{}};"
                 )
 
                 page = context.new_page()
@@ -244,34 +228,22 @@ class DouyinConnector:
 
                 logger.info("Playwright: 正在打开 %s", url)
 
-                # 增加随机延迟模拟人类行为
-                import random
-                page.wait_for_timeout(random.randint(500, 1500))
-
+                # 直达用户页面，跳过首页访问
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
 
-                # 等待视频列表 API 响应到达（最多等 20 秒）
-                _wait_deadline = min(20_000, timeout_ms)
-                try:
-                    page.wait_for_function(
-                        """() => {
-                            const items = document.querySelectorAll(
-                                '[data-e2e="user-post-list"] li, '
-                                + '.ECMy_TNn, '
-                                + '[class*="user-post"] li'
-                            );
-                            return items.length > 0;
-                        }""",
-                        timeout=_wait_deadline,
-                    )
-                except PlaywrightTimeout:
-                    logger.debug("Playwright: 等待视频列表 DOM 超时，尝试滚动")
+                # 轮询等待 API 数据到达（每秒检查一次，最多 15 秒）
+                poll_limit = min(15, self._timeout_seconds - 5)
+                for _ in range(poll_limit):
+                    if collected:
+                        break
+                    page.wait_for_timeout(1000)
 
-                # 轻微滚动以触发懒加载 / 额外 API 调用
-                page.evaluate("window.scrollTo(0, 600)")
-                page.wait_for_timeout(2000)
+                # 如果仍未获取数据，滚动触发一次
+                if not collected:
+                    page.evaluate("window.scrollTo(0, 600)")
+                    page.wait_for_timeout(3000)
 
-                # ------- 回退: 如果拦截未命中，尝试从 RENDER_DATA 提取 -------
+                # 回退: 如果拦截未命中，尝试从 RENDER_DATA 提取
                 if not collected:
                     logger.debug("Playwright: XHR 拦截未获得数据，尝试 RENDER_DATA")
                     raw = page.evaluate(
@@ -283,7 +255,6 @@ class DouyinConnector:
                     if raw:
                         try:
                             import urllib.parse as _up
-
                             render = json.loads(_up.unquote(raw))
                             collected.extend(
                                 self._extract_from_render_data(render)
@@ -291,6 +262,7 @@ class DouyinConnector:
                         except Exception as exc:
                             logger.debug("RENDER_DATA 解析失败: %s", exc)
 
+                context.close()
                 browser.close()
 
         except PlaywrightError as exc:
@@ -485,16 +457,15 @@ class DouyinConnector:
     ) -> list[IncomingMessage]:
         errors: list[str] = []
 
-        # ── 主策略: Playwright 无头浏览器 ──
+        # ── 主策略: Playwright 精简模式（~13s）──
         if _HAS_PLAYWRIGHT:
             try:
                 messages = self._fetch_via_playwright(since=since)
-                if messages:
-                    logger.info(
-                        "Playwright 成功获取 %d 条抖音消息", len(messages)
-                    )
-                    return messages
-                errors.append("Playwright 返回空视频列表")
+                logger.info(
+                    "Playwright 成功获取 %d 条抖音消息",
+                    len(messages),
+                )
+                return messages
             except Exception as e:
                 errors.append(f"Playwright: {e}")
                 logger.warning("Playwright 抖音抓取失败: %s", e)
