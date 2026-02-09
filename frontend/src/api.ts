@@ -387,6 +387,17 @@ export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalo
   return await fetchJson<ModelCatalogResponse>(`/api/v1/agent/catalog${qs}`);
 }
 
+export async function* agentChatStream(
+  messages: { role: string; content: string }[],
+  contextContactId?: number
+): AsyncGenerator<string, void, unknown> {
+  yield* streamFetch("/api/v1/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ messages, context_contact_id: contextContactId })
+  });
+}
+
 // X API Configuration
 export type XApiConfig = {
   configured: boolean;

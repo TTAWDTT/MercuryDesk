@@ -15,6 +15,7 @@ import Divider from '@mui/material/Divider';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
+import { AgentChatPanel } from './AgentChatPanel';
 import { GuideCards } from './GuideCards';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
@@ -258,17 +259,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         </Paper>
       </Container>
 
-      <ConversationDrawer 
-        open={!!selectedContact} 
-        contact={selectedContact} 
+      <ConversationDrawer
+        open={!!selectedContact}
+        contact={selectedContact}
         onClose={() => {
             setSelectedContact(null);
             mutateContacts(); // Refresh to update unread counts
-        }} 
+        }}
       />
 
-      <Snackbar 
-        open={!!toast} 
+      <AgentChatPanel currentContact={selectedContact} />
+
+      <Snackbar
+        open={!!toast}
         autoHideDuration={4000} 
         onClose={() => setToast(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
