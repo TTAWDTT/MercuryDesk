@@ -30,44 +30,54 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  // Manga / Comic Style Palette
+  // Strictly Black & White with hard contrasts
   const lightPalette = {
-    primary: '#d97757', // Anthropic Orange
-    secondary: '#6a9bcc', // Anthropic Blue
-    background: '#faf9f5', // Anthropic Light
+    primary: '#000000',
+    secondary: '#000000',
+    background: '#ffffff',
     paper: '#ffffff',
-    textPrimary: '#141413', // Anthropic Dark
-    textSecondary: '#6e6d66',
-    divider: '#e8e6dc', // Anthropic Light Gray
-    hover: '#f0efe9',
-    accentGreen: '#788c5d',
+    textPrimary: '#000000',
+    textSecondary: '#000000', // No grey, just black
+    divider: '#000000',
+    action: {
+        active: '#000000',
+        hover: 'rgba(0, 0, 0, 0.05)',
+        selected: 'rgba(0, 0, 0, 0.1)',
+    }
   };
 
   const darkPalette = {
-    primary: '#e0886a', // Slightly lighter Orange for dark mode
-    secondary: '#85b0db', // Slightly lighter Blue
-    background: '#141413', // Anthropic Dark
-    paper: '#1e1e1d',
-    textPrimary: '#faf9f5', // Anthropic Light
-    textSecondary: '#b0aea5', // Anthropic Mid Gray
-    divider: '#2d2d2c',
-    hover: '#2a2a29',
-    accentGreen: '#8da36f',
+    primary: '#ffffff',
+    secondary: '#ffffff',
+    background: '#000000',
+    paper: '#000000',
+    textPrimary: '#ffffff',
+    textSecondary: '#ffffff',
+    divider: '#ffffff',
+    action: {
+        active: '#ffffff',
+        hover: 'rgba(255, 255, 255, 0.1)',
+        selected: 'rgba(255, 255, 255, 0.2)',
+    }
   };
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
-  const headingFont = '"Poppins", "Noto Sans SC", sans-serif';
-  const bodyFont = '"Lora", "Noto Serif SC", serif';
+
+  // Comic fonts
+  const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
+  const bodyFont = '"Courier New", Courier, monospace'; // Typewriter style for body
 
   const theme = useMemo(() => createTheme({
     palette: {
       mode,
       primary: {
         main: colors.primary,
-        contrastText: '#faf9f5',
+        contrastText: mode === 'light' ? '#ffffff' : '#000000',
       },
       secondary: {
         main: colors.secondary,
-        contrastText: '#faf9f5',
+        contrastText: mode === 'light' ? '#ffffff' : '#000000',
       },
       background: {
         default: colors.background,
@@ -78,120 +88,191 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         secondary: colors.textSecondary,
       },
       divider: colors.divider,
-      action: {
-        hover: colors.hover,
-        selected: alpha(colors.primary, 0.08),
-      },
+      action: colors.action,
     },
     typography: {
       fontFamily: bodyFont,
-      h1: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
-      h2: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
-      h3: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
-      h4: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.02em', color: colors.textPrimary },
-      h5: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.01em', color: colors.textPrimary },
-      h6: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.01em', color: colors.textPrimary },
-      subtitle1: { fontFamily: headingFont, fontWeight: 500 },
-      subtitle2: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '0.01em' },
-      body1: { fontFamily: bodyFont, lineHeight: 1.7, fontSize: '1.05rem' },
-      body2: { fontFamily: bodyFont, lineHeight: 1.65 },
-      button: { fontFamily: headingFont, fontWeight: 600, textTransform: 'none', letterSpacing: '0.02em' },
-      overline: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '0.08em' },
+      h1: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h2: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h3: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' },
+      h4: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '0.02em' },
+      h5: { fontFamily: headingFont, fontWeight: 700 },
+      h6: { fontFamily: headingFont, fontWeight: 700 },
+      subtitle1: { fontFamily: headingFont, fontWeight: 600 },
+      subtitle2: { fontFamily: headingFont, fontWeight: 600 },
+      body1: { fontFamily: bodyFont, fontWeight: 500, lineHeight: 1.6 },
+      body2: { fontFamily: bodyFont, fontWeight: 500 },
+      button: { fontFamily: headingFont, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' },
+      caption: { fontFamily: bodyFont, fontWeight: 500 },
+      overline: { fontFamily: headingFont, fontWeight: 700 },
     },
-    shape: { borderRadius: 12 },
+    shape: { borderRadius: 0 }, // Sharp corners for everything
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
+            backgroundImage: mode === 'light'
+                ? 'radial-gradient(#000000 1px, transparent 1px)'
+                : 'radial-gradient(#333333 1px, transparent 1px)',
+            backgroundSize: '20px 20px', // Halftone dot pattern
             color: colors.textPrimary,
-            scrollbarColor: mode === 'light' ? '#b0aea5 #faf9f5' : '#3A4D73 #141413',
-            '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-            '&::-webkit-scrollbar-thumb': {
-                backgroundColor: mode === 'light' ? '#d1d0c9' : '#333',
-                borderRadius: '4px',
-            },
           },
-        },
-      },
-      MuiCard: {
-        styleOverrides: {
-          root: {
-            borderRadius: 16,
-            boxShadow: mode === 'light'
-                ? '0 4px 12px rgba(20, 20, 19, 0.04)'
-                : '0 4px 12px rgba(0, 0, 0, 0.2)',
-            border: `1px solid ${colors.divider}`,
-            transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
-          },
-        },
-      },
-      MuiButton: {
-        styleOverrides: {
-          root: {
-            borderRadius: 8,
-            padding: '8px 20px',
-            boxShadow: 'none',
-            '&:hover': {
-              boxShadow: 'none',
-              backgroundColor: alpha(colors.primary, 0.08),
-            },
-          },
-          containedPrimary: {
-            backgroundColor: colors.textPrimary, // Brand style: dark buttons
-            color: colors.background,
-            '&:hover': {
-              backgroundColor: alpha(colors.textPrimary, 0.85),
-              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-            },
-          },
-          outlined: {
-            borderColor: colors.divider,
-            color: colors.textPrimary,
-            '&:hover': {
-              borderColor: colors.textPrimary,
-              backgroundColor: 'transparent',
-            }
-          }
         },
       },
       MuiPaper: {
         styleOverrides: {
           root: {
             backgroundImage: 'none',
+            border: `2px solid ${colors.divider}`,
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)', // Hard shadow
           },
           elevation1: {
-            boxShadow: mode === 'light'
-               ? '0 2px 8px rgba(20, 20, 19, 0.04)'
-               : '0 2px 8px rgba(0, 0, 0, 0.2)',
-            border: `1px solid ${colors.divider}`,
-          }
+            boxShadow: `4px 4px 0 0 ${colors.divider}`,
+          },
+          elevation2: {
+            boxShadow: `6px 6px 0 0 ${colors.divider}`,
+          },
+          elevation3: {
+            boxShadow: `8px 8px 0 0 ${colors.divider}`,
+          },
         }
       },
-      MuiAppBar: {
+      MuiButton: {
         styleOverrides: {
           root: {
-            boxShadow: 'none',
-            borderBottom: `1px solid ${colors.divider}`,
-            backdropFilter: 'blur(16px)',
-            backgroundColor: alpha(colors.background, 0.85),
-            color: colors.textPrimary,
+            border: `2px solid ${colors.primary}`,
+            boxShadow: `2px 2px 0 0 ${colors.primary}`,
+            '&:hover': {
+              transform: 'translate(-1px, -1px)',
+              boxShadow: `4px 4px 0 0 ${colors.primary}`,
+              backgroundColor: 'transparent',
+            },
+            '&:active': {
+              transform: 'translate(2px, 2px)',
+              boxShadow: 'none',
+            },
+          },
+          contained: {
+            backgroundColor: colors.primary,
+            color: mode === 'light' ? '#ffffff' : '#000000',
+            boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
+            '&:hover': {
+               backgroundColor: colors.primary,
+               boxShadow: `6px 6px 0 0 ${colors.textPrimary}`,
+            }
+          },
+          outlined: {
+            borderWidth: '2px',
+            '&:hover': {
+                borderWidth: '2px',
+            }
+          }
+        },
+      },
+      MuiCard: {
+        styleOverrides: {
+          root: {
+            border: `3px solid ${colors.divider}`,
+            borderRadius: 0,
+            boxShadow: `8px 8px 0 0 ${colors.divider}`,
           },
         },
       },
       MuiChip: {
         styleOverrides: {
           root: {
-            fontFamily: headingFont,
-            fontWeight: 500,
+            border: `2px solid ${colors.divider}`,
+            backgroundColor: 'transparent',
+            fontWeight: 700,
+            boxShadow: `2px 2px 0 0 ${colors.divider}`,
+          },
+          filled: {
+            backgroundColor: colors.action.hover,
+          }
+        },
+      },
+      MuiAvatar: {
+        styleOverrides: {
+          root: {
+            border: `2px solid ${colors.divider}`,
+            backgroundColor: 'transparent',
+            color: colors.textPrimary,
+          }
+        }
+      },
+      MuiTextField: {
+        styleOverrides: {
+          root: {
+            '& .MuiOutlinedInput-root': {
+              borderRadius: 0,
+              '& fieldset': {
+                borderWidth: '2px',
+                borderColor: colors.divider,
+              },
+              '&:hover fieldset': {
+                borderWidth: '2px',
+                borderColor: colors.textPrimary,
+              },
+              '&.Mui-focused fieldset': {
+                borderWidth: '2px',
+                borderColor: colors.textPrimary,
+                boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
+              },
+            },
           }
         }
       },
       MuiDrawer: {
         styleOverrides: {
           paper: {
-            backgroundColor: colors.background,
+            borderLeft: `3px solid ${colors.divider}`,
+          }
+        }
+      },
+      MuiDivider: {
+        styleOverrides: {
+          root: {
+            borderBottomWidth: '2px',
+            borderColor: colors.divider,
+          }
+        }
+      },
+      MuiAlert: {
+        styleOverrides: {
+          root: {
+            border: `2px solid ${colors.divider}`,
+            borderRadius: 0,
+            boxShadow: `4px 4px 0 0 ${colors.divider}`,
+          },
+          standardInfo: {
+             backgroundColor: 'transparent',
+             color: colors.textPrimary,
+          },
+          standardSuccess: {
+             backgroundColor: 'transparent',
+             color: colors.textPrimary,
+          },
+          standardWarning: {
+             backgroundColor: 'transparent',
+             color: colors.textPrimary,
+          },
+          standardError: {
+             backgroundColor: 'transparent',
+             color: colors.textPrimary,
+          }
+        }
+      },
+      MuiTableCell: {
+        styleOverrides: {
+          root: {
+            borderBottom: `2px solid ${colors.divider}`,
+            fontFamily: bodyFont,
+          },
+          head: {
+            fontFamily: headingFont,
+            fontWeight: 700,
+            borderBottom: `3px solid ${colors.divider}`,
           }
         }
       }

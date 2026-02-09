@@ -136,15 +136,16 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
         elevation={0}
         sx={{
             p: { xs: 3, md: 3.5 },
-            borderRadius: 4,
-            border: '1px solid',
+            borderRadius: 0,
+            border: '2px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
             transition: 'box-shadow 0.2s',
             position: 'relative',
             overflow: 'hidden',
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
             '&:hover': {
-                boxShadow: '0 8px 20px rgba(0,0,0,0.08)'
+                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
             }
         }}
       >
@@ -174,12 +175,12 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
         {(previewImageUrl || previewUrl) && (
           <Box
             sx={{
-              border: '1px solid',
-              borderColor: alpha(theme.palette.primary.main, 0.2),
-              borderRadius: 3,
+              border: '2px solid',
+              borderColor: 'divider',
+              borderRadius: 0,
               p: 1.5,
               mb: 2,
-              bgcolor: alpha(theme.palette.primary.main, 0.04),
+              bgcolor: 'transparent',
             }}
           >
             {previewImageUrl && (
@@ -192,10 +193,12 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
                 sx={{
                   width: '100%',
                   display: 'block',
-                  borderRadius: 2,
+                  borderRadius: 0,
                   objectFit: 'cover',
                   mb: previewUrl ? 1 : 0,
                   maxHeight: { xs: 220, md: 280 },
+                  border: '2px solid',
+                  borderColor: 'divider'
                 }}
               />
             )}
@@ -262,14 +265,15 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
           <Box
             mt={2.5}
             p={2.5}
-            bgcolor="action.hover"
-            borderRadius={3}
+            bgcolor="background.paper"
+            borderRadius={0}
             display="flex"
             gap={2}
             position="relative"
             sx={{
-                border: '1px solid',
+                border: '2px solid',
                 borderColor: 'divider',
+                boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
             }}
           >
              <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
@@ -304,13 +308,14 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
           <Box
             mt={2.5}
             p={2.5}
-            bgcolor={alpha(theme.palette.text.primary, 0.03)}
-            borderRadius={3}
+            bgcolor="background.paper"
+            borderRadius={0}
             display="flex"
             gap={2}
             sx={{
-                border: '1px solid',
+                border: '2px solid',
                 borderColor: 'divider',
+                boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
             }}
           >
              <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
@@ -391,10 +396,11 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             width: { xs: '100%', sm: 600, md: 700 },
             m: { xs: 0, md: 2 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
-            borderRadius: { xs: 0, md: 4 },
-            boxShadow: '-8px 0 24px rgba(0,0,0,0.15)',
+            borderRadius: 0,
+            boxShadow: '-8px 8px 0 0 rgba(0,0,0,1)',
             overflow: 'hidden',
-            border: 'none',
+            border: '2px solid',
+            borderColor: 'divider',
         },
       }}
     >

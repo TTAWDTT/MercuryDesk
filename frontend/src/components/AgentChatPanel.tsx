@@ -129,11 +129,17 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             bottom: 32,
             right: 32,
             zIndex: 1200,
-            boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
-            background: isOpen ? theme.palette.grey[800] : `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.secondary.main})`,
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            border: '2px solid',
+            borderColor: 'text.primary',
+            borderRadius: 0,
+            background: theme.palette.background.paper,
+            color: theme.palette.text.primary,
             transition: 'transform 0.2s',
             '&:hover': {
-               transform: 'scale(1.05)'
+               transform: 'translate(-2px, -2px)',
+               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+               background: theme.palette.background.paper,
             }
           }}
         >
@@ -155,11 +161,12 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             display: 'flex',
             flexDirection: 'column',
             zIndex: 1200,
-            borderRadius: 4,
+            borderRadius: 0,
             overflow: 'hidden',
-            border: '1px solid',
-            borderColor: 'divider',
+            border: '2px solid',
+            borderColor: 'text.primary',
             bgcolor: 'background.paper',
+            boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
           }}
         >
           {/* Header */}
@@ -223,13 +230,12 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                     sx={{
                       p: 1.5,
                       px: 2,
-                      borderRadius: 3,
-                      borderTopRightRadius: isUser ? 0 : 3,
-                      borderTopLeftRadius: isUser ? 3 : 0,
-                      bgcolor: isUser ? 'primary.main' : 'background.paper',
-                      color: isUser ? 'primary.contrastText' : 'text.primary',
-                      border: isUser ? 'none' : '1px solid',
-                      borderColor: 'divider',
+                      borderRadius: 0,
+                      border: '2px solid',
+                      borderColor: 'text.primary',
+                      bgcolor: isUser ? 'text.primary' : 'background.paper',
+                      color: isUser ? 'background.paper' : 'text.primary',
+                      boxShadow: isUser ? '4px 4px 0 0 rgba(0,0,0,0.2)' : '4px 4px 0 0 rgba(0,0,0,1)',
                     }}
                   >
                     {isUser ? (
@@ -272,7 +278,8 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                 maxRows={3}
                 sx={{
                     '& .MuiOutlinedInput-root': {
-                        borderRadius: 3
+                        borderRadius: 0,
+                        border: '2px solid transparent', // Let theme handle it
                     }
                 }}
               />
@@ -281,9 +288,13 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                 onClick={handleSend}
                 disabled={!input.trim() || isTyping}
                 sx={{
-                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                    border: '2px solid',
+                    borderColor: 'text.primary',
+                    borderRadius: 0,
+                    color: 'text.primary',
                     '&:hover': {
-                        bgcolor: alpha(theme.palette.primary.main, 0.2),
+                        bgcolor: 'action.hover',
+                        boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
                     }
                 }}
               >

@@ -136,11 +136,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: '999px',
+                borderRadius: 0,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
-                bgcolor: alpha(theme.palette.background.paper, 0.85),
-                backdropFilter: 'blur(10px)',
+                bgcolor: 'background.paper',
+                border: '2px solid',
+                borderColor: 'divider'
               }}
             />
           </Box>
@@ -172,12 +173,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               src={contact.avatar_url || undefined} 
               imgProps={{ referrerPolicy: 'no-referrer' }}
               sx={{ 
-                  bgcolor: alpha(theme.palette.primary.main, 0.1), 
+                  bgcolor: alpha(theme.palette.primary.main, 0.1),
                   color: theme.palette.primary.main,
-                  width: isFeature ? 72 : 60, 
+                  width: isFeature ? 72 : 60,
                   height: isFeature ? 72 : 60,
                   fontWeight: 600,
-                  borderRadius: isFeature ? '16px' : '14px'
+                  borderRadius: 0,
+                  border: '2px solid',
+                  borderColor: 'divider'
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
@@ -204,22 +207,24 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             </Box>
           </Box>
 
-          <Box 
-            sx={{ 
-                p: isFeature ? { xs: 2.25, md: 2.75 } : 2, 
-                bgcolor: alpha(theme.palette.action.hover, 0.5), 
-                borderRadius: '14px',
+          <Box
+            sx={{
+                p: isFeature ? { xs: 2.25, md: 2.75 } : 2,
+                bgcolor: 'transparent',
+                border: '2px solid',
+                borderColor: 'divider',
+                borderRadius: 0,
                 mb: isFeature ? 2.5 : 2,
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (
               <Box
                 sx={{
-                  borderRadius: '12px',
+                  borderRadius: 0,
                   overflow: 'hidden',
                   mb: isFeature ? 2 : 1.5,
-                  border: '1px solid',
-                  borderColor: alpha(theme.palette.primary.main, 0.2),
+                  border: '2px solid',
+                  borderColor: 'divider',
                   bgcolor: alpha(theme.palette.primary.main, 0.08),
                   aspectRatio: isFeature ? '16 / 8.8' : '16 / 9',
                 }}
@@ -289,15 +294,15 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           </Box>
 
           <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
-            <Chip 
-              icon={getSourceIcon(contact.latest_source)} 
-              label={sourceLabel} 
-              size="small" 
-              sx={{ 
-                  borderRadius: '8px', 
-                  fontWeight: 500,
+            <Chip
+              icon={getSourceIcon(contact.latest_source)}
+              label={sourceLabel}
+              size="small"
+              sx={{
+                  borderRadius: 0,
+                  fontWeight: 700,
                   '& .MuiChip-icon': { color: 'inherit' }
-              }} 
+              }}
             />
             <Typography variant="caption" color="textSecondary">
               {formattedDate}
