@@ -67,10 +67,22 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
   const bodyFont = '"Courier New", Courier, monospace';
 
-  // Hatching Patterns
-  const hatchingLight = 'repeating-linear-gradient(45deg, #e0e0e0 0px, #e0e0e0 1px, transparent 1px, transparent 10px)';
-  const hatchingDark = 'repeating-linear-gradient(45deg, #333 0px, #333 1px, transparent 1px, transparent 10px)';
+  // Hatching Patterns - Saturated / Dense
+  // 45deg dense lines for background
+  const hatchingLight = 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 6px)';
+  const hatchingDark = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 6px)';
   const hatchingBg = mode === 'light' ? hatchingLight : hatchingDark;
+
+  // Cross-hatching for interaction states
+  const crossHatchLight = `
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 4px)
+  `;
+  const crossHatchDark = `
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 4px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 4px)
+  `;
+  const activeHatch = mode === 'light' ? crossHatchLight : crossHatchDark;
 
   const theme = useMemo(() => createTheme({
     palette: {
@@ -110,13 +122,13 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       caption: { fontFamily: bodyFont, fontWeight: 500 },
       overline: { fontFamily: headingFont, fontWeight: 700 },
     },
-    shape: { borderRadius: 16 }, // Restore Rounded Corners
+    shape: { borderRadius: 0 }, // Strict Square
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: hatchingBg, // Global Hatching Background
+            backgroundImage: hatchingBg, // Global Dense Hatching
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
@@ -127,8 +139,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             backgroundImage: 'none',
             border: `2px solid ${colors.divider}`,
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)', // Keep Hard Shadow
-            borderRadius: 16,
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            borderRadius: 0,
           },
           elevation1: { boxShadow: `4px 4px 0 0 ${colors.divider}` },
           elevation2: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
@@ -139,18 +151,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.primary}`,
-            borderRadius: 12,
-            boxShadow: `2px 2px 0 0 ${colors.primary}`,
+            borderRadius: 0,
+            boxShadow: `3px 3px 0 0 ${colors.primary}`,
             textTransform: 'none',
             '&:hover': {
               transform: 'translate(-1px, -1px)',
-              boxShadow: `4px 4px 0 0 ${colors.primary}`,
+              boxShadow: `5px 5px 0 0 ${colors.primary}`,
               backgroundColor: 'transparent',
-              backgroundImage: hatchingBg, // Hatching on hover
+              backgroundImage: activeHatch, // Cross-hatching on hover
             },
             '&:active': {
               transform: 'translate(2px, 2px)',
-              boxShadow: 'none',
+              boxShadow: '1px 1px 0 0 ${colors.primary}',
             },
           },
           contained: {
@@ -168,9 +180,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
-            border: `2px solid ${colors.divider}`,
-            borderRadius: 20,
-            boxShadow: `6px 6px 0 0 ${colors.divider}`,
+            border: `3px solid ${colors.divider}`,
+            borderRadius: 0,
+            boxShadow: `8px 8px 0 0 ${colors.divider}`,
           },
         },
       },
@@ -180,11 +192,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             border: `2px solid ${colors.divider}`,
             backgroundColor: colors.background,
             fontWeight: 700,
-            borderRadius: 12,
+            borderRadius: 0,
             boxShadow: `2px 2px 0 0 ${colors.divider}`,
           },
           filled: {
-            // Hatching for filled chips
             backgroundImage: hatchingBg,
             backgroundColor: 'transparent',
           }
@@ -196,7 +207,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             border: `2px solid ${colors.divider}`,
             backgroundColor: colors.background,
             color: colors.textPrimary,
-            borderRadius: 12,
+            borderRadius: 0,
           }
         }
       },
@@ -204,7 +215,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             '& .MuiOutlinedInput-root': {
-              borderRadius: 12,
+              borderRadius: 0,
               backgroundColor: colors.background,
               '& fieldset': {
                 borderWidth: '2px',
@@ -226,7 +237,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiDrawer: {
         styleOverrides: {
           paper: {
-            borderLeft: `2px solid ${colors.divider}`,
+            borderLeft: `3px solid ${colors.divider}`,
           }
         }
       },
@@ -235,7 +246,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             borderBottomWidth: '2px',
             borderColor: colors.divider,
-            borderStyle: 'dashed', // Comic style dashed lines
+            borderStyle: 'solid', // Solid lines for high contrast
           }
         }
       },
@@ -243,7 +254,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            borderRadius: 16,
+            borderRadius: 0,
             boxShadow: `4px 4px 0 0 ${colors.divider}`,
             backgroundImage: hatchingBg,
           },
@@ -254,7 +265,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         }
       }
     },
-  }), [bodyFont, colors, hatchingBg, headingFont, mode]);
+  }), [activeHatch, bodyFont, colors, hatchingBg, headingFont, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

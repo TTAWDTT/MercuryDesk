@@ -45,7 +45,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: 5,
+            borderRadius: 0,
             border: '2px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
@@ -55,6 +55,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+              backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
             },
           }}
         >
@@ -64,7 +65,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: 4,
+                borderRadius: 0,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
                 bgcolor: 'background.paper',
@@ -81,7 +82,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 sx={{
                   width: 56,
                   height: 56,
-                  borderRadius: 3,
+                  borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'text.primary',
                   display: 'flex',
@@ -107,11 +108,11 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             <Box
               sx={{
                 p: 2.25,
-                borderRadius: 4,
+                borderRadius: 0,
                 border: '2px solid',
                 borderColor: 'divider',
                 bgcolor: 'transparent',
-                backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px)',
+                backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
               }}
             >
               <Typography variant="subtitle2" fontWeight={800} gutterBottom>
@@ -141,7 +142,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: 5,
+            borderRadius: 0,
             border: '2px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
@@ -150,6 +151,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+              backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
             },
           }}
         >

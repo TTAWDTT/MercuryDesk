@@ -136,13 +136,13 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: 4,
+                borderRadius: 0,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
+                boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
               }}
             />
           </Box>
@@ -179,10 +179,10 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                   width: isFeature ? 72 : 60,
                   height: isFeature ? 72 : 60,
                   fontWeight: 600,
-                  borderRadius: isFeature ? 16 : 12,
+                  borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'divider',
-                  boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
+                  boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
@@ -215,18 +215,18 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 bgcolor: 'transparent',
                 border: '2px solid',
                 borderColor: 'divider',
-                borderRadius: 4,
+                borderRadius: 0,
                 mb: isFeature ? 2.5 : 2,
-                // Inner hatching for contrast
+                // Inner hatching for contrast (dense)
                 backgroundImage: theme.palette.mode === 'light'
-                    ? 'repeating-linear-gradient(-45deg, #f5f5f5 0px, #f5f5f5 1px, transparent 1px, transparent 8px)'
-                    : 'repeating-linear-gradient(-45deg, #222 0px, #222 1px, transparent 1px, transparent 8px)',
+                    ? 'repeating-linear-gradient(-45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)'
+                    : 'repeating-linear-gradient(-45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px)',
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (
               <Box
                 sx={{
-                  borderRadius: 3,
+                  borderRadius: 0,
                   overflow: 'hidden',
                   mb: isFeature ? 2 : 1.5,
                   border: '2px solid',
@@ -305,7 +305,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               label={sourceLabel}
               size="small"
               sx={{
-                  borderRadius: 2,
+                  borderRadius: 0,
                   fontWeight: 700,
                   '& .MuiChip-icon': { color: 'inherit' }
               }}

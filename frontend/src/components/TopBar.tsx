@@ -16,12 +16,12 @@ import { useNavigate } from 'react-router-dom';
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
-  borderRadius: 16, // Comic style rounded
+  borderRadius: 0, // Comic style square
   border: `2px solid ${theme.palette.text.primary}`,
   backgroundColor: theme.palette.background.paper,
   '&:hover': {
     backgroundColor: theme.palette.action.hover,
-    boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
+    boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`,
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -77,7 +77,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
 
   return (
     <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '2px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
-      <Toolbar sx={{ height: 72 }}>
+      <Toolbar sx={{ height: 56, minHeight: 56 }}>
         <Box
           onClick={() => navigate('/')}
           sx={{
@@ -88,47 +88,49 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             background: 'transparent',
             border: '2px solid',
             borderColor: 'text.primary',
-            borderRadius: 3,
-            width: 36,
-            height: 36,
+            borderRadius: 0,
+            width: 32,
+            height: 32,
             justifyContent: 'center',
             color: 'text.primary',
             fontWeight: '900',
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            boxShadow: '3px 3px 0 0 rgba(0,0,0,1)',
             transition: 'transform 0.1s',
             '&:active': {
                 transform: 'translate(2px, 2px)',
-                boxShadow: '2px 2px 0 0 rgba(0,0,0,1)',
+                boxShadow: '1px 1px 0 0 rgba(0,0,0,1)',
             }
           }}
         >
           M
         </Box>
-        <Typography 
-            variant="h6" 
-            noWrap 
-            component="div" 
+        <Typography
+            variant="h6"
+            noWrap
+            component="div"
             onClick={() => navigate('/')}
-            sx={{ 
-                display: { xs: 'none', sm: 'block' }, 
-                fontWeight: 700, 
-                color: 'text.primary', 
+            sx={{
+                display: { xs: 'none', sm: 'block' },
+                fontWeight: 700,
+                color: 'text.primary',
                 letterSpacing: '-0.5px',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                fontSize: '1.1rem'
             }}
         >
           MercuryDesk
         </Typography>
-        
+
         {!hideSearch && (
-          <Search>
+          <Search sx={{ height: 36, display: 'flex', alignItems: 'center' }}>
             <SearchIconWrapper>
-              <SearchIcon />
+              <SearchIcon fontSize="small" />
             </SearchIconWrapper>
             <StyledInputBase
               placeholder="搜索联系人 / 邮件..."
               inputProps={{ 'aria-label': 'search' }}
               onChange={(e) => onSearch(e.target.value)}
+              sx={{ fontSize: '0.9rem' }}
             />
           </Search>
         )}

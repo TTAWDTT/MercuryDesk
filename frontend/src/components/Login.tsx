@@ -59,10 +59,10 @@ export default function Login(props: { onAuthed: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        // Hatching background for Login
+        // Dense hatching background for Login
         background: theme.palette.mode === 'light'
-            ? 'repeating-linear-gradient(45deg, #e0e0e0 0px, #e0e0e0 1px, transparent 1px, transparent 20px)'
-            : 'repeating-linear-gradient(45deg, #333 0px, #333 1px, transparent 1px, transparent 20px)',
+            ? 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 6px)'
+            : 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 6px)',
         backgroundColor: 'background.default',
         position: 'relative',
         overflow: 'hidden',
@@ -80,7 +80,7 @@ export default function Login(props: { onAuthed: () => void }) {
             sx={{
               p: 5,
               width: '100%',
-              borderRadius: 5,
+              borderRadius: 0,
               border: '3px solid',
               borderColor: 'text.primary',
               background: 'background.paper',
@@ -92,7 +92,7 @@ export default function Login(props: { onAuthed: () => void }) {
                 sx={{
                   width: 48,
                   height: 48,
-                  borderRadius: 3,
+                  borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'text.primary',
                   background: 'transparent',
