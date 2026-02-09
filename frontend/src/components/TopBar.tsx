@@ -16,7 +16,7 @@ import { useNavigate } from 'react-router-dom';
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
-  borderRadius: 0, // Comic style
+  borderRadius: 16, // Comic style rounded
   border: `2px solid ${theme.palette.text.primary}`,
   backgroundColor: theme.palette.background.paper,
   '&:hover': {
@@ -88,7 +88,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             background: 'transparent',
             border: '2px solid',
             borderColor: 'text.primary',
-            borderRadius: 0,
+            borderRadius: 3,
             width: 36,
             height: 36,
             justifyContent: 'center',

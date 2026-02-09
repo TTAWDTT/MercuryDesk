@@ -45,7 +45,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: 0,
+            borderRadius: 5,
             border: '2px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
@@ -64,12 +64,13 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: 0,
+                borderRadius: 4,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
                 bgcolor: 'background.paper',
                 border: '2px solid',
-                borderColor: 'text.primary'
+                borderColor: 'text.primary',
+                boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
               }}
             />
           </Box>
@@ -80,7 +81,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 sx={{
                   width: 56,
                   height: 56,
-                  borderRadius: 0,
+                  borderRadius: 3,
                   border: '2px solid',
                   borderColor: 'text.primary',
                   display: 'flex',
@@ -88,6 +89,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                   justifyContent: 'center',
                   bgcolor: 'transparent',
                   color: 'text.primary',
+                  boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
                 }}
               >
                 <EmailOutlinedIcon />
@@ -105,10 +107,11 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             <Box
               sx={{
                 p: 2.25,
-                borderRadius: 0,
+                borderRadius: 4,
                 border: '2px solid',
                 borderColor: 'divider',
                 bgcolor: 'transparent',
+                backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px)',
               }}
             >
               <Typography variant="subtitle2" fontWeight={800} gutterBottom>
@@ -138,7 +141,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
           elevation={0}
           sx={{
             height: '100%',
-            borderRadius: 0,
+            borderRadius: 5,
             border: '2px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',

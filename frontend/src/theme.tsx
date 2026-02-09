@@ -31,19 +31,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   // Manga / Comic Style Palette
-  // Strictly Black & White with hard contrasts
   const lightPalette = {
     primary: '#000000',
     secondary: '#000000',
     background: '#ffffff',
     paper: '#ffffff',
     textPrimary: '#000000',
-    textSecondary: '#000000', // No grey, just black
+    textSecondary: '#000000',
     divider: '#000000',
     action: {
         active: '#000000',
-        hover: 'rgba(0, 0, 0, 0.05)',
-        selected: 'rgba(0, 0, 0, 0.1)',
+        hover: 'rgba(0, 0, 0, 0.04)',
+        selected: 'rgba(0, 0, 0, 0.08)',
     }
   };
 
@@ -66,7 +65,12 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Comic fonts
   const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
-  const bodyFont = '"Courier New", Courier, monospace'; // Typewriter style for body
+  const bodyFont = '"Courier New", Courier, monospace';
+
+  // Hatching Patterns
+  const hatchingLight = 'repeating-linear-gradient(45deg, #e0e0e0 0px, #e0e0e0 1px, transparent 1px, transparent 10px)';
+  const hatchingDark = 'repeating-linear-gradient(45deg, #333 0px, #333 1px, transparent 1px, transparent 10px)';
+  const hatchingBg = mode === 'light' ? hatchingLight : hatchingDark;
 
   const theme = useMemo(() => createTheme({
     palette: {
@@ -106,16 +110,14 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       caption: { fontFamily: bodyFont, fontWeight: 500 },
       overline: { fontFamily: headingFont, fontWeight: 700 },
     },
-    shape: { borderRadius: 0 }, // Sharp corners for everything
+    shape: { borderRadius: 16 }, // Restore Rounded Corners
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: mode === 'light'
-                ? 'radial-gradient(#000000 1px, transparent 1px)'
-                : 'radial-gradient(#333333 1px, transparent 1px)',
-            backgroundSize: '20px 20px', // Halftone dot pattern
+            backgroundImage: hatchingBg, // Global Hatching Background
+            backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
         },
@@ -125,28 +127,26 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             backgroundImage: 'none',
             border: `2px solid ${colors.divider}`,
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)', // Hard shadow
+            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)', // Keep Hard Shadow
+            borderRadius: 16,
           },
-          elevation1: {
-            boxShadow: `4px 4px 0 0 ${colors.divider}`,
-          },
-          elevation2: {
-            boxShadow: `6px 6px 0 0 ${colors.divider}`,
-          },
-          elevation3: {
-            boxShadow: `8px 8px 0 0 ${colors.divider}`,
-          },
+          elevation1: { boxShadow: `4px 4px 0 0 ${colors.divider}` },
+          elevation2: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
+          elevation3: { boxShadow: `8px 8px 0 0 ${colors.divider}` },
         }
       },
       MuiButton: {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.primary}`,
+            borderRadius: 12,
             boxShadow: `2px 2px 0 0 ${colors.primary}`,
+            textTransform: 'none',
             '&:hover': {
               transform: 'translate(-1px, -1px)',
               boxShadow: `4px 4px 0 0 ${colors.primary}`,
               backgroundColor: 'transparent',
+              backgroundImage: hatchingBg, // Hatching on hover
             },
             '&:active': {
               transform: 'translate(2px, 2px)',
@@ -160,22 +160,17 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             '&:hover': {
                backgroundColor: colors.primary,
                boxShadow: `6px 6px 0 0 ${colors.textPrimary}`,
+               backgroundImage: 'none',
             }
           },
-          outlined: {
-            borderWidth: '2px',
-            '&:hover': {
-                borderWidth: '2px',
-            }
-          }
         },
       },
       MuiCard: {
         styleOverrides: {
           root: {
-            border: `3px solid ${colors.divider}`,
-            borderRadius: 0,
-            boxShadow: `8px 8px 0 0 ${colors.divider}`,
+            border: `2px solid ${colors.divider}`,
+            borderRadius: 20,
+            boxShadow: `6px 6px 0 0 ${colors.divider}`,
           },
         },
       },
@@ -183,12 +178,15 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            backgroundColor: 'transparent',
+            backgroundColor: colors.background,
             fontWeight: 700,
+            borderRadius: 12,
             boxShadow: `2px 2px 0 0 ${colors.divider}`,
           },
           filled: {
-            backgroundColor: colors.action.hover,
+            // Hatching for filled chips
+            backgroundImage: hatchingBg,
+            backgroundColor: 'transparent',
           }
         },
       },
@@ -196,8 +194,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            backgroundColor: 'transparent',
+            backgroundColor: colors.background,
             color: colors.textPrimary,
+            borderRadius: 12,
           }
         }
       },
@@ -205,7 +204,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             '& .MuiOutlinedInput-root': {
-              borderRadius: 0,
+              borderRadius: 12,
+              backgroundColor: colors.background,
               '& fieldset': {
                 borderWidth: '2px',
                 borderColor: colors.divider,
@@ -226,7 +226,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiDrawer: {
         styleOverrides: {
           paper: {
-            borderLeft: `3px solid ${colors.divider}`,
+            borderLeft: `2px solid ${colors.divider}`,
           }
         }
       },
@@ -235,6 +235,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             borderBottomWidth: '2px',
             borderColor: colors.divider,
+            borderStyle: 'dashed', // Comic style dashed lines
           }
         }
       },
@@ -242,42 +243,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            borderRadius: 0,
+            borderRadius: 16,
             boxShadow: `4px 4px 0 0 ${colors.divider}`,
+            backgroundImage: hatchingBg,
           },
-          standardInfo: {
-             backgroundColor: 'transparent',
-             color: colors.textPrimary,
-          },
-          standardSuccess: {
-             backgroundColor: 'transparent',
-             color: colors.textPrimary,
-          },
-          standardWarning: {
-             backgroundColor: 'transparent',
-             color: colors.textPrimary,
-          },
-          standardError: {
-             backgroundColor: 'transparent',
-             color: colors.textPrimary,
-          }
-        }
-      },
-      MuiTableCell: {
-        styleOverrides: {
-          root: {
-            borderBottom: `2px solid ${colors.divider}`,
-            fontFamily: bodyFont,
-          },
-          head: {
-            fontFamily: headingFont,
-            fontWeight: 700,
-            borderBottom: `3px solid ${colors.divider}`,
-          }
+          standardInfo: { backgroundColor: colors.background, color: colors.textPrimary },
+          standardSuccess: { backgroundColor: colors.background, color: colors.textPrimary },
+          standardWarning: { backgroundColor: colors.background, color: colors.textPrimary },
+          standardError: { backgroundColor: colors.background, color: colors.textPrimary }
         }
       }
     },
-  }), [bodyFont, colors, headingFont, mode]);
+  }), [bodyFont, colors, hatchingBg, headingFont, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

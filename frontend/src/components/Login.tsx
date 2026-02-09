@@ -59,8 +59,10 @@ export default function Login(props: { onAuthed: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'radial-gradient(#000000 1px, transparent 1px)',
-        backgroundSize: '20px 20px',
+        // Hatching background for Login
+        background: theme.palette.mode === 'light'
+            ? 'repeating-linear-gradient(45deg, #e0e0e0 0px, #e0e0e0 1px, transparent 1px, transparent 20px)'
+            : 'repeating-linear-gradient(45deg, #333 0px, #333 1px, transparent 1px, transparent 20px)',
         backgroundColor: 'background.default',
         position: 'relative',
         overflow: 'hidden',
@@ -78,11 +80,11 @@ export default function Login(props: { onAuthed: () => void }) {
             sx={{
               p: 5,
               width: '100%',
-              borderRadius: 0,
+              borderRadius: 5,
               border: '3px solid',
               borderColor: 'text.primary',
               background: 'background.paper',
-              boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
+              boxShadow: '10px 10px 0 0 rgba(0,0,0,1)',
             }}
           >
             <Box textAlign="center" mb={4}>
@@ -90,7 +92,7 @@ export default function Login(props: { onAuthed: () => void }) {
                 sx={{
                   width: 48,
                   height: 48,
-                  borderRadius: 0,
+                  borderRadius: 3,
                   border: '2px solid',
                   borderColor: 'text.primary',
                   background: 'transparent',
