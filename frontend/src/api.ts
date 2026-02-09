@@ -339,6 +339,49 @@ export async function testAgent(): Promise<{ ok: boolean; provider: string; mess
   });
 }
 
+async function* streamFetch(path: string, init: RequestInit = {}): AsyncGenerator<string, void, unknown> {
+  const headers = new Headers(init.headers);
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+
+  const response = await fetch(path, { ...init, headers });
+  if (!response.ok) {
+      const text = await response.text();
+      let msg = text;
+      try {
+          const json = JSON.parse(text);
+          if (json.detail) msg = json.detail;
+      } catch {}
+      throw new Error(msg || response.statusText);
+  }
+  if (!response.body) return;
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    yield decoder.decode(value, { stream: true });
+  }
+}
+
+export async function* agentSummarizeStream(text: string): AsyncGenerator<string, void, unknown> {
+  yield* streamFetch("/api/v1/agent/summarize/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+}
+
+export async function* agentDraftReplyStream(text: string, tone: string): AsyncGenerator<string, void, unknown> {
+  yield* streamFetch("/api/v1/agent/draft-reply/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, tone })
+  });
+}
+
 export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalogResponse> {
   const qs = forceRefresh ? "?force_refresh=true" : "";
   return await fetchJson<ModelCatalogResponse>(`/api/v1/agent/catalog${qs}`);
