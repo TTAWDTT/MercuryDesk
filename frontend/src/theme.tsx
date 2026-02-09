@@ -34,6 +34,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const lightPalette = {
     primary: '#000000',
     secondary: '#000000',
+    // Back to Pure White as requested, but we will add heavy texture
     background: '#ffffff',
     paper: '#ffffff',
     textPrimary: '#000000',
@@ -67,11 +68,19 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
   const bodyFont = '"Courier New", Courier, monospace';
 
-  // Hatching Patterns - Saturated / Dense
-  // 45deg dense lines for background
-  const hatchingLight = 'repeating-linear-gradient(45deg, rgba(0,0,0,0.06) 0px, rgba(0,0,0,0.06) 1px, transparent 1px, transparent 4px)';
-  const hatchingDark = 'repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 4px)';
-  const hatchingBg = mode === 'light' ? hatchingLight : hatchingDark;
+  // Hatching Patterns - CHAOTIC / SKETCHY
+  // Layering multiple gradients with different angles and spacing to create visual complexity
+  const chaoticHatchLight = `
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px, transparent 1px, transparent 5px),
+    repeating-linear-gradient(115deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 17px),
+    repeating-linear-gradient(-25deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 11px)
+  `;
+  const chaoticHatchDark = `
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 5px),
+    repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 17px),
+    repeating-linear-gradient(-25deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 11px)
+  `;
+  const hatchingBg = mode === 'light' ? chaoticHatchLight : chaoticHatchDark;
 
   // Cross-hatching for interaction states
   const crossHatchLight = `
