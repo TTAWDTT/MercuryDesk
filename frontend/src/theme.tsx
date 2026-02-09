@@ -68,19 +68,21 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
   const bodyFont = '"Courier New", Courier, monospace';
 
-  // Hatching Patterns - CHAOTIC / SKETCHY
-  // Layering multiple gradients with different angles and spacing to create visual complexity
-  const chaoticHatchLight = `
-    repeating-linear-gradient(45deg, rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px, transparent 1px, transparent 5px),
-    repeating-linear-gradient(115deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 17px),
-    repeating-linear-gradient(-25deg, rgba(0,0,0,0.02) 0px, rgba(0,0,0,0.02) 1px, transparent 1px, transparent 11px)
+  // Hatching Patterns - HEAVY COMIC TONE
+  // Mixing Halftone Dots (Ben-Day dots) with scratches to fill the void
+  const heavyComicLight = `
+    radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1.5px),
+    repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px),
+    repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 15px)
   `;
-  const chaoticHatchDark = `
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 5px),
-    repeating-linear-gradient(115deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 17px),
-    repeating-linear-gradient(-25deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 11px)
+
+  const heavyComicDark = `
+    radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1.5px),
+    repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 10px),
+    repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 15px)
   `;
-  const hatchingBg = mode === 'light' ? chaoticHatchLight : chaoticHatchDark;
+
+  const hatchingBg = mode === 'light' ? heavyComicLight : heavyComicDark;
 
   // Cross-hatching for interaction states
   const crossHatchLight = `
@@ -137,7 +139,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: hatchingBg, // Global Dense Hatching
+            backgroundImage: hatchingBg, // Global Heavy Comic Tone
+            backgroundSize: '20px 20px, 100% 100%, 100% 100%', // Dots size fixed, others cover
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
