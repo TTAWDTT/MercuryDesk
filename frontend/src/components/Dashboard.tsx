@@ -215,13 +215,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   };
 
   return (
-    <Box 
+    <Box
         component={motion.div}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.4 }}
-        sx={{ minHeight: '100vh', bgcolor: 'background.default', pb: 8 }}
+        sx={{ minHeight: '100vh', bgcolor: 'transparent', pb: 8 }}
     >
       <TopBar 
         onLogout={onLogout} 

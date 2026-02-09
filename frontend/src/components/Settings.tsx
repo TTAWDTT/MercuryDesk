@@ -29,7 +29,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import useSWR from 'swr';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useColorMode } from '../theme';
+import { useColorMode, crossHatchLight, crossHatchDark } from '../theme';
 import {
     AgentConfig,
     ConnectedAccount,

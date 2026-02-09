@@ -7,6 +7,7 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import { alpha, useTheme } from '@mui/material/styles';
+import { crossHatchLight, crossHatchDark } from '../theme';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
@@ -52,10 +53,10 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             position: 'relative',
             transition: 'all 0.25s ease',
             boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            backgroundImage: theme.palette.mode === 'light' ? crossHatchLight : crossHatchDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
-              backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
             },
           }}
         >
@@ -148,10 +149,10 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             overflow: 'hidden',
             transition: 'all 0.25s ease',
             boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            backgroundImage: theme.palette.mode === 'light' ? crossHatchLight : crossHatchDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
-              backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
             },
           }}
         >

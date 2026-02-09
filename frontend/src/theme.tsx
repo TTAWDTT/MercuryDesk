@@ -16,6 +16,28 @@ const ColorModeContext = createContext<ColorModeContextType>({
 
 export const useColorMode = () => useContext(ColorModeContext);
 
+// Hatching Patterns - HEAVY COMIC TONE
+// Mixing Halftone Dots (Ben-Day dots) with scratches to fill the void
+export const heavyComicLight = `
+  radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1.5px),
+  repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px),
+  repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 15px)
+`;
+
+export const heavyComicDark = `
+  radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1.5px),
+  repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 10px),
+  repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 15px)
+`;
+
+// Cross-hatching for interaction states / Cards
+export const crossHatchLight = `
+  repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)
+`;
+export const crossHatchDark = `
+  repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px)
+`;
+
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [mode, setMode] = useState<ColorMode>(() => {
     const saved = localStorage.getItem('theme_mode');
@@ -68,31 +90,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
   const bodyFont = '"Courier New", Courier, monospace';
 
-  // Hatching Patterns - HEAVY COMIC TONE
-  // Mixing Halftone Dots (Ben-Day dots) with scratches to fill the void
-  const heavyComicLight = `
-    radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1.5px),
-    repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px),
-    repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 15px)
-  `;
-
-  const heavyComicDark = `
-    radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1.5px),
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 10px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 15px)
-  `;
-
   const hatchingBg = mode === 'light' ? heavyComicLight : heavyComicDark;
-
-  // Cross-hatching for interaction states
-  const crossHatchLight = `
-    repeating-linear-gradient(45deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px),
-    repeating-linear-gradient(-45deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px)
-  `;
-  const crossHatchDark = `
-    repeating-linear-gradient(45deg, rgba(255,255,255,0.15) 0px, rgba(255,255,255,0.15) 1px, transparent 1px, transparent 3px),
-    repeating-linear-gradient(-45deg, rgba(255,255,255,0.15) 0px, rgba(255,255,255,0.15) 1px, transparent 1px, transparent 3px)
-  `;
   const activeHatch = mode === 'light' ? crossHatchLight : crossHatchDark;
 
   const theme = useMemo(() => createTheme({

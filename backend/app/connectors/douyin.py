@@ -210,6 +210,8 @@ class DouyinConnector:
                         "--disable-blink-features=AutomationControlled",
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
+                        "--disable-web-security",
+                        "--disable-features=IsolateOrigins,site-per-process",
                     ],
                 )
                 context = browser.new_context(
@@ -217,6 +219,8 @@ class DouyinConnector:
                     viewport={"width": 1920, "height": 1080},
                     locale="zh-CN",
                     timezone_id="Asia/Shanghai",
+                    java_script_enabled=True,
+                    bypass_csp=True,
                 )
                 # 移除 webdriver 标记以降低被检测概率
                 context.add_init_script(
@@ -224,6 +228,14 @@ class DouyinConnector:
                     Object.defineProperty(navigator, 'webdriver', {
                         get: () => undefined
                     });
+                    // 隐藏自动化特征
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5]
+                    });
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['zh-CN', 'zh', 'en']
+                    });
+                    window.chrome = { runtime: {} };
                     """
                 )
 
@@ -231,6 +243,11 @@ class DouyinConnector:
                 page.on("response", _on_response)
 
                 logger.info("Playwright: 正在打开 %s", url)
+
+                # 增加随机延迟模拟人类行为
+                import random
+                page.wait_for_timeout(random.randint(500, 1500))
+
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
 
                 # 等待视频列表 API 响应到达（最多等 20 秒）

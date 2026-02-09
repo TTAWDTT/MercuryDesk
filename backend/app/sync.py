@@ -26,6 +26,7 @@ from app.crud import (
     get_user_oauth_credentials,
     touch_account_sync,
     touch_contact_last_message,
+    get_agent_config,
 )
 from app.models import ConnectedAccount, Contact, FeedAccountConfig, ImapAccountConfig, Message, XApiConfig
 from app.services.encryption import decrypt_optional, encrypt_optional
@@ -329,7 +330,7 @@ def sync_account(db: Session, *, account: ConnectedAccount, force_full: bool = F
 
     # Initialize LLM Service if configured
     llm_service: LLMService | None = None
-    agent_config = crud.get_agent_config(db, user_id=account.user_id)
+    agent_config = get_agent_config(db, user_id=account.user_id)
     if agent_config and agent_config.provider != "rule_based":
         api_key = decrypt_optional(agent_config.api_key)
         if api_key and agent_config.base_url:

@@ -86,23 +86,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             mr: 2,
             cursor: 'pointer',
             background: 'transparent',
-            border: '2px solid',
-            borderColor: 'text.primary',
             borderRadius: 0,
-            width: 32,
-            height: 32,
+            width: 40,
+            height: 40,
             justifyContent: 'center',
-            color: 'text.primary',
-            fontWeight: '900',
-            boxShadow: '3px 3px 0 0 rgba(0,0,0,1)',
             transition: 'transform 0.1s',
-            '&:active': {
-                transform: 'translate(2px, 2px)',
-                boxShadow: '1px 1px 0 0 rgba(0,0,0,1)',
-            }
+            '&:active': { transform: 'scale(0.95)' }
           }}
         >
-          M
+          <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </Box>
         <Typography
             variant="h6"

@@ -59,11 +59,7 @@ export default function Login(props: { onAuthed: () => void }) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        // Dense hatching background for Login
-        background: theme.palette.mode === 'light'
-            ? 'repeating-linear-gradient(45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 6px)'
-            : 'repeating-linear-gradient(45deg, rgba(255,255,255,0.1) 0px, rgba(255,255,255,0.1) 1px, transparent 1px, transparent 6px)',
-        backgroundColor: 'background.default',
+        backgroundColor: 'transparent',
         position: 'relative',
         overflow: 'hidden',
       }}

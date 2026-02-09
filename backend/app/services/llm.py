@@ -163,11 +163,11 @@ class LLMService:
         messages = [
             {
                 "role": "system",
-                "content": "你是 MercuryDesk 的邮件助手。请用简体中文在 120 字以内总结用户提供的内容，保留关键信息，避免冗余。",
+                "content": "你是 MercuryDesk 的邮件助手。请用简体中文总结用户提供的内容，保留关键信息，避免冗余。不要自行截断。",
             },
             {"role": "user", "content": text},
         ]
-        return self._chat(messages, max_tokens=220, stream=stream)
+        return self._chat(messages, max_tokens=1000, stream=stream)
 
     def draft_reply(
         self, text: str, tone: str = "friendly", stream: bool = False
