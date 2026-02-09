@@ -135,7 +135,10 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             borderRadius: 0,
             background: theme.palette.background.paper,
             color: theme.palette.text.primary,
+            width: 64,
+            height: 64,
             transition: 'transform 0.2s',
+            overflow: 'hidden',
             '&:hover': {
                transform: 'translate(-2px, -2px)',
                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
@@ -143,7 +146,20 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             }
           }}
         >
-          {isOpen ? <CloseIcon /> : <SmartToyIcon />}
+          {isOpen ? <CloseIcon /> : (
+              <Avatar
+                src="/avatar.png"
+                sx={{
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 0,
+                    bgcolor: 'transparent',
+                    '& img': { objectFit: 'cover' }
+                }}
+              >
+                  <SmartToyIcon sx={{ color: 'text.primary' }} />
+              </Avatar>
+          )}
         </Fab>
       </Tooltip>
 
@@ -172,19 +188,29 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
           {/* Header */}
           <Box
             p={2}
-            bgcolor={alpha(theme.palette.primary.main, 0.08)}
-            borderBottom="1px solid"
-            borderColor="divider"
+            bgcolor="background.paper"
+            borderBottom="3px solid"
+            borderColor="text.primary"
             display="flex"
             alignItems="center"
             justifyContent="space-between"
           >
             <Box display="flex" alignItems="center" gap={1.5}>
-              <Avatar sx={{ bgcolor: theme.palette.primary.main, width: 32, height: 32 }}>
-                <AutoAwesomeIcon fontSize="small" />
+              <Avatar
+                src="/avatar.png"
+                sx={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 0,
+                    border: '2px solid',
+                    borderColor: 'text.primary',
+                    bgcolor: 'transparent'
+                }}
+              >
+                AI
               </Avatar>
               <Box>
-                <Typography variant="subtitle2" fontWeight="bold">Mercury Agent</Typography>
+                <Typography variant="subtitle2" fontWeight="900">Mercury Agent</Typography>
                 <Typography variant="caption" color="text.secondary" display="block" lineHeight={1}>
                    {isTyping ? '思考中...' : '在线'}
                 </Typography>
@@ -195,10 +221,10 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                     bgcolor="background.paper"
                     px={1}
                     py={0.5}
-                    borderRadius={1}
-                    border={`1px solid ${theme.palette.divider}`}
+                    borderRadius={0}
+                    border={`2px solid ${theme.palette.divider}`}
                 >
-                    <Typography variant="caption" color="textSecondary">
+                    <Typography variant="caption" color="textSecondary" fontWeight="bold">
                         当前: {currentContact.display_name}
                     </Typography>
                 </Box>
