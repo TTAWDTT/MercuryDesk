@@ -16,27 +16,57 @@ const ColorModeContext = createContext<ColorModeContextType>({
 
 export const useColorMode = () => useContext(ColorModeContext);
 
-// Hatching Patterns - HEAVY COMIC TONE
-// Mixing Halftone Dots (Ben-Day dots) with scratches to fill the void
-export const heavyComicLight = `
-  radial-gradient(circle, rgba(0,0,0,0.15) 1px, transparent 1.5px),
-  repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 10px),
-  repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 15px)
+// =============================================================================
+// MANGA TEXTURE ASSETS (POP ART / HALFTONE REVISION)
+// =============================================================================
+
+// 【CANVAS】: Global Background
+// Concept: "Pop Art Dots" - Large, distinct halftone pattern.
+// High artistic style, reminiscent of Roy Lichtenstein.
+export const canvasLight = `
+  radial-gradient(circle, #D1D5DB 2px, transparent 2.5px)
+`;
+export const canvasDark = `
+  radial-gradient(circle, #4B5563 2px, transparent 2.5px)
 `;
 
-export const heavyComicDark = `
-  radial-gradient(circle, rgba(255,255,255,0.15) 1px, transparent 1.5px),
-  repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 10px),
-  repeating-linear-gradient(-45deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 15px)
+// 【HEADER】: Top Bar
+// Concept: "Solid Ink Block" - Pure black/white contrast for maximum impact.
+// We use a linear gradient to simulate a solid block that still works with backgroundImage prop.
+export const headerLight = `linear-gradient(to bottom, #000000, #000000)`;
+export const headerDark = `linear-gradient(to bottom, #ffffff, #ffffff)`;
+
+// 【CARD_BG】: Card Interior
+// Concept: "Clean Canvas" - Subtle diagonal lines for texture without noise.
+// Much cleaner than the previous "dirty" noise.
+export const cardBgLight = `
+  repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(0,0,0,0.03) 10px,
+    rgba(0,0,0,0.03) 11px
+  )
+`;
+export const cardBgDark = `
+  repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(255,255,255,0.03) 10px,
+    rgba(255,255,255,0.03) 11px
+  )
 `;
 
-// Cross-hatching for interaction states / Cards
-export const crossHatchLight = `
-  repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)
-`;
-export const crossHatchDark = `
-  repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px)
-`;
+// 【BOARD】: Container Background
+export const boardLight = `rgba(255,255,255,0.9)`;
+export const boardDark = `rgba(0,0,0,0.9)`;
+
+// Legacy exports
+export const heavyComicLight = canvasLight;
+export const heavyComicDark = canvasDark;
+export const crossHatchLight = cardBgLight;
+export const crossHatchDark = cardBgDark;
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [mode, setMode] = useState<ColorMode>(() => {
@@ -52,46 +82,46 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
-  // Manga / Comic Style Palette
+  // High Contrast Pop-Manga Palette
   const lightPalette = {
     primary: '#000000',
     secondary: '#000000',
-    // Back to Pure White as requested, but we will add heavy texture
-    background: '#ffffff',
+    background: '#F3F4F6', // Light gray to make white cards pop
     paper: '#ffffff',
     textPrimary: '#000000',
-    textSecondary: '#000000',
+    textSecondary: '#4B5563',
     divider: '#000000',
     action: {
         active: '#000000',
-        hover: 'rgba(0, 0, 0, 0.04)',
-        selected: 'rgba(0, 0, 0, 0.08)',
+        hover: 'rgba(0, 0, 0, 0.08)',
+        selected: 'rgba(0, 0, 0, 0.12)',
     }
   };
 
   const darkPalette = {
     primary: '#ffffff',
     secondary: '#ffffff',
-    background: '#000000',
+    background: '#111827', // Dark gray
     paper: '#000000',
     textPrimary: '#ffffff',
-    textSecondary: '#ffffff',
+    textSecondary: '#9CA3AF',
     divider: '#ffffff',
     action: {
         active: '#ffffff',
-        hover: 'rgba(255, 255, 255, 0.1)',
-        selected: 'rgba(255, 255, 255, 0.2)',
+        hover: 'rgba(255, 255, 255, 0.15)',
+        selected: 'rgba(255, 255, 255, 0.25)',
     }
   };
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
 
-  // Comic fonts
-  const headingFont = '"Comic Sans MS", "Chalkboard SE", "Marker Felt", sans-serif';
-  const bodyFont = '"Courier New", Courier, monospace';
+  // Artistic Typography: "International Style"
+  // Strong, Geometric Sans-Serif headers + Mono body
+  const headingFont = '"Inter", "Roboto", "Helvetica Neue", Arial, sans-serif';
+  const bodyFont = '"JetBrains Mono", "Fira Code", "Consolas", monospace';
 
-  const hatchingBg = mode === 'light' ? heavyComicLight : heavyComicDark;
-  const activeHatch = mode === 'light' ? crossHatchLight : crossHatchDark;
+  const canvasBg = mode === 'light' ? canvasLight : canvasDark;
+  const activePaperBg = mode === 'light' ? cardBgLight : cardBgDark;
 
   const theme = useMemo(() => createTheme({
     palette: {
@@ -117,28 +147,28 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     },
     typography: {
       fontFamily: bodyFont,
-      h1: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h2: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h3: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '0.05em', textTransform: 'uppercase' },
-      h4: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '0.02em' },
-      h5: { fontFamily: headingFont, fontWeight: 800 },
+      h1: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
+      h2: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
+      h3: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
+      h4: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '-0.02em' },
+      h5: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '-0.02em' },
       h6: { fontFamily: headingFont, fontWeight: 800 },
       subtitle1: { fontFamily: headingFont, fontWeight: 700 },
       subtitle2: { fontFamily: headingFont, fontWeight: 700 },
-      body1: { fontFamily: bodyFont, fontWeight: 600, lineHeight: 1.6 },
-      body2: { fontFamily: bodyFont, fontWeight: 600 },
-      button: { fontFamily: headingFont, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em' },
-      caption: { fontFamily: bodyFont, fontWeight: 600 },
-      overline: { fontFamily: headingFont, fontWeight: 800 },
+      body1: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.6 },
+      body2: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.875rem' },
+      button: { fontFamily: headingFont, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' },
+      caption: { fontFamily: bodyFont, fontWeight: 500 },
+      overline: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '0.1em' },
     },
-    shape: { borderRadius: 0 }, // Strict Square
+    shape: { borderRadius: 0 },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: hatchingBg, // Global Heavy Comic Tone
-            backgroundSize: '20px 20px, 100% 100%, 100% 100%', // Dots size fixed, others cover
+            backgroundImage: canvasBg, // 【CANVAS】
+            backgroundSize: '24px 24px', // Consistent Pop Art Grid
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
@@ -147,43 +177,44 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiPaper: {
         styleOverrides: {
           root: {
-            backgroundImage: 'none',
-            border: `3px solid ${colors.divider}`,
-            boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+            backgroundImage: activePaperBg, // 【CARD_BG】
+            backgroundColor: colors.paper, // Ensure solid background so we don't see body dots through cards
+            backgroundSize: 'auto',
+            border: `2px solid ${colors.divider}`,
+            // Pop Art Shadow: Deep, solid, sharp
+            boxShadow: `8px 8px 0 0 ${colors.textPrimary}`,
             borderRadius: 0,
+            transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
           },
+          elevation0: { boxShadow: 'none' }, // Allow overrides
           elevation1: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
           elevation2: { boxShadow: `8px 8px 0 0 ${colors.divider}` },
-          elevation3: { boxShadow: `10px 10px 0 0 ${colors.divider}` },
+          elevation3: { boxShadow: `12px 12px 0 0 ${colors.divider}` },
         }
       },
       MuiButton: {
         styleOverrides: {
           root: {
-            border: `3px solid ${colors.primary}`,
+            border: `2px solid ${colors.primary}`,
             borderRadius: 0,
             boxShadow: `4px 4px 0 0 ${colors.primary}`,
-            textTransform: 'none',
             fontWeight: 800,
             '&:hover': {
               transform: 'translate(-1px, -1px)',
               boxShadow: `6px 6px 0 0 ${colors.primary}`,
-              backgroundColor: 'transparent',
-              backgroundImage: activeHatch, // Cross-hatching on hover
+              backgroundColor: colors.primary,
+              color: mode === 'light' ? '#ffffff' : '#000000',
             },
             '&:active': {
               transform: 'translate(2px, 2px)',
-              boxShadow: '2px 2px 0 0 ${colors.primary}',
+              boxShadow: `2px 2px 0 0 ${colors.primary}`,
             },
           },
           contained: {
             backgroundColor: colors.primary,
             color: mode === 'light' ? '#ffffff' : '#000000',
-            boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
             '&:hover': {
                backgroundColor: colors.primary,
-               boxShadow: `6px 6px 0 0 ${colors.textPrimary}`,
-               backgroundImage: 'none',
             }
           },
         },
@@ -191,7 +222,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
-            border: `3px solid ${colors.divider}`,
+            border: `2px solid ${colors.divider}`,
             borderRadius: 0,
             boxShadow: `8px 8px 0 0 ${colors.divider}`,
           },
@@ -201,24 +232,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            backgroundColor: colors.background,
-            fontWeight: 800,
+            fontWeight: 700,
             borderRadius: 0,
             boxShadow: `3px 3px 0 0 ${colors.divider}`,
           },
-          filled: {
-            backgroundImage: hatchingBg,
-            backgroundColor: 'transparent',
-          }
         },
       },
       MuiAvatar: {
         styleOverrides: {
           root: {
             border: `2px solid ${colors.divider}`,
-            backgroundColor: colors.background,
-            color: colors.textPrimary,
             borderRadius: 0,
+            boxShadow: `3px 3px 0 0 ${colors.divider}`,
           }
         }
       },
@@ -229,54 +254,42 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
               borderRadius: 0,
               backgroundColor: colors.background,
               '& fieldset': {
-                borderWidth: '3px',
+                borderWidth: '2px',
                 borderColor: colors.divider,
               },
               '&:hover fieldset': {
-                borderWidth: '3px',
+                borderWidth: '2px',
                 borderColor: colors.textPrimary,
               },
               '&.Mui-focused fieldset': {
-                borderWidth: '3px',
+                borderWidth: '2px',
                 borderColor: colors.textPrimary,
-                boxShadow: `6px 6px 0 0 ${colors.textPrimary}`,
+                boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
               },
             },
-          }
-        }
-      },
-      MuiDrawer: {
-        styleOverrides: {
-          paper: {
-            borderLeft: `4px solid ${colors.divider}`,
           }
         }
       },
       MuiDivider: {
         styleOverrides: {
           root: {
-            borderBottomWidth: '3px',
+            borderBottomWidth: '2px',
             borderColor: colors.divider,
-            borderStyle: 'solid',
+            opacity: 0.2,
           }
         }
       },
       MuiAlert: {
         styleOverrides: {
           root: {
-            border: `3px solid ${colors.divider}`,
+            border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `6px 6px 0 0 ${colors.divider}`,
-            backgroundImage: hatchingBg,
-          },
-          standardInfo: { backgroundColor: colors.background, color: colors.textPrimary },
-          standardSuccess: { backgroundColor: colors.background, color: colors.textPrimary },
-          standardWarning: { backgroundColor: colors.background, color: colors.textPrimary },
-          standardError: { backgroundColor: colors.background, color: colors.textPrimary }
+            boxShadow: `5px 5px 0 0 ${colors.divider}`,
+          }
         }
       }
     },
-  }), [activeHatch, bodyFont, colors, hatchingBg, headingFont, mode]);
+  }), [activePaperBg, bodyFont, canvasBg, colors, headingFont, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

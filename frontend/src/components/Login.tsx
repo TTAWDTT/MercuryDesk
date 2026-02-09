@@ -14,6 +14,7 @@ import EmailIcon from '@mui/icons-material/EmailOutlined';
 import LockIcon from '@mui/icons-material/LockOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import { alpha, useTheme } from '@mui/material/styles';
+import { cardBgLight, cardBgDark } from '../theme';
 
 export default function Login(props: { onAuthed: () => void }) {
   const theme = useTheme();
@@ -80,6 +81,7 @@ export default function Login(props: { onAuthed: () => void }) {
               border: '3px solid',
               borderColor: 'text.primary',
               background: 'background.paper',
+              backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
               boxShadow: '10px 10px 0 0 rgba(0,0,0,1)',
             }}
           >

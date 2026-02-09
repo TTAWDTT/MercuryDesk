@@ -28,7 +28,7 @@ import {
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useTheme, alpha } from '@mui/material/styles';
-import { crossHatchLight, crossHatchDark } from '../theme';
+import { cardBgLight, cardBgDark } from '../theme';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   extractPreviewImageUrl,
@@ -410,7 +410,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             overflow: 'hidden',
             border: '2px solid',
             borderColor: 'divider',
-            backgroundImage: theme.palette.mode === 'light' ? crossHatchLight : crossHatchDark,
+            backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
         },
       }}
     >

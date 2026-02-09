@@ -15,6 +15,7 @@ import SendIcon from '@mui/icons-material/Send';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ReactMarkdown from 'react-markdown';
 import { useTheme, alpha } from '@mui/material/styles';
+import { cardBgLight, cardBgDark } from '../theme';
 import { Contact, agentChatStream } from '../api';
 
 interface AgentChatPanelProps {
@@ -182,6 +183,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             border: '2px solid',
             borderColor: 'text.primary',
             bgcolor: 'background.paper',
+            backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
             boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
           }}
         >

@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import { styled, alpha, useTheme } from '@mui/material/styles';
+import { headerLight, headerDark } from '../theme';
 import SearchIcon from '@mui/icons-material/Search';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import RefreshIcon from '@mui/icons-material/SyncOutlined';
@@ -41,7 +42,7 @@ const SearchIconWrapper = styled('div')(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: theme.palette.text.secondary,
+  color: theme.palette.text.primary,
 }));
 
 const StyledInputBase = styled(InputBase)(({ theme }) => ({
@@ -74,9 +75,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
   const theme = useTheme();
   const navigate = useNavigate();
   const isLight = theme.palette.mode === 'light';
+  const bgTexture = isLight ? headerLight : headerDark;
 
   return (
-    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '2px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '4px solid', borderColor: 'text.primary', bgcolor: 'primary.main', backgroundImage: bgTexture, backgroundSize: 'auto', color: 'primary.contrastText' }}>
       <Toolbar sx={{ height: 56, minHeight: 56 }}>
         <Box
           onClick={() => navigate('/')}
@@ -104,7 +106,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             sx={{
                 display: { xs: 'none', sm: 'block' },
                 fontWeight: 700,
-                color: 'text.primary',
+                color: 'primary.contrastText',
                 letterSpacing: '-0.5px',
                 cursor: 'pointer',
                 fontSize: '1.1rem'

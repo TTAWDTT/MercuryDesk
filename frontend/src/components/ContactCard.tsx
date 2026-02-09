@@ -15,6 +15,7 @@ import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
 import { motion } from 'framer-motion';
 import { useTheme, alpha } from '@mui/material/styles';
+import { cardBgLight, cardBgDark } from '../theme';
 import {
   extractPreviewImageUrl,
   getPreviewDisplayText,
@@ -217,10 +218,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 borderColor: 'divider',
                 borderRadius: 0,
                 mb: isFeature ? 2.5 : 2,
-                // Inner hatching for contrast (dense)
-                backgroundImage: theme.palette.mode === 'light'
-                    ? 'repeating-linear-gradient(-45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)'
-                    : 'repeating-linear-gradient(-45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 4px)',
+                // 【CARD_BG】: Screen Tone
+                backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
+                backgroundSize: '8px 8px',
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (

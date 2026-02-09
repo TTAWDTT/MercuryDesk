@@ -12,6 +12,7 @@ import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Divider from '@mui/material/Divider';
+import LinearProgress from '@mui/material/LinearProgress';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
@@ -21,16 +22,25 @@ import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { useTheme } from '@mui/material/styles';
+import { boardLight, boardDark } from '../theme';
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
 export default function Dashboard({ onLogout }: DashboardProps) {
+  const theme = useTheme();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{
+    current: number;
+    total: number;
+    currentAccount: string;
+    failedAccounts: string[];
+  } | null>(null);
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
   const [gmailPromptOpen, setGmailPromptOpen] = useState(false);
   const [bindingGmail, setBindingGmail] = useState(false);
@@ -188,6 +198,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const handleSyncAll = async () => {
     if (syncing) return;
     setSyncing(true);
+    setSyncProgress(null);
     try {
       let list = accounts ?? [];
       if (list.length === 0) {
@@ -199,11 +210,36 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         list = [mockAccount];
       }
 
-      const results = await Promise.allSettled(list.map((a) => syncAccount(a.id)));
-      const inserted = results.reduce((sum, r) => (r.status === 'fulfilled' ? sum + r.value.inserted : sum), 0);
-      const failed = results.filter((r) => r.status === 'rejected').length;
+      const total = list.length;
+      let current = 0;
+      let inserted = 0;
+      const failedAccounts: string[] = [];
+
+      for (const account of list) {
+        setSyncProgress({
+          current,
+          total,
+          currentAccount: account.identifier || account.provider,
+          failedAccounts: [...failedAccounts],
+        });
+        try {
+          const res = await syncAccount(account.id);
+          inserted += res.inserted;
+        } catch {
+          failedAccounts.push(account.identifier || account.provider);
+        }
+        current++;
+        setSyncProgress({
+          current,
+          total,
+          currentAccount: current < total ? (list[current]?.identifier || list[current]?.provider) : '',
+          failedAccounts: [...failedAccounts],
+        });
+      }
+
+      const failed = failedAccounts.length;
       const message =
-        failed === 0 ? `同步完成：+${inserted}` : `同步完成：+${inserted}（失败 ${failed} 个）`;
+        failed === 0 ? `同步完成：+${inserted}` : `同步完成：+${inserted}（失败 ${failed} 个：${failedAccounts.join(', ')}）`;
       setToast({ message, severity: failed === 0 ? 'success' : 'error' });
 
       await Promise.all([mutateContacts(), mutateAccounts()]);
@@ -211,6 +247,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       setToast({ message: e instanceof Error ? e.message : '同步失败', severity: 'error' });
     } finally {
       setSyncing(false);
+      setSyncProgress(null);
     }
   };
 
@@ -235,12 +272,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           elevation={0}
           sx={{
             borderRadius: 0,
-            bgcolor: 'background.paper',
+            bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark, // 【BOARD】
+            backdropFilter: 'blur(4px)',
             minHeight: '70vh',
-            border: '3px solid',
+            border: '4px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
-            boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
+            boxShadow: '12px 12px 0 0 rgba(0,0,0,1)',
           }}
         >
           <Box p={{ xs: 2, md: 2.5 }}>
@@ -250,6 +288,28 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               onOpenSettings={() => navigate('/settings')}
               onSync={handleSyncAll}
             />
+            {syncProgress && (
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Typography variant="body2" fontWeight="bold">
+                    正在同步: {syncProgress.currentAccount || '完成中...'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {syncProgress.current}/{syncProgress.total}
+                  </Typography>
+                </Box>
+                <LinearProgress
+                  variant="determinate"
+                  value={(syncProgress.current / syncProgress.total) * 100}
+                  sx={{ height: 8, borderRadius: 4 }}
+                />
+                {syncProgress.failedAccounts.length > 0 && (
+                  <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
+                    同步失败: {syncProgress.failedAccounts.join(', ')}
+                  </Typography>
+                )}
+              </Box>
+            )}
           </Box>
           <Divider />
           <ContactGrid 
