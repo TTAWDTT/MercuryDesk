@@ -31,46 +31,43 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const lightPalette = {
-    primary: '#4C8DFF',
-    secondary: '#7AB2FF',
-    background: '#F2F7FF',
-    paper: '#F8FBFF',
-    textPrimary: '#0E1B33',
-    textSecondary: '#4F6282',
-    divider: '#DCE6FA',
-    hover: '#CFE1FF',
+    primary: '#d97757', // Anthropic Orange
+    secondary: '#6a9bcc', // Anthropic Blue
+    background: '#faf9f5', // Anthropic Light
+    paper: '#ffffff',
+    textPrimary: '#141413', // Anthropic Dark
+    textSecondary: '#6e6d66',
+    divider: '#e8e6dc', // Anthropic Light Gray
+    hover: '#f0efe9',
+    accentGreen: '#788c5d',
   };
 
   const darkPalette = {
-    primary: '#4A7BEA',
-    secondary: '#7CA6FF',
-    background: '#000000',
-    paper: '#000000',
-    textPrimary: '#EAF1FF',
-    textSecondary: '#98ABD1',
-    divider: '#1A2742',
-    hover: '#10203A',
+    primary: '#e0886a', // Slightly lighter Orange for dark mode
+    secondary: '#85b0db', // Slightly lighter Blue
+    background: '#141413', // Anthropic Dark
+    paper: '#1e1e1d',
+    textPrimary: '#faf9f5', // Anthropic Light
+    textSecondary: '#b0aea5', // Anthropic Mid Gray
+    divider: '#2d2d2c',
+    hover: '#2a2a29',
+    accentGreen: '#8da36f',
   };
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
-  const headingFont =
-    '"Poppins","Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Arial,sans-serif';
-  const bodyFont =
-    '"Lora","Noto Serif SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",Georgia,serif';
+  const headingFont = '"Poppins", "Noto Sans SC", sans-serif';
+  const bodyFont = '"Lora", "Noto Serif SC", serif';
 
   const theme = useMemo(() => createTheme({
     palette: {
       mode,
       primary: {
         main: colors.primary,
-        light: '#78A7FF',
-        dark: '#2E63D8',
-        contrastText: '#F7FBFF',
+        contrastText: '#faf9f5',
       },
       secondary: {
         main: colors.secondary,
-        light: '#A5C8FF',
-        dark: '#5A8DE6',
+        contrastText: '#faf9f5',
       },
       background: {
         default: colors.background,
@@ -82,35 +79,37 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       },
       divider: colors.divider,
       action: {
-        hover: alpha(colors.hover, mode === 'light' ? 0.12 : 0.1),
-        selected: alpha(colors.hover, mode === 'light' ? 0.18 : 0.16),
+        hover: colors.hover,
+        selected: alpha(colors.primary, 0.08),
       },
     },
     typography: {
       fontFamily: bodyFont,
-      h1: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
-      h2: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
-      h3: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
-      h4: { fontFamily: headingFont, fontWeight: 700, letterSpacing: '-0.02em' },
-      h5: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.01em' },
-      h6: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.01em' },
-      subtitle1: { fontFamily: bodyFont, fontWeight: 500, lineHeight: 1.5 },
-      body1: { fontFamily: bodyFont, lineHeight: 1.6 },
-      body2: { fontFamily: bodyFont, lineHeight: 1.6 },
-      button: { fontFamily: headingFont, fontWeight: 600, textTransform: 'none' },
+      h1: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
+      h2: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
+      h3: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '-0.02em', color: colors.textPrimary },
+      h4: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.02em', color: colors.textPrimary },
+      h5: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.01em', color: colors.textPrimary },
+      h6: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '-0.01em', color: colors.textPrimary },
+      subtitle1: { fontFamily: headingFont, fontWeight: 500 },
+      subtitle2: { fontFamily: headingFont, fontWeight: 500, letterSpacing: '0.01em' },
+      body1: { fontFamily: bodyFont, lineHeight: 1.7, fontSize: '1.05rem' },
+      body2: { fontFamily: bodyFont, lineHeight: 1.65 },
+      button: { fontFamily: headingFont, fontWeight: 600, textTransform: 'none', letterSpacing: '0.02em' },
+      overline: { fontFamily: headingFont, fontWeight: 600, letterSpacing: '0.08em' },
     },
-    shape: { borderRadius: 10 },
+    shape: { borderRadius: 12 },
     components: {
       MuiCssBaseline: {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
             color: colors.textPrimary,
-            scrollbarColor: mode === 'light' ? '#9EB8E8 #EAF2FF' : '#3A4D73 #000000',
+            scrollbarColor: mode === 'light' ? '#b0aea5 #faf9f5' : '#3A4D73 #141413',
             '&::-webkit-scrollbar': { width: '8px' },
-            '&::-webkit-scrollbar-track': { backgroundColor: mode === 'light' ? '#EAF2FF' : '#000000' },
-            '&::-webkit-scrollbar-thumb': { 
-                backgroundColor: mode === 'light' ? '#9EB8E8' : '#3A4D73',
+            '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
+            '&::-webkit-scrollbar-thumb': {
+                backgroundColor: mode === 'light' ? '#d1d0c9' : '#333',
                 borderRadius: '4px',
             },
           },
@@ -119,32 +118,41 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
-            borderRadius: 18,
-            backgroundImage: 'none',
-            boxShadow: mode === 'light' 
-                ? '0 8px 20px rgba(46, 99, 216, 0.08)'
-                : '0 4px 14px rgba(0, 0, 0, 0.28)',
-            border: `1px solid ${mode === 'light' ? alpha('#DCE6FA', 0.95) : '#1A2742'}`,
+            borderRadius: 16,
+            boxShadow: mode === 'light'
+                ? '0 4px 12px rgba(20, 20, 19, 0.04)'
+                : '0 4px 12px rgba(0, 0, 0, 0.2)',
+            border: `1px solid ${colors.divider}`,
+            transition: 'all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)',
           },
         },
       },
       MuiButton: {
         styleOverrides: {
           root: {
-            borderRadius: 12,
-            padding: '8px 16px',
+            borderRadius: 8,
+            padding: '8px 20px',
             boxShadow: 'none',
             '&:hover': {
-              boxShadow: mode === 'light' ? `0 6px 14px ${alpha('#3C74D9', 0.25)}` : 'none',
-              transform: 'translateY(-1px)',
+              boxShadow: 'none',
+              backgroundColor: alpha(colors.primary, 0.08),
             },
           },
           containedPrimary: {
-            background: mode === 'light' ? '#3F7DF0' : '#365FB5',
-            color: '#F7FBFF',
+            backgroundColor: colors.textPrimary, // Brand style: dark buttons
+            color: colors.background,
             '&:hover': {
-              background: mode === 'light' ? '#326BDD' : '#2E549F',
+              backgroundColor: alpha(colors.textPrimary, 0.85),
+              boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
             },
+          },
+          outlined: {
+            borderColor: colors.divider,
+            color: colors.textPrimary,
+            '&:hover': {
+              borderColor: colors.textPrimary,
+              backgroundColor: 'transparent',
+            }
           }
         },
       },
@@ -154,10 +162,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             backgroundImage: 'none',
           },
           elevation1: {
-             boxShadow: mode === 'light'
-                ? '0 2px 8px rgba(46, 99, 216, 0.05)'
-                : '0 3px 10px rgba(0, 0, 0, 0.2)',
-            border: `1px solid ${mode === 'light' ? alpha('#DCE6FA', 0.95) : '#1A2742'}`,
+            boxShadow: mode === 'light'
+               ? '0 2px 8px rgba(20, 20, 19, 0.04)'
+               : '0 2px 8px rgba(0, 0, 0, 0.2)',
+            border: `1px solid ${colors.divider}`,
           }
         }
       },
@@ -165,31 +173,30 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             boxShadow: 'none',
-            borderBottom: `1px solid ${mode === 'light' ? '#DCE6FA' : '#1A2742'}`,
-            backdropFilter: 'blur(12px)',
-            backgroundColor: mode === 'light' ? alpha('#F8FBFF', 0.9) : alpha('#000000', 0.94),
+            borderBottom: `1px solid ${colors.divider}`,
+            backdropFilter: 'blur(16px)',
+            backgroundColor: alpha(colors.background, 0.85),
             color: colors.textPrimary,
           },
         },
       },
-      MuiInputBase: {
+      MuiChip: {
         styleOverrides: {
-            root: {
-                '&.Mui-disabled': {
-                    color: mode === 'light' ? 'rgba(0, 0, 0, 0.38)' : 'rgba(255, 255, 255, 0.5)',
-                }
-            }
+          root: {
+            fontFamily: headingFont,
+            fontWeight: 500,
+          }
         }
       },
-      MuiOutlinedInput: {
-          styleOverrides: {
-              notchedOutline: {
-                  borderColor: mode === 'light' ? '#C9DDFE' : '#2A3D60',
-              }
+      MuiDrawer: {
+        styleOverrides: {
+          paper: {
+            backgroundColor: colors.background,
           }
+        }
       }
     },
-  }), [bodyFont, colors.background, colors.divider, colors.hover, colors.paper, colors.primary, colors.secondary, colors.textPrimary, colors.textSecondary, headingFont, mode]);
+  }), [bodyFont, colors, headingFont, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

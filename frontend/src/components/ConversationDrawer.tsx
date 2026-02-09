@@ -260,21 +260,39 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
         {/* Summary Section */}
         {(summary || isSummarizing) && (
           <Box
-            mt={2}
-            p={2}
-            bgcolor={alpha(theme.palette.secondary.main, 0.04)}
-            borderRadius={2}
-            border={`1px solid ${alpha(theme.palette.secondary.main, 0.1)}`}
+            mt={2.5}
+            p={2.5}
+            bgcolor="action.hover"
+            borderRadius={3}
             display="flex"
-            gap={1.5}
+            gap={2}
             position="relative"
+            sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+            }}
           >
-             <AutoAwesomeIcon sx={{ color: theme.palette.secondary.main, fontSize: 20, mt: 0.3 }} />
+             <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
              <Box flexGrow={1}>
-                 <Typography variant="caption" fontWeight="bold" color="secondary" gutterBottom display="block">
-                     AI 摘要 {isSummarizing && <CircularProgress size={10} thickness={6} sx={{ ml: 1 }} />}
+                 <Typography
+                    variant="caption"
+                    fontWeight="600"
+                    color="primary.main"
+                    gutterBottom
+                    display="block"
+                    sx={{ letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                 >
+                     AI Summary {isSummarizing && <CircularProgress size={10} thickness={6} sx={{ ml: 1, color: 'primary.main' }} />}
                  </Typography>
-                 <Typography variant="body2" fontSize="0.875rem" color="textPrimary" sx={{ whiteSpace: 'pre-wrap' }}>
+                 <Typography
+                    variant="body2"
+                    color="text.primary"
+                    sx={{
+                        whiteSpace: 'pre-wrap',
+                        lineHeight: 1.7,
+                        fontFamily: theme.typography.body1.fontFamily
+                    }}
+                 >
                      {summary}
                  </Typography>
              </Box>
@@ -284,27 +302,44 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
         {/* Draft Section */}
         {(draft || isDrafting) && (
           <Box
-            mt={2}
-            p={2}
-            bgcolor={alpha(theme.palette.grey[500], 0.04)}
-            borderRadius={2}
-            border={`1px solid ${alpha(theme.palette.grey[500], 0.1)}`}
+            mt={2.5}
+            p={2.5}
+            bgcolor={alpha(theme.palette.text.primary, 0.03)}
+            borderRadius={3}
             display="flex"
-            gap={1.5}
+            gap={2}
+            sx={{
+                border: '1px solid',
+                borderColor: 'divider',
+            }}
           >
-             <EditIcon sx={{ color: theme.palette.text.secondary, fontSize: 20, mt: 0.3 }} />
+             <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
              <Box flexGrow={1}>
-                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
-                    <Typography variant="caption" fontWeight="bold" color="text.secondary">
-                        草拟回复 {isDrafting && <CircularProgress size={10} thickness={6} sx={{ ml: 1 }} />}
+                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Typography
+                        variant="caption"
+                        fontWeight="600"
+                        color="text.secondary"
+                        sx={{ letterSpacing: '0.05em', textTransform: 'uppercase' }}
+                    >
+                        Draft Reply {isDrafting && <CircularProgress size={10} thickness={6} sx={{ ml: 1 }} />}
                     </Typography>
                     {draft && !isDrafting && (
-                        <IconButton size="small" onClick={copyDraft} title="复制">
+                        <IconButton size="small" onClick={copyDraft} title="Copy" sx={{ color: 'text.secondary' }}>
                             <ContentCopyIcon fontSize="small" />
                         </IconButton>
                     )}
                  </Box>
-                 <Typography variant="body2" fontSize="0.875rem" color="textPrimary" sx={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace' }}>
+                 <Typography
+                    variant="body2"
+                    color="text.primary"
+                    sx={{
+                        whiteSpace: 'pre-wrap',
+                        fontFamily: 'monospace',
+                        fontSize: '0.9rem',
+                        lineHeight: 1.6
+                    }}
+                 >
                      {draft}
                  </Typography>
              </Box>
