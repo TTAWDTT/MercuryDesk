@@ -4,7 +4,7 @@ import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
-import { styled, alpha, useTheme } from '@mui/material/styles';
+import { styled, useTheme } from '@mui/material/styles';
 import { headerLight, headerDark } from '../theme';
 import SearchIcon from '@mui/icons-material/Search';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
@@ -15,24 +15,32 @@ import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useNavigate } from 'react-router-dom';
 
-const Search = styled('div')(({ theme }) => ({
-  position: 'relative',
-  borderRadius: 0, // Comic style square
-  border: `2px solid ${theme.palette.text.primary}`,
-  backgroundColor: theme.palette.background.paper,
-  '&:hover': {
-    backgroundColor: theme.palette.action.hover,
-    boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`,
-  },
-  marginRight: theme.spacing(2),
-  marginLeft: 0,
-  width: '100%',
-  transition: 'all 0.2s ease',
-  [theme.breakpoints.up('sm')]: {
-    marginLeft: theme.spacing(3),
-    width: 'auto',
-  },
-}));
+const Search = styled('div')(({ theme }) => {
+  const isLight = theme.palette.mode === 'light';
+  return {
+    position: 'relative',
+    borderRadius: 0,
+    border: `2px solid ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
+    backgroundColor: isLight ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
+    '&:hover': {
+      backgroundColor: isLight ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
+      borderColor: isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+    },
+    '&:focus-within': {
+      backgroundColor: isLight ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
+      borderColor: isLight ? '#ffffff' : '#000000',
+      boxShadow: `3px 3px 0 0 ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
+    },
+    marginRight: theme.spacing(2),
+    marginLeft: 0,
+    width: '100%',
+    transition: 'all 0.2s ease',
+    [theme.breakpoints.up('sm')]: {
+      marginLeft: theme.spacing(3),
+      width: 'auto',
+    },
+  };
+});
 
 const SearchIconWrapper = styled('div')(({ theme }) => ({
   padding: theme.spacing(0, 2),
@@ -42,11 +50,12 @@ const SearchIconWrapper = styled('div')(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: theme.palette.text.primary,
+  color: theme.palette.primary.contrastText,
+  opacity: 0.7,
 }));
 
 const StyledInputBase = styled(InputBase)(({ theme }) => ({
-  color: theme.palette.text.primary,
+  color: theme.palette.primary.contrastText,
   width: '100%',
   '& .MuiInputBase-input': {
     padding: theme.spacing(1.5, 1, 1.5, 0),
@@ -139,8 +148,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
               disabled={loading}
               sx={{ 
                   mr: 1, 
-                  color: 'text.secondary',
-                  '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } 
+                  color: 'primary.contrastText',
+                  opacity: 0.8,
+                  '&:hover': { opacity: 1, bgcolor: isLight ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' } 
               }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
@@ -154,8 +164,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             onClick={() => navigate('/settings')}
             sx={{ 
                 mr: 1, 
-                color: 'text.secondary',
-                '&:hover': { color: 'text.primary', bgcolor: 'action.hover' } 
+                color: 'primary.contrastText',
+                opacity: 0.8,
+                '&:hover': { opacity: 1, bgcolor: isLight ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' } 
             }}
           >
             <SettingsIcon />
@@ -167,8 +178,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             size="large" 
             onClick={onLogout}
             sx={{ 
-                color: 'text.secondary',
-                '&:hover': { color: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.1) } 
+                color: 'primary.contrastText',
+                opacity: 0.8,
+                '&:hover': { opacity: 1, color: '#ef4444', bgcolor: 'rgba(239,68,68,0.15)' } 
             }}
           >
             <LogoutIcon />

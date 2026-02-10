@@ -21,13 +21,15 @@ export const useColorMode = () => useContext(ColorModeContext);
 // =============================================================================
 
 // 【CANVAS】: Global Background
-// Concept: "Pop Art Dots" - Large, distinct halftone pattern.
-// High artistic style, reminiscent of Roy Lichtenstein.
+// Concept: "Blueprint Grid" - Subtle perpendicular grid aligned with Neo-Brutalism's
+// geometric precision. Clean, structured, and non-distracting.
 export const canvasLight = `
-  radial-gradient(circle, #D1D5DB 2px, transparent 2.5px)
+  linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px)
 `;
 export const canvasDark = `
-  radial-gradient(circle, #4B5563 2px, transparent 2.5px)
+  linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+  linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)
 `;
 
 // 【HEADER】: Top Bar
