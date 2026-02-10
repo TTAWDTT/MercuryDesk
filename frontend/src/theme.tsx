@@ -17,111 +17,79 @@ const ColorModeContext = createContext<ColorModeContextType>({
 export const useColorMode = () => useContext(ColorModeContext);
 
 // =============================================================================
-// MANGA TEXTURE ASSETS — HALFTONE / CROSS-HATCH / SPEED-LINE
+// KOMA (コマ) DESIGN SYSTEM  —  MercuryDesk Manga UI
+// =============================================================================
+// Core metaphor: The UI IS a manga page.
+//   - Every card is a PANEL (コマ)
+//   - The background is PRINTED PAGE PAPER
+//   - White gaps between cards are GUTTERS
+//   - ONE border weight, ONE shadow depth, ONE texture
 // =============================================================================
 
-// 【CANVAS】: Global Background
-// Concept: "Ben-Day Dots" — The signature halftone dot pattern of printed manga
-// and Roy Lichtenstein pop art. Immediately signals "comic book page".
-export const canvasLight = `
-  radial-gradient(circle, rgba(0,0,0,0.07) 1px, transparent 1px)
-`;
-export const canvasDark = `
-  radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)
-`;
-
-// 【HEADER】: Top Bar
-// Concept: "Speed Lines" — Horizontal lines rushing across the header bar,
-// evoking manga action panels and the flow of incoming messages.
-export const headerLight = `
-  repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 3px,
-    rgba(255,255,255,0.04) 3px,
-    rgba(255,255,255,0.04) 4px
-  )
-`;
-export const headerDark = `
-  repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 3px,
-    rgba(0,0,0,0.06) 3px,
-    rgba(0,0,0,0.06) 4px
-  )
-`;
-
-// 【CARD_BG】: Card Interior
-// Concept: "Cross-Hatch" — Two-directional diagonal lines overlaid,
-// the classic manga shading technique for indicating tone/depth.
-export const cardBgLight = `
-  repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 7px,
-    rgba(0,0,0,0.035) 7px,
-    rgba(0,0,0,0.035) 8px
-  ),
+// 【SCREENTONE】 — The ONE texture, on page background only.
+// 45° diagonal hatching lines, subtle. Cards stay clean/white.
+export const screentoneLight = `
   repeating-linear-gradient(
     -45deg,
     transparent,
-    transparent 7px,
-    rgba(0,0,0,0.035) 7px,
-    rgba(0,0,0,0.035) 8px
+    transparent 10px,
+    rgba(0,0,0,0.025) 10px,
+    rgba(0,0,0,0.025) 11px
   )
 `;
-export const cardBgDark = `
-  repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 7px,
-    rgba(255,255,255,0.035) 7px,
-    rgba(255,255,255,0.035) 8px
-  ),
+export const screentoneDark = `
   repeating-linear-gradient(
     -45deg,
     transparent,
-    transparent 7px,
-    rgba(255,255,255,0.035) 7px,
-    rgba(255,255,255,0.035) 8px
+    transparent 10px,
+    rgba(255,255,255,0.03) 10px,
+    rgba(255,255,255,0.03) 11px
   )
 `;
 
-// 【BOARD】: Container Background
-export const boardLight = `rgba(255,255,255,0.9)`;
-export const boardDark = `rgba(0,0,0,0.9)`;
+// 【BOARD】: Main container fill
+export const boardLight = `rgba(255,255,255,0.92)`;
+export const boardDark = `rgba(20,20,20,0.92)`;
 
-// High Contrast Pop-Manga Palette (defined outside component for referential stability)
+// =============================================================================
+// PALETTE
+// =============================================================================
+
 const lightPalette = {
-  primary: '#000000',
-  secondary: '#000000',
-  background: '#F3F4F6',
-  paper: '#ffffff',
-  textPrimary: '#000000',
-  textSecondary: '#4B5563',
-  divider: '#000000',
+  primary: '#1A1A1A',
+  secondary: '#1A1A1A',
+  background: '#F2F0EB',       // Warm manga paper
+  paper: '#FFFFFF',
+  textPrimary: '#1A1A1A',
+  textSecondary: '#555555',
+  divider: '#1A1A1A',
+  dividerLight: '#AAAAAA',     // For inner/subtle borders
   action: {
-      active: '#000000',
-      hover: 'rgba(0, 0, 0, 0.08)',
-      selected: 'rgba(0, 0, 0, 0.12)',
+    active: '#1A1A1A',
+    hover: 'rgba(0, 0, 0, 0.06)',
+    selected: 'rgba(0, 0, 0, 0.10)',
   }
 };
 
 const darkPalette = {
-  primary: '#ffffff',
-  secondary: '#ffffff',
-  background: '#111827',
-  paper: '#000000',
-  textPrimary: '#ffffff',
-  textSecondary: '#9CA3AF',
-  divider: '#ffffff',
+  primary: '#E0E0E0',
+  secondary: '#E0E0E0',
+  background: '#0A0A0A',
+  paper: '#141414',
+  textPrimary: '#E0E0E0',
+  textSecondary: '#999999',
+  divider: '#E0E0E0',
+  dividerLight: '#444444',
   action: {
-      active: '#ffffff',
-      hover: 'rgba(255, 255, 255, 0.15)',
-      selected: 'rgba(255, 255, 255, 0.25)',
+    active: '#E0E0E0',
+    hover: 'rgba(255, 255, 255, 0.08)',
+    selected: 'rgba(255, 255, 255, 0.12)',
   }
 };
+
+// =============================================================================
+// PROVIDER
+// =============================================================================
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [mode, setMode] = useState<ColorMode>(() => {
@@ -139,13 +107,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
 
-  // Artistic Typography: "International Style"
-  // Strong, Geometric Sans-Serif headers + Mono body
-  const headingFont = '"Inter", "Roboto", "Helvetica Neue", Arial, sans-serif';
-  const bodyFont = '"JetBrains Mono", "Fira Code", "Consolas", monospace';
+  // KOMA Typography: Inter for everything — manga uses Gothic (sans-serif)
+  const font = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 
-  const canvasBg = mode === 'light' ? canvasLight : canvasDark;
-  const activePaperBg = mode === 'light' ? cardBgLight : cardBgDark;
+  const canvasBg = mode === 'light' ? screentoneLight : screentoneDark;
 
   const theme = useMemo(() => createTheme({
     palette: {
@@ -170,20 +135,20 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       action: colors.action,
     },
     typography: {
-      fontFamily: bodyFont,
-      h1: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
-      h2: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
-      h3: { fontFamily: headingFont, fontWeight: 900, letterSpacing: '-0.03em' },
-      h4: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '-0.02em' },
-      h5: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '-0.02em' },
-      h6: { fontFamily: headingFont, fontWeight: 800 },
-      subtitle1: { fontFamily: headingFont, fontWeight: 700 },
-      subtitle2: { fontFamily: headingFont, fontWeight: 700 },
-      body1: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.75 },
-      body2: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.875rem', lineHeight: 1.7 },
-      button: { fontFamily: headingFont, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' },
-      caption: { fontFamily: bodyFont, fontWeight: 500 },
-      overline: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '0.1em' },
+      fontFamily: font,
+      h1: { fontWeight: 900, letterSpacing: '-0.03em' },
+      h2: { fontWeight: 900, letterSpacing: '-0.03em' },
+      h3: { fontWeight: 900, letterSpacing: '-0.03em' },
+      h4: { fontWeight: 800, letterSpacing: '-0.02em' },
+      h5: { fontWeight: 800, letterSpacing: '-0.02em' },
+      h6: { fontWeight: 800 },
+      subtitle1: { fontWeight: 700 },
+      subtitle2: { fontWeight: 700 },
+      body1: { fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.6 },
+      body2: { fontWeight: 500, fontSize: '0.875rem', lineHeight: 1.55 },
+      button: { fontWeight: 800, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+      caption: { fontWeight: 500 },
+      overline: { fontWeight: 800, letterSpacing: '0.12em' },
     },
     shape: { borderRadius: 0 },
     components: {
@@ -191,8 +156,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: canvasBg, // 【CANVAS】Ben-Day Dots
-            backgroundSize: '14px 14px', // Halftone dot spacing
+            backgroundImage: canvasBg,
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
@@ -201,19 +165,17 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiPaper: {
         styleOverrides: {
           root: {
-            backgroundImage: activePaperBg, // 【CARD_BG】Cross-Hatch
+            backgroundImage: 'none',          // Cards stay CLEAN — no texture
             backgroundColor: colors.paper,
-            backgroundSize: 'auto',
             border: `2px solid ${colors.divider}`,
-            // Three-tier shadow system: 墨点(2) / 墨线(4) / 墨块(8)
             boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
             borderRadius: 0,
-            transition: 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
           },
-          elevation0: { boxShadow: 'none' },
-          elevation1: { boxShadow: `2px 2px 0 0 ${colors.divider}` },   // 墨点
-          elevation2: { boxShadow: `4px 4px 0 0 ${colors.divider}` },   // 墨线
-          elevation3: { boxShadow: `8px 8px 0 0 ${colors.divider}` },   // 墨块
+          elevation0: { boxShadow: 'none', border: 'none' },
+          elevation1: { boxShadow: `2px 2px 0 0 ${colors.dividerLight}` },
+          elevation2: { boxShadow: `4px 4px 0 0 ${colors.textPrimary}` },
+          elevation3: { boxShadow: `6px 6px 0 0 ${colors.textPrimary}` },
         }
       },
       MuiButton: {
@@ -221,26 +183,25 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.primary}`,
             borderRadius: 0,
-            boxShadow: `3px 3px 0 0 ${colors.primary}`,
+            boxShadow: `3px 3px 0 0 ${colors.dividerLight}`,
             fontWeight: 800,
-            transition: 'all 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: 'all 0.12s ease',
             '&:hover': {
               transform: 'translate(-1px, -1px)',
-              boxShadow: `5px 5px 0 0 ${colors.primary}`,
+              boxShadow: `5px 5px 0 0 ${colors.dividerLight}`,
               backgroundColor: colors.primary,
               color: mode === 'light' ? '#ffffff' : '#000000',
             },
             '&:active': {
-              transform: 'translate(2px, 2px) scale(0.98)',
-              boxShadow: `1px 1px 0 0 ${colors.primary}`,
-              transition: 'all 0.06s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: 'translate(1px, 1px)',
+              boxShadow: `1px 1px 0 0 ${colors.dividerLight}`,
             },
           },
           contained: {
             backgroundColor: colors.primary,
             color: mode === 'light' ? '#ffffff' : '#000000',
             '&:hover': {
-               backgroundColor: colors.primary,
+              backgroundColor: colors.primary,
             }
           },
         },
@@ -248,10 +209,11 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiCard: {
         styleOverrides: {
           root: {
+            backgroundImage: 'none',
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `4px 4px 0 0 ${colors.divider}`,  // 墨线 level
-            transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+            boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
           },
         },
       },
@@ -261,7 +223,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             border: `1.5px solid ${colors.divider}`,
             fontWeight: 700,
             borderRadius: 0,
-            boxShadow: `2px 2px 0 0 ${colors.divider}`,  // 墨点 level
+            boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
           },
         },
       },
@@ -270,7 +232,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `2px 2px 0 0 ${colors.divider}`,  // 墨点 level
+            boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
           }
         }
       },
@@ -279,7 +241,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             '& .MuiOutlinedInput-root': {
               borderRadius: 0,
-              backgroundColor: colors.background,
+              backgroundColor: colors.paper,
               '& fieldset': {
                 borderWidth: '2px',
                 borderColor: colors.divider,
@@ -300,10 +262,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiDivider: {
         styleOverrides: {
           root: {
-            borderBottomWidth: '2px',
-            borderStyle: 'dashed',
-            borderColor: colors.divider,
-            opacity: 0.25,
+            borderBottomWidth: '1px',
+            borderColor: colors.dividerLight,
+            opacity: 0.6,
           }
         }
       },
@@ -312,12 +273,12 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `3px 3px 0 0 ${colors.divider}`,  // 墨点~墨线
+            boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
           }
         }
       }
     },
-  }), [activePaperBg, bodyFont, canvasBg, colors, headingFont, mode]);
+  }), [canvasBg, colors, font, mode]);
 
   return (
     <ColorModeContext.Provider value={{ mode, toggleColorMode }}>

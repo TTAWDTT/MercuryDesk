@@ -5,7 +5,6 @@ import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import { styled, useTheme } from '@mui/material/styles';
-import { headerLight, headerDark } from '../theme';
 import { useAuth } from '../contexts/AuthContext';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -87,7 +86,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
   const { logout } = useAuth();
   const [searchValue, setSearchValue] = useState('');
   const isLight = theme.palette.mode === 'light';
-  const bgTexture = isLight ? headerLight : headerDark;
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchValue(e.target.value);
@@ -100,7 +98,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
   };
 
   return (
-    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '4px solid', borderColor: 'text.primary', bgcolor: 'primary.main', backgroundImage: bgTexture, backgroundSize: 'auto', color: 'primary.contrastText' }}>
+    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '3px solid', borderColor: 'text.primary', bgcolor: 'primary.main', backgroundImage: 'none', color: 'primary.contrastText' }}>
       <Toolbar sx={{ height: 56, minHeight: 56 }}>
         <Box
           onClick={() => navigate('/')}

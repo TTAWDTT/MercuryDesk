@@ -15,7 +15,6 @@ import EmailIcon from '@mui/icons-material/EmailOutlined';
 import LockIcon from '@mui/icons-material/LockOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useTheme } from '@mui/material/styles';
-import { cardBgLight, cardBgDark } from '../theme';
 
 export default function Login() {
   const theme = useTheme();
@@ -93,19 +92,29 @@ export default function Login() {
               border: '3px solid',
               borderColor: 'text.primary',
               bgcolor: 'background.paper',
-              backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
-              boxShadow: `8px 8px 0 0 ${shadowColor}`,
-              // Manga cover: slight rotation for hand-drawn feel
-              transform: 'rotate(-0.8deg)',
-              '&:hover': { transform: 'rotate(0deg)', transition: 'transform 0.3s ease' },
-              transition: 'transform 0.3s ease',
+              backgroundImage: 'none',
+              boxShadow: `6px 6px 0 0 ${shadowColor}`,
+              position: 'relative',
+              // Double-border frame — manga cover technique
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 6,
+                left: 6,
+                right: 6,
+                bottom: 6,
+                border: '1px solid',
+                borderColor: 'divider',
+                opacity: 0.15,
+                pointerEvents: 'none',
+              },
             }}
           >
             <Box textAlign="center" mb={4}>
               <Box
                 sx={{
-                  width: 96,
-                  height: 96,
+                  width: 64,
+                  height: 64,
                   borderRadius: 0,
                   border: '3px solid',
                   borderColor: 'text.primary',
@@ -116,22 +125,18 @@ export default function Login() {
                   justifyContent: 'center',
                   color: 'text.primary',
                   fontWeight: '900',
-                  fontSize: '52px',
-                  fontFamily: '"Inter", sans-serif',
-                  letterSpacing: '-0.04em',
+                  fontSize: '36px',
+                  letterSpacing: '-0.06em',
                   boxShadow: `4px 4px 0 0 ${shadowColor}`
                 }}
               >
                 M
               </Box>
-              <Typography variant="h3" fontWeight="900" color="textPrimary" sx={{ letterSpacing: '-0.02em' }} gutterBottom>
+              <Typography variant="h4" fontWeight="900" color="textPrimary" sx={{ letterSpacing: '-0.03em' }} gutterBottom>
                 MercuryDesk
               </Typography>
-              <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic', letterSpacing: '0.05em', mb: 0.5 }}>
-                Vol.1 • Issue 2026
-              </Typography>
-              <Typography variant="body1" color="textSecondary">
-                统一收件箱（按发信人聚合）。
+              <Typography variant="caption" color="textSecondary" sx={{ letterSpacing: '0.16em', textTransform: 'uppercase', fontWeight: 700 }}>
+                Unified Inbox · Sender-Centric
               </Typography>
             </Box>
 
@@ -213,8 +218,8 @@ export default function Login() {
         </motion.div>
         
         <Box textAlign="center" mt={4}>
-          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6, fontStyle: 'italic' }}>
-             © 2026 MercuryDesk • Sender‑Centric MVP • 初版
+          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.5, letterSpacing: '0.02em' }}>
+             © 2026 MercuryDesk
           </Typography>
         </Box>
       </Container>

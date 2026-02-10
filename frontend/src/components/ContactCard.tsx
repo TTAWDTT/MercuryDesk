@@ -15,7 +15,6 @@ import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
 import { motion } from 'framer-motion';
 import { useTheme, alpha } from '@mui/material/styles';
-import { cardBgLight, cardBgDark } from '../theme';
 import {
   extractPreviewImageUrl,
   getPreviewDisplayText,
@@ -118,19 +117,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               ? {}
               : {
                   transform: 'translate(-2px, -2px)',
-                  borderColor: 'primary.main',
                   boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
-                  // P1: Paper fold-corner on hover (manga page-turn)
-                  '&::after': {
-                    content: '""',
-                    position: 'absolute',
-                    top: 0,
-                    right: 0,
-                    width: 20,
-                    height: 20,
-                    background: `linear-gradient(135deg, ${theme.palette.text.primary} 50%, ${theme.palette.background.paper} 50%)`,
-                    zIndex: 2,
-                  },
                 }),
           }
         }}
@@ -155,7 +142,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
               }}
             />
           </Box>
@@ -164,16 +151,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             <Box 
                 sx={{
                     position: 'absolute',
-                    top: 14,
-                    right: 14,
-                    width: 14,
-                    height: 14,
+                    top: -5,
+                    right: -5,
+                    width: 12,
+                    height: 12,
                     bgcolor: 'text.primary',
                     border: '2px solid',
                     borderColor: 'background.paper',
-                    // Ink-drop shape: manga unread marker
-                    borderRadius: '50% 50% 50% 0',
-                    transform: 'rotate(-45deg)',
+                    borderRadius: '50%',
                     zIndex: 1
                 }}
             />
@@ -198,7 +183,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                   borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'divider',
-                  boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
+                  boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
@@ -228,14 +213,11 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           <Box
             sx={{
                 p: isFeature ? { xs: 2.25, md: 2.75 } : 2,
-                bgcolor: 'transparent',
-                border: '2px solid',
-                borderColor: 'divider',
+                bgcolor: theme.palette.background.default,
+                border: '1px dashed',
+                borderColor: alpha(theme.palette.text.primary, 0.2),
                 borderRadius: 0,
                 mb: isFeature ? 2.5 : 2,
-                // 【CARD_BG】: Screen Tone
-                backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
-                backgroundSize: '8px 8px',
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (

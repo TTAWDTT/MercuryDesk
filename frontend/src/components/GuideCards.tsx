@@ -7,7 +7,6 @@ import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Box from '@mui/material/Box';
 import { alpha, useTheme } from '@mui/material/styles';
-import { cardBgLight, cardBgDark } from '../theme';
 import EmailOutlinedIcon from '@mui/icons-material/EmailOutlined';
 import SearchIcon from '@mui/icons-material/Search';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
@@ -53,7 +52,6 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             position: 'relative',
             transition: 'all 0.25s ease',
             boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
-            backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
@@ -72,7 +70,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'text.primary',
-                boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
               }}
             />
           </Box>
@@ -91,7 +89,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                   justifyContent: 'center',
                   bgcolor: 'transparent',
                   color: 'text.primary',
-                  boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
+                  boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
                 }}
               >
                 <EmailOutlinedIcon />
@@ -113,7 +111,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 border: '2px solid',
                 borderColor: 'divider',
                 bgcolor: 'transparent',
-                backgroundImage: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 4px)',
+                backgroundImage: 'repeating-linear-gradient(-45deg, rgba(0,0,0,0.03) 0px, rgba(0,0,0,0.03) 1px, transparent 1px, transparent 4px)',
               }}
             >
               <Typography variant="subtitle2" fontWeight={800} gutterBottom>
@@ -149,7 +147,6 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             overflow: 'hidden',
             transition: 'all 0.25s ease',
             boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
-            backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
               boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,

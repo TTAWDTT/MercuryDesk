@@ -1,0 +1,1078 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MercuryDesk — KOMA 漫画设计系统 Demo</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ====================================================================
+   KOMA (コマ) DESIGN SYSTEM  —  MercuryDesk Manga UI
+   ====================================================================
+   Core metaphor: The UI IS a manga page.
+   - Every card is a PANEL (コマ)
+   - The background is PRINTED PAGE PAPER
+   - White gaps between cards are GUTTERS
+   - ONE border weight, ONE shadow depth, ONE texture
+   ====================================================================*/
+
+:root {
+  /* --- Light Theme (Default) --- */
+  --page:        #F2F0EB;          /* Warm manga paper */
+  --paper:       #FFFFFF;          /* Card/panel fill */
+  --ink:         #1A1A1A;          /* Primary ink */
+  --ink-light:   #555555;          /* Secondary ink (50% tone) */
+  --ink-faint:   #AAAAAA;          /* Tertiary (20% tone) */
+  --accent:      #1A1A1A;          /* Buttons—same as ink for B&W purity */
+
+  /* Screentone: ONE subtle diagonal pattern on PAGE only */
+  --screentone: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 10px,
+    rgba(0,0,0,0.025) 10px,
+    rgba(0,0,0,0.025) 11px
+  );
+
+  /* Consistent shadow — ONE depth, ONE direction */
+  --shadow:        4px 4px 0 0 var(--ink);
+  --shadow-hover:  6px 6px 0 0 var(--ink);
+  --shadow-active: 1px 1px 0 0 var(--ink);
+  --shadow-sm:     2px 2px 0 0 var(--ink);
+
+  /* Border — TWO weights only */
+  --border:        2px solid var(--ink);
+  --border-heavy:  3px solid var(--ink);
+  --border-inner:  1px dashed var(--ink-faint);
+
+  /* Typography */
+  --font:          'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  /* Spacing (8px grid) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+}
+
+/* --- Dark Theme --- */
+.dark {
+  --page:        #0A0A0A;
+  --paper:       #141414;
+  --ink:         #E0E0E0;
+  --ink-light:   #999999;
+  --ink-faint:   #444444;
+  --accent:      #E0E0E0;
+  --screentone: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 10px,
+    rgba(255,255,255,0.03) 10px,
+    rgba(255,255,255,0.03) 11px
+  );
+}
+
+/* ==================== RESET & BASE ==================== */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  background-color: var(--page);
+  background-image: var(--screentone);  /* THE one texture */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ==================== HEADER ==================== */
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--ink);
+  color: var(--paper);
+  border-bottom: var(--border-heavy);
+  border-color: var(--ink);
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-6);
+  gap: var(--sp-4);
+}
+.dark .header {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+  border: 2px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -0.04em;
+  flex-shrink: 0;
+}
+
+.header-title {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: -0.02em;
+  flex-shrink: 0;
+}
+
+.header-search {
+  flex: 1;
+  max-width: 320px;
+  margin-left: auto;
+  position: relative;
+}
+
+.header-search input {
+  width: 100%;
+  padding: 8px 12px 8px 36px;
+  border: 1.5px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.08);
+  color: inherit;
+  font-family: var(--font);
+  font-size: 14px;
+  outline: none;
+  transition: all 0.15s;
+}
+.dark .header-search input {
+  border-color: rgba(0,0,0,0.25);
+  background: rgba(0,0,0,0.08);
+}
+.header-search input:focus {
+  border-color: rgba(255,255,255,0.6);
+  background: rgba(255,255,255,0.15);
+}
+.dark .header-search input:focus {
+  border-color: rgba(0,0,0,0.6);
+  background: rgba(0,0,0,0.15);
+}
+.header-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.5;
+  width: 18px;
+  height: 18px;
+}
+
+.header-actions {
+  display: flex;
+  gap: var(--sp-2);
+  margin-left: var(--sp-4);
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.dark .icon-btn {
+  border-color: rgba(0,0,0,0.2);
+}
+.icon-btn:hover {
+  background: rgba(255,255,255,0.15);
+  border-color: rgba(255,255,255,0.4);
+}
+.dark .icon-btn:hover {
+  background: rgba(0,0,0,0.15);
+  border-color: rgba(0,0,0,0.4);
+}
+
+/* ==================== MAIN FRAME ==================== */
+.main-frame {
+  max-width: 1200px;
+  margin: var(--sp-8) auto;
+  padding: 0 var(--sp-6);
+}
+
+.board {
+  background: var(--paper);
+  border: var(--border-heavy);
+  box-shadow: var(--shadow);
+  padding: var(--sp-6);
+}
+
+/* ==================== SECTION TITLE ==================== */
+.section-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-bottom: var(--sp-4);
+  padding-bottom: var(--sp-2);
+  border-bottom: var(--border-inner);
+}
+
+/* ==================== CARD / PANEL (コマ) ==================== */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--sp-5);  /* GUTTER — the white space IS part of the design */
+}
+
+.card {
+  background: var(--paper);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  padding: var(--sp-5);
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.card:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-hover);
+}
+.card:active {
+  transform: translate(1px, 1px);
+  box-shadow: var(--shadow-active);
+}
+
+/* Feature card — first item spans two columns */
+.card.feature {
+  grid-column: span 2;
+}
+@media (max-width: 720px) {
+  .card.feature { grid-column: span 1; }
+}
+
+/* Unread indicator — simple, bold, clean */
+.card-unread {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 12px;
+  height: 12px;
+  background: var(--ink);
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+}
+
+/* Card header: avatar + name */
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.avatar {
+  width: 48px;
+  height: 48px;
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 20px;
+  background: var(--page);
+  flex-shrink: 0;
+  overflow: hidden;
+  color: var(--ink);
+}
+.avatar.lg {
+  width: 56px;
+  height: 56px;
+  font-size: 24px;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.card-name {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.card-handle {
+  font-size: 13px;
+  color: var(--ink-light);
+  margin-top: 2px;
+}
+
+/* Card content preview — "inset panel" with dashed border */
+.card-preview {
+  border: var(--border-inner);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  background: var(--page);
+}
+.card-preview-title {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  margin-bottom: var(--sp-1);
+  /* Clamp 2 lines */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-preview-text {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-light);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Preview image */
+.card-preview-image {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid var(--ink-faint);
+  margin-bottom: var(--sp-3);
+  display: block;
+}
+
+/* Card footer */
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ==================== CHIP / TAG ==================== */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 1.5px solid var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  background: var(--paper);
+  box-shadow: var(--shadow-sm);
+}
+
+.chip-subtle {
+  border-color: var(--ink-faint);
+  box-shadow: none;
+  color: var(--ink-light);
+}
+
+.card-time {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+/* ==================== BUTTONS ==================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 10px 24px;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: var(--border);
+  cursor: pointer;
+  transition: all 0.12s;
+  text-decoration: none;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 3px 3px 0 0 var(--ink-light);
+}
+.btn-primary:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--ink-light);
+}
+.btn-primary:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 0 var(--ink-light);
+}
+
+.btn-outline {
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 0 var(--ink-faint);
+  border-color: var(--ink-faint);
+}
+.btn-outline:hover {
+  border-color: var(--ink);
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 0 var(--ink-faint);
+}
+
+.btn-sm {
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.btn-full {
+  width: 100%;
+}
+
+/* ==================== FORM ==================== */
+.form-field {
+  margin-bottom: var(--sp-4);
+}
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-light);
+  margin-bottom: var(--sp-2);
+}
+.form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: var(--border);
+  background: var(--paper);
+  font-family: var(--font);
+  font-size: 15px;
+  color: var(--ink);
+  outline: none;
+  transition: box-shadow 0.12s;
+}
+.form-input:focus {
+  box-shadow: var(--shadow);
+}
+.form-input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* ==================== DIVIDER ==================== */
+.divider {
+  border: none;
+  border-top: 1px solid var(--ink-faint);
+  margin: var(--sp-5) 0;
+  opacity: 0.6;
+}
+
+/* ==================== LOGIN PAGE ==================== */
+.login-wrapper {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-6);
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--paper);
+  border: var(--border-heavy);
+  box-shadow: 6px 6px 0 0 var(--ink);
+  padding: var(--sp-10) var(--sp-8) var(--sp-8);
+  position: relative;
+}
+/* Decorative double-border frame (manga cover technique) */
+.login-card::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+  border: 1px solid var(--ink-faint);
+  pointer-events: none;
+}
+
+.login-logo {
+  width: 64px;
+  height: 64px;
+  border: var(--border-heavy);
+  margin: 0 auto var(--sp-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+  font-size: 36px;
+  letter-spacing: -0.06em;
+  box-shadow: var(--shadow);
+}
+
+.login-title {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  text-align: center;
+  margin-bottom: var(--sp-1);
+}
+.login-subtitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink-light);
+  margin-bottom: var(--sp-8);
+}
+
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-5) 0;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 600;
+}
+.login-or::before,
+.login-or::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--ink-faint);
+}
+
+.login-footer {
+  text-align: center;
+  margin-top: var(--sp-6);
+  font-size: 12px;
+  color: var(--ink-faint);
+  letter-spacing: 0.02em;
+}
+
+/* ==================== CONVERSATION ==================== */
+.convo-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 520px;
+  height: 100vh;
+  background: var(--paper);
+  border-left: var(--border-heavy);
+  box-shadow: -6px 0 0 0 var(--ink);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.convo-header {
+  padding: var(--sp-5) var(--sp-6);
+  border-bottom: var(--border);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-shrink: 0;
+}
+.convo-header-info {
+  flex: 1;
+  min-width: 0;
+}
+.convo-header-name {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.convo-header-meta {
+  font-size: 12px;
+  color: var(--ink-light);
+}
+
+.convo-close {
+  width: 32px;
+  height: 32px;
+  border: var(--border);
+  background: var(--paper);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  transition: all 0.12s;
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+.convo-close:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.convo-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.msg-card {
+  border: var(--border);
+  padding: var(--sp-4) var(--sp-5);
+  box-shadow: 3px 3px 0 0 var(--ink);
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.msg-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: var(--shadow);
+}
+
+.msg-subject {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: var(--sp-2);
+}
+.msg-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-light);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.msg-time {
+  font-size: 11px;
+  color: var(--ink-faint);
+  margin-top: var(--sp-3);
+  font-weight: 600;
+}
+
+.convo-footer {
+  padding: var(--sp-4) var(--sp-6);
+  border-top: var(--border);
+  display: flex;
+  gap: var(--sp-3);
+  flex-shrink: 0;
+}
+
+/* ==================== GUIDE CARD ==================== */
+.guide-strip {
+  display: flex;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-5);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--ink-faint);
+  overflow-x: auto;
+}
+
+.guide-card {
+  flex: 1;
+  min-width: 180px;
+  padding: var(--sp-4);
+  border: 1.5px solid var(--ink-faint);
+  background: var(--paper);
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.guide-card:hover {
+  border-color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  transform: translate(-1px, -1px);
+}
+.guide-card-icon {
+  width: 36px;
+  height: 36px;
+  border: 1.5px solid var(--ink-faint);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.guide-card-text {
+  font-size: 13px;
+  font-weight: 600;
+}
+.guide-card-hint {
+  font-size: 11px;
+  color: var(--ink-light);
+  margin-top: 2px;
+}
+
+/* ==================== THEME TOGGLE ==================== */
+.theme-toggle {
+  position: fixed;
+  bottom: var(--sp-6);
+  right: var(--sp-6);
+  z-index: 300;
+}
+
+/* ==================== DEMO LAYOUT ==================== */
+.demo-sections {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-10);
+}
+
+.demo-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px dashed var(--ink-faint);
+  display: inline-block;
+}
+
+.flex-row { display: flex; gap: var(--sp-4); align-items: center; flex-wrap: wrap; }
+.flex-col { display: flex; flex-direction: column; gap: var(--sp-4); }
+.mt-4 { margin-top: var(--sp-4); }
+.mt-6 { margin-top: var(--sp-6); }
+.mb-4 { margin-bottom: var(--sp-4); }
+
+/* ==================== ALERTS ==================== */
+.alert {
+  padding: var(--sp-3) var(--sp-4);
+  border: var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+/* ==================== SCROLLBAR ==================== */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--ink-faint); }
+::-webkit-scrollbar-thumb:hover { background: var(--ink-light); }
+</style>
+</head>
+<body>
+
+<!-- ======================== SECTION 1: HEADER ======================== -->
+<div class="demo-sections">
+
+<div>
+  <div class="demo-label">01 · HEADER</div>
+  <header class="header">
+    <div class="header-logo">M</div>
+    <span class="header-title">MercuryDesk</span>
+    <div class="header-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="17" y2="17"/></svg>
+      <input type="text" placeholder="搜索联系人…" />
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" title="同步">↻</button>
+      <button class="icon-btn" title="设置">⚙</button>
+      <button class="icon-btn" onclick="document.body.classList.toggle('dark')" title="切换主题">◐</button>
+    </div>
+  </header>
+</div>
+
+<!-- ======================== SECTION 2: CARDS GRID ======================== -->
+<div>
+  <div class="demo-label">02 · CONTACT PANELS (コマ)</div>
+  <div class="board">
+    <!-- Guide strip -->
+    <div class="guide-strip">
+      <div class="guide-card">
+        <div class="guide-card-icon">📧</div>
+        <div><div class="guide-card-text">绑定邮箱</div><div class="guide-card-hint">Gmail / Outlook</div></div>
+      </div>
+      <div class="guide-card">
+        <div class="guide-card-icon">🔗</div>
+        <div><div class="guide-card-text">连接社交</div><div class="guide-card-hint">GitHub / X / RSS</div></div>
+      </div>
+      <div class="guide-card">
+        <div class="guide-card-icon">↻</div>
+        <div><div class="guide-card-text">同步数据</div><div class="guide-card-hint">点击获取消息</div></div>
+      </div>
+    </div>
+
+    <!-- Cards -->
+    <div class="card-grid">
+      <!-- Featured card -->
+      <div class="card feature">
+        <div class="card-unread"></div>
+        <div class="card-header">
+          <div class="avatar lg">李</div>
+          <div>
+            <div class="card-name">李华的邮件</div>
+            <div class="card-handle">lihua@example.com</div>
+          </div>
+        </div>
+        <div class="card-preview">
+          <img class="card-preview-image"
+               src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360' fill='%23f0f0f0'%3E%3Crect width='640' height='360'/%3E%3Ctext x='320' y='180' text-anchor='middle' font-family='sans-serif' font-size='24' fill='%23aaa'%3E预览图片%3C/text%3E%3C/svg%3E"
+               alt="preview" />
+          <div class="card-preview-title">关于下周的项目会议安排</div>
+          <div class="card-preview-text">Hi，想和你确认一下下周二下午的 sprint review 会议时间，是否需要调整到周三上午？另外产品需求文档我已经更新了…</div>
+        </div>
+        <div class="card-footer">
+          <div class="chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            邮件
+          </div>
+          <span class="card-time">3 小时前</span>
+        </div>
+      </div>
+
+      <!-- Standard card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="avatar">V</div>
+          <div>
+            <div class="card-name">Vercel Bot</div>
+            <div class="card-handle">github/vercel</div>
+          </div>
+        </div>
+        <div class="card-preview">
+          <div class="card-preview-title">feat: add streaming SSR support</div>
+          <div class="card-preview-text">This PR implements React 18 streaming SSR with edge runtime support. Benchmark shows 2.3x improvement…</div>
+        </div>
+        <div class="card-footer">
+          <div class="chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0 1 12 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/></svg>
+            GitHub
+          </div>
+          <span class="card-time">5 小时前</span>
+        </div>
+      </div>
+
+      <!-- Standard card with unread -->
+      <div class="card">
+        <div class="card-unread"></div>
+        <div class="card-header">
+          <div class="avatar">张</div>
+          <div>
+            <div class="card-name">张三</div>
+            <div class="card-handle">@zhangsan_dev</div>
+          </div>
+        </div>
+        <div class="card-preview">
+          <div class="card-preview-title">新视频: Rust vs Go 性能对比测试</div>
+          <div class="card-preview-text">这期视频我们用完全相同的 HTTP server 场景对比了 Rust 和 Go，结果令人意外…</div>
+        </div>
+        <div class="card-footer">
+          <div class="chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg>
+            Bilibili
+          </div>
+          <span class="card-time">昨天</span>
+        </div>
+      </div>
+
+      <!-- Standard card -->
+      <div class="card">
+        <div class="card-header">
+          <div class="avatar">W</div>
+          <div>
+            <div class="card-name">王明</div>
+            <div class="card-handle">wangming@outlook.com</div>
+          </div>
+        </div>
+        <div class="card-preview">
+          <div class="card-preview-title">Re: 毕业论文初稿反馈</div>
+          <div class="card-preview-text">整体框架已经非常清晰了。第三章的实验部分建议增加对比实验，用 baseline 模型做参照…</div>
+        </div>
+        <div class="card-footer">
+          <div class="chip">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            邮件
+          </div>
+          <span class="card-time">2 天前</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 3: BUTTONS & CHIPS ======================== -->
+<div>
+  <div class="demo-label">03 · COMPONENTS</div>
+  <div class="board">
+    <div class="section-title">Buttons</div>
+    <div class="flex-row mb-4">
+      <button class="btn btn-primary">登录</button>
+      <button class="btn btn-primary btn-sm">同步全部</button>
+      <button class="btn btn-outline">创建账号</button>
+      <button class="btn btn-outline btn-sm">稍后再说</button>
+    </div>
+
+    <div class="section-title mt-6">Chips / Tags</div>
+    <div class="flex-row mb-4">
+      <span class="chip">邮件</span>
+      <span class="chip">GitHub</span>
+      <span class="chip">Bilibili</span>
+      <span class="chip">X</span>
+      <span class="chip chip-subtle">新手引导</span>
+    </div>
+
+    <div class="section-title mt-6">Form Elements</div>
+    <div style="max-width: 400px;">
+      <div class="form-field">
+        <label class="form-label">邮箱</label>
+        <input class="form-input" type="email" placeholder="your@email.com" value="demo@example.com" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">密码</label>
+        <input class="form-input" type="password" value="password123" />
+      </div>
+    </div>
+
+    <div class="section-title mt-6">Alerts</div>
+    <div class="flex-col" style="max-width: 500px;">
+      <div class="alert">✓ &nbsp;同步完成：+12 条新消息</div>
+      <div class="alert" style="border-color: var(--ink-faint);">⚠ &nbsp;Gmail 绑定失败，请检查配置</div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 4: LOGIN ======================== -->
+<div>
+  <div class="demo-label">04 · LOGIN (漫画封面)</div>
+  <div class="login-wrapper" style="min-height: 600px; background: var(--page); background-image: var(--screentone); border: var(--border-heavy);">
+    <div class="login-card">
+      <div class="login-logo">M</div>
+      <div class="login-title">MercuryDesk</div>
+      <div class="login-subtitle">Unified Inbox · Sender-Centric</div>
+      
+      <div class="form-field">
+        <label class="form-label">邮箱</label>
+        <input class="form-input" type="email" placeholder="your@email.com" />
+      </div>
+      <div class="form-field">
+        <label class="form-label">密码</label>
+        <input class="form-input" type="password" placeholder="至少 8 位" />
+      </div>
+      
+      <button class="btn btn-primary btn-full">登录</button>
+      
+      <div class="login-or">或</div>
+      
+      <button class="btn btn-outline btn-full">创建账号</button>
+      
+      <div class="login-footer">© 2026 MercuryDesk</div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== SECTION 5: CONVERSATION ======================== -->
+<div>
+  <div class="demo-label">05 · CONVERSATION PANEL</div>
+  <div style="width: 520px; border: var(--border-heavy); background: var(--paper); box-shadow: var(--shadow);">
+    <div class="convo-header">
+      <div class="avatar">李</div>
+      <div class="convo-header-info">
+        <div class="convo-header-name">李华的邮件</div>
+        <div class="convo-header-meta">lihua@example.com · 共 3 条对话</div>
+      </div>
+      <button class="convo-close">✕</button>
+    </div>
+    
+    <div style="padding: 20px 24px; display: flex; flex-direction: column; gap: 20px;">
+      <div class="msg-card">
+        <div class="msg-subject">关于下周的项目会议安排</div>
+        <div class="msg-body">Hi，想和你确认一下下周二下午的 sprint review 会议时间，是否需要调整到周三上午？另外产品需求文档我已经更新了，请看附件。</div>
+        <div class="msg-time">2026-02-10 14:30</div>
+      </div>
+      <div class="msg-card">
+        <div class="msg-subject">Re: API 文档更新</div>
+        <div class="msg-body">新的 REST API v2 文档已经部署到 staging 了。主要变更包括：认证流程改为 OAuth2 PKCE、新增批量操作端点、分页参数统一化。</div>
+        <div class="msg-time">2026-02-09 09:15</div>
+      </div>
+      <div class="msg-card">
+        <div class="msg-subject">周报: Week 06</div>
+        <div class="msg-body">本周进展：1) 完成用户系统重构 2) 修复 3 个 P0 级 bug 3) Code review 12 个 PR。下周计划：性能优化迭代。</div>
+        <div class="msg-time">2026-02-07 18:00</div>
+      </div>
+    </div>
+
+    <div style="padding: 16px 24px; border-top: var(--border); display: flex; gap: 12px;">
+      <button class="btn btn-primary btn-sm" style="flex: 1;">✦ AI 摘要</button>
+      <button class="btn btn-outline btn-sm" style="flex: 1;">✎ 回复</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== DESIGN PRINCIPLES ======================== -->
+<div>
+  <div class="demo-label">06 · KOMA 设计原则</div>
+  <div class="board" style="max-width: 720px;">
+    <div style="display: flex; flex-direction: column; gap: 20px; font-size: 14px; line-height: 1.7;">
+      <div>
+        <strong style="font-size: 15px;">① 一种边框粗细</strong><br/>
+        标准 2px，外框 3px。不再有 1px/1.5px/4px 混乱。漫画里 G笔的笔触是统一的。
+      </div>
+      <hr class="divider"/>
+      <div>
+        <strong style="font-size: 15px;">② 一种阴影深度</strong><br/>
+        全局统一 4px 4px（hover 6px）。不分「墨点/墨線/墨塊」三级——那过于复杂，肉眼看不出层次只觉得乱。
+      </div>
+      <hr class="divider"/>
+      <div>
+        <strong style="font-size: 15px;">③ 一种纹理，只加在页面底色</strong><br/>
+        45° 斜线网点，仅作用于 body 背景。卡片内部纯净无纹理——就像漫画中白色对话框里不加网点一样。
+      </div>
+      <hr class="divider"/>
+      <div>
+        <strong style="font-size: 15px;">④ 不要花哨装饰</strong><br/>
+        取消：墨滴形状未读、翻页折角、语音气泡三角、速度线、卡片旋转。<br/>
+        保留：实心圆未读标记、简洁的 translate+shadow hover、内容区虚线边框（像漫画分镜内的小格）。
+      </div>
+      <hr class="divider"/>
+      <div>
+        <strong style="font-size: 15px;">⑤ 对比度即表达力</strong><br/>
+        黑白漫画的力量在于<strong>留白与黑块的对比</strong>，不在于堆砌装饰。<br/>
+        Header 全黑 / 卡片全白 / 阴影纯冲 / 字体粗细对比 = 够了。
+      </div>
+      <hr class="divider"/>
+      <div>
+        <strong style="font-size: 15px;">⑥ 正文用 Sans-Serif</strong><br/>
+        Inter 替代 JetBrains Mono。漫画用ゴシック体（无衬线）排正文——等宽字体适合代码但不适合阅读。标题极粗 (900)，正文中等 (500)，靠字重制造节奏。
+      </div>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .demo-sections -->
+
+<!-- Dark mode toggle FAB -->
+<div class="theme-toggle">
+  <button class="btn btn-primary btn-sm" onclick="document.body.classList.toggle('dark')">
+    ◐ 切换明暗
+  </button>
+</div>
+
+</body>
+</html>

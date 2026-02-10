@@ -273,10 +273,10 @@ export default function Dashboard() {
             bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark, // 【BOARD】
             backdropFilter: 'blur(4px)',
             minHeight: '70vh',
-            border: '4px solid',
+            border: '3px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
-            boxShadow: `8px 8px 0 0 ${theme.palette.text.primary}`,
+            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
           }}
         >
           <Box p={{ xs: 2, md: 2.5 }}>

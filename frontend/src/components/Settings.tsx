@@ -29,7 +29,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import useSWR from 'swr';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { useColorMode, cardBgLight, cardBgDark } from '../theme';
+import { useColorMode } from '../theme';
 import {
     AgentConfig,
     ConnectedAccount,
@@ -764,7 +764,7 @@ export default function Settings() {
                 <Grid container spacing={4}>
                     {/* Profile Section */}
                     <Grid size={{ xs: 12 }}>
-                        <Paper sx={{ p: 4, backgroundImage: mode === 'light' ? cardBgLight : cardBgDark, backgroundSize: '8px 8px' }}>
+                        <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>个人资料</Typography>
                             <Box display="flex" alignItems="center" gap={3} mb={3}>
                                 <Avatar 
@@ -806,7 +806,7 @@ export default function Settings() {
 
                     {/* Appearance */}
                     <Grid size={{ xs: 12 }}>
-                        <Paper sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundImage: mode === 'light' ? cardBgLight : cardBgDark, backgroundSize: '8px 8px' }}>
+                        <Paper sx={{ p: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <Box>
                                 <Typography variant="h6">外观</Typography>
                                 <Typography variant="body2" color="textSecondary">
@@ -823,7 +823,7 @@ export default function Settings() {
 
                     {/* Connected Accounts */}
                     <Grid size={{ xs: 12 }}>
-                        <Paper sx={{ p: 4, backgroundImage: mode === 'light' ? cardBgLight : cardBgDark, backgroundSize: '8px 8px' }}>
+                        <Paper sx={{ p: 4 }}>
                             <Typography variant="h6" gutterBottom>已连接账户</Typography>
                             <Typography variant="body2" color="textSecondary" mb={3}>
                                 管理你的消息来源。推荐先用 Gmail/Outlook/GitHub 一键授权；也支持转发接入、IMAP 高级接入、RSS、Bilibili、X。
@@ -1558,7 +1558,7 @@ export default function Settings() {
 
                     {/* Agent */}
                     <Grid size={{ xs: 12 }}>
-                        <Paper sx={{ p: 4, backgroundImage: mode === 'light' ? cardBgLight : cardBgDark, backgroundSize: '8px 8px' }}>
+                        <Paper sx={{ p: 4 }}>
                             <Box display="flex" alignItems="center" justifyContent="space-between" gap={2} flexWrap="wrap">
                                 <Box>
                                     <Typography variant="h6" gutterBottom>AI 助手 / Agent</Typography>

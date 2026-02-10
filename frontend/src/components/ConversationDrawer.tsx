@@ -29,7 +29,6 @@ import {
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useTheme, alpha } from '@mui/material/styles';
-import { cardBgLight, cardBgDark } from '../theme';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   extractPreviewImageUrl,
@@ -159,38 +158,16 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
         sx={{
             p: { xs: 3, md: 3.5 },
             borderRadius: 0,
-            border: '3px solid',
+            border: '2px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
+            backgroundImage: 'none',
             transition: 'all 0.15s',
             position: 'relative',
-            overflow: 'visible',
-            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
-            // P2: Speech bubble triangle (manga dialogue box)
-            '&::before': {
-                content: '""',
-                position: 'absolute',
-                top: 16,
-                left: -12,
-                width: 0,
-                height: 0,
-                borderStyle: 'solid',
-                borderWidth: '8px 12px 8px 0',
-                borderColor: `transparent ${theme.palette.divider} transparent transparent`,
-            },
-            '&::after': {
-                content: '""',
-                position: 'absolute',
-                top: 18,
-                left: -8,
-                width: 0,
-                height: 0,
-                borderStyle: 'solid',
-                borderWidth: '6px 9px 6px 0',
-                borderColor: `transparent ${theme.palette.background.paper} transparent transparent`,
-            },
+            overflow: 'hidden',
+            boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`,
             '&:hover': {
-                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
+                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
                 transform: 'translate(-1px, -1px)'
             }
         }}
@@ -221,13 +198,13 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
         {(previewImageUrl || previewUrl) && (
           <Box
             sx={{
-              border: '3px solid',
+              border: '2px solid',
               borderColor: 'divider',
               borderRadius: 0,
               p: 1.5,
               mb: 2,
               bgcolor: 'transparent',
-              boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+              boxShadow: 'none'
             }}
           >
             {previewImageUrl && (
@@ -318,9 +295,9 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
             gap={2}
             position="relative"
             sx={{
-                border: '3px solid',
+                border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
@@ -360,9 +337,9 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
             display="flex"
             gap={2}
             sx={{
-                border: '3px solid',
+                border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
@@ -446,11 +423,11 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             m: { xs: 0, md: 2 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
             borderRadius: 0,
-            boxShadow: `-6px 6px 0 0 ${theme.palette.text.primary}`,
+            boxShadow: `-4px 4px 0 0 ${theme.palette.text.primary}`,
             overflow: 'hidden',
             border: '2px solid',
             borderColor: 'divider',
-            backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
+            backgroundImage: 'none',
         },
       }}
     >
