@@ -134,7 +134,38 @@ class MessageDetail(BaseModel):
 class AgentChatRequest(BaseModel):
     messages: list[dict[str, str]]
     context_contact_id: Optional[int] = None
+    tools: list[str] = Field(default_factory=list)
+    use_memory: bool = True
     stream: bool = True
+
+
+class AgentMemoryNoteCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=500)
+    kind: str = Field(default="note", min_length=1, max_length=32)
+
+
+class AgentMemoryNoteOut(BaseModel):
+    id: int
+    kind: str
+    content: str
+    source: Optional[str] = None
+    updated_at: str
+
+
+class AgentFocusItemOut(BaseModel):
+    message_id: int
+    source: str
+    source_label: str
+    sender: str
+    title: str
+    received_at: str
+    score: float
+
+
+class AgentMemorySnapshot(BaseModel):
+    summary: str = ""
+    notes: list[AgentMemoryNoteOut] = Field(default_factory=list)
+    focus_items: list[AgentFocusItemOut] = Field(default_factory=list)
 
 class AgentSummarizeRequest(BaseModel):
     text: str

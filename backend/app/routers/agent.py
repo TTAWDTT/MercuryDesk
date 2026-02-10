@@ -16,6 +16,10 @@ from app.schemas import (
     AgentChatRequest,
     AgentConfigOut,
     AgentConfigUpdate,
+    AgentFocusItemOut,
+    AgentMemoryNoteCreate,
+    AgentMemoryNoteOut,
+    AgentMemorySnapshot,
     AgentSummarizeRequest,
     AgentSummarizeResponse,
     AgentTestResponse,
@@ -23,7 +27,8 @@ from app.schemas import (
     DraftReplyResponse,
     ModelCatalogResponse,
 )
-from app.services.agent_tools import TOOLS_DEFINITIONS, ToolExecutor
+from app.services.agent_memory import AgentMemoryService
+from app.services.agent_tools import TOOLS_DEFINITIONS, ToolExecutor, filter_tool_definitions
 from app.services.encryption import decrypt_optional
 from app.services.llm import LLMService
 from app.services.model_catalog import get_model_catalog
@@ -32,6 +37,7 @@ from app.services.summarizer import RuleBasedSummarizer
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 _summarizer = RuleBasedSummarizer()
+_memory = AgentMemoryService()
 
 # ... (Previous helper functions: _default_config, _config_out, _get_llm_service) ...
 def _default_config() -> AgentConfigOut:
@@ -86,13 +92,23 @@ def chat_stream(
 ):
     service, provider = _get_llm_service(db, current_user)
 
+    incoming_messages = [
+        {
+            "role": str(m.get("role") or "").strip(),
+            "content": str(m.get("content") or ""),
+        }
+        for m in payload.messages
+        if isinstance(m, dict)
+    ]
+
     if provider == "rule_based":
         def _iter_simple():
             yield "目前仅支持在配置 OpenAI 兼容接口后使用对话功能。"
         return StreamingResponse(_iter_simple(), media_type="text/event-stream")
 
+    messages = list(incoming_messages)
+
     # Inject Context if needed
-    messages = payload.messages
     if payload.context_contact_id:
         contact = crud.get_contact_by_id(db, user_id=current_user.id, contact_id=payload.context_contact_id)
         if contact:
@@ -109,8 +125,21 @@ def chat_stream(
             # Insert context as a system message at the beginning
             messages.insert(0, {"role": "system", "content": context_str})
 
-    # Initialize Tool Executor
-    executor = ToolExecutor(db, current_user.id)
+    # Initialize memory context
+    user_query = ""
+    for m in reversed(incoming_messages):
+        if m["role"] == "user":
+            user_query = m["content"]
+            break
+    if payload.use_memory:
+        memory_prompt = _memory.build_system_memory_prompt(db, current_user.id, query=user_query)
+        if memory_prompt:
+            messages.insert(0, {"role": "system", "content": memory_prompt})
+
+    # Initialize Tool Executor with optional per-message allowlist
+    tool_allowlist = {t.strip() for t in payload.tools if isinstance(t, str) and t.strip()} if payload.tools else None
+    executor = ToolExecutor(db, current_user.id, allowlist=tool_allowlist)
+    active_tool_defs = filter_tool_definitions(executor.available_tools) if tool_allowlist else TOOLS_DEFINITIONS
 
     # Core System Prompt
     system_prompt = """You are MercuryDesk AI, an intelligent assistant for a unified messaging platform.
@@ -134,12 +163,26 @@ Current Time: {current_time}
     messages.insert(0, {"role": "system", "content": system_prompt})
 
     try:
-        generator = service.chat_stream(
-            messages=messages,
-            tools=TOOLS_DEFINITIONS,
-            tool_executor=executor
-        )
-        return StreamingResponse(generator, media_type="text/event-stream")
+        def _stream():
+            chunks: list[str] = []
+            generator = service.chat_stream(
+                messages=messages,
+                tools=active_tool_defs,
+                tool_executor=executor,
+                max_rounds=3,
+                max_calls_per_round=6,
+            )
+            for chunk in generator:
+                chunks.append(chunk)
+                yield chunk
+
+            if payload.use_memory:
+                assistant_reply = "".join(chunks).strip()
+                if assistant_reply:
+                    _memory.update_after_turn(db, current_user.id, incoming_messages, assistant_reply)
+                    db.commit()
+
+        return StreamingResponse(_stream(), media_type="text/event-stream")
     except ValueError as e:
          def _iter_err():
             yield f"Error: {str(e)}"
@@ -260,6 +303,50 @@ def update_agent_config(
         temperature=float(config.temperature),
         has_api_key=bool(api_key),
     )
+
+
+@router.get("/memory", response_model=AgentMemorySnapshot)
+def get_agent_memory(
+    query: str = Query(default=""),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    snapshot = _memory.snapshot(db, current_user.id, query=query)
+    return AgentMemorySnapshot(
+        summary=snapshot["summary"],
+        notes=[AgentMemoryNoteOut(**n) for n in snapshot["notes"]],
+        focus_items=[AgentFocusItemOut(**it) for it in snapshot["focus_items"]],
+    )
+
+
+@router.post("/memory/notes", response_model=AgentMemoryNoteOut)
+def add_agent_memory_note(
+    payload: AgentMemoryNoteCreate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    row = _memory.add_note(db, current_user.id, payload.content, kind=payload.kind, source="manual")
+    db.commit()
+    db.refresh(row)
+    return AgentMemoryNoteOut(
+        id=row.id,
+        kind=row.kind,
+        content=row.content,
+        source=row.source,
+        updated_at=row.updated_at.isoformat() if row.updated_at else "",
+    )
+
+
+@router.delete("/memory/notes/{note_id}")
+def delete_agent_memory_note(
+    note_id: int,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    deleted = _memory.delete_note(db, current_user.id, note_id)
+    if deleted:
+        db.commit()
+    return {"deleted": deleted, "note_id": note_id}
 
 
 @router.post("/test", response_model=AgentTestResponse)

@@ -37,6 +37,15 @@ class User(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    agent_memory: Mapped[Optional["AgentConversationMemory"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
+    agent_memory_notes: Mapped[list["AgentMemoryNote"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class ConnectedAccount(Base):
@@ -166,6 +175,36 @@ class XApiConfig(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     user: Mapped["User"] = relationship(back_populates="x_api_config")
+
+
+class AgentConversationMemory(Base):
+    __tablename__ = "agent_conversation_memories"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    summary: Mapped[str] = mapped_column(Text, default="")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="agent_memory")
+
+
+class AgentMemoryNote(Base):
+    __tablename__ = "agent_memory_notes"
+    __table_args__ = (
+        Index("ix_agent_memory_notes_user_updated", "user_id", "updated_at"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32), default="note")
+    content: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    user: Mapped["User"] = relationship(back_populates="agent_memory_notes")
 
 
 class Contact(Base):

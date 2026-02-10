@@ -85,6 +85,30 @@ export type ModelCatalogResponse = {
   providers: ModelProviderInfo[];
 };
 
+export type AgentMemoryNote = {
+  id: number;
+  kind: string;
+  content: string;
+  source?: string | null;
+  updated_at: string;
+};
+
+export type AgentFocusItem = {
+  message_id: number;
+  source: string;
+  source_label: string;
+  sender: string;
+  title: string;
+  received_at: string;
+  score: number;
+};
+
+export type AgentMemorySnapshot = {
+  summary: string;
+  notes: AgentMemoryNote[];
+  focus_items: AgentFocusItem[];
+};
+
 export type AccountOAuthStart = {
   provider: string;
   auth_url: string;
@@ -426,13 +450,38 @@ export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalo
 export async function* agentChatStream(
   messages: { role: string; content: string }[],
   contextContactId?: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options?: { tools?: string[]; use_memory?: boolean }
 ): AsyncGenerator<string, void, unknown> {
   yield* streamFetch("/api/v1/agent/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, context_contact_id: contextContactId })
+    body: JSON.stringify({
+      messages,
+      context_contact_id: contextContactId,
+      tools: options?.tools ?? [],
+      use_memory: options?.use_memory ?? true,
+    })
   }, signal);
+}
+
+export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {
+  const qs = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : "";
+  return await fetchJson<AgentMemorySnapshot>(`/api/v1/agent/memory${qs}`);
+}
+
+export async function addAgentMemoryNote(content: string, kind = "note"): Promise<AgentMemoryNote> {
+  return await fetchJson<AgentMemoryNote>("/api/v1/agent/memory/notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, kind }),
+  });
+}
+
+export async function deleteAgentMemoryNote(noteId: number): Promise<{ deleted: boolean; note_id: number }> {
+  return await fetchJson<{ deleted: boolean; note_id: number }>(`/api/v1/agent/memory/notes/${noteId}`, {
+    method: "DELETE",
+  });
 }
 
 // X API Configuration

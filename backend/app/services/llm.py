@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import json
 from typing import Iterator, Any
 
 import openai
@@ -70,94 +69,87 @@ class LLMService:
         messages: list[dict[str, Any]],
         tools: list[dict] | None = None,
         tool_executor: Any = None,
+        *,
+        max_rounds: int = 3,
+        max_calls_per_round: int = 6,
     ) -> Iterator[str]:
         if not self.client:
             yield "Agent not configured."
             return
 
-        # 1. First Call
-        try:
-            response = self.client.chat.completions.create(
-                model=self.config.model,
-                messages=messages,
-                temperature=self.config.temperature,
-                stream=True,
-                tools=tools if tools else None,
-            )
-        except Exception as e:
-            yield f"Error: {str(e)}"
-            return
+        tool_defs = tools if tools else None
+        rounds = max(1, min(6, int(max_rounds or 3)))
+        per_round = max(1, min(10, int(max_calls_per_round or 6)))
 
-        # Buffer for tool calls (since they stream in chunks)
-        tool_calls = []
-        current_tool_call = None
-
-        # We need to accumulate text to yield it,
-        # but if it's a tool call, we accumulate that instead.
-        for chunk in response:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if not delta:
-                continue
-
-            # Text content
-            if delta.content:
-                yield delta.content
-
-            # Tool calls
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    if tc.index is not None:
-                        # New tool call or switching index
-                        if len(tool_calls) <= tc.index:
-                            tool_calls.append({"id": "", "function": {"name": "", "arguments": ""}, "type": "function"})
-                        current_tool_call = tool_calls[tc.index]
-
-                    if tc.id:
-                        current_tool_call["id"] += tc.id
-                    if tc.function.name:
-                        current_tool_call["function"]["name"] += tc.function.name
-                    if tc.function.arguments:
-                        current_tool_call["function"]["arguments"] += tc.function.arguments
-
-        # 2. Check if we have tool calls to execute
-        if tool_calls and tool_executor:
-            # Append assistant's tool_call message to history
-            # Convert tool_calls dicts to appropriate format if needed, but the structure matches
-            messages.append({
-                "role": "assistant",
-                "tool_calls": tool_calls
-            })
-
-            # Execute each tool
-            for tc in tool_calls:
-                func_name = tc["function"]["name"]
-                args_str = tc["function"]["arguments"]
-
-                # Notify frontend we are executing
-                yield f"\n\n> ⚙️ Executing: {func_name}...\n\n"
-
-                # Execute
-                result_content = tool_executor.execute(func_name, args_str)
-
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": str(result_content)
-                })
-
-            # 3. Second Call (with tool results)
+        for round_idx in range(rounds):
             try:
-                response2 = self.client.chat.completions.create(
+                response = self.client.chat.completions.create(
                     model=self.config.model,
                     messages=messages,
                     temperature=self.config.temperature,
-                    stream=True,
+                    stream=False,
+                    tools=tool_defs,
                 )
-                for chunk in response2:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
             except Exception as e:
-                yield f"Error calling tool response: {str(e)}"
+                yield f"Error: {str(e)}"
+                return
+
+            choice = response.choices[0] if response.choices else None
+            if choice is None:
+                yield "Error: empty LLM response."
+                return
+
+            msg = choice.message
+            text_out = (msg.content or "").strip()
+            raw_tool_calls = list(msg.tool_calls or [])
+
+            if raw_tool_calls and tool_executor:
+                tool_calls_payload: list[dict[str, Any]] = []
+                for tc in raw_tool_calls[:per_round]:
+                    tc_id = getattr(tc, "id", "") or ""
+                    fn = getattr(tc, "function", None)
+                    fn_name = getattr(fn, "name", "") if fn is not None else ""
+                    fn_args = getattr(fn, "arguments", "{}") if fn is not None else "{}"
+                    tool_calls_payload.append(
+                        {
+                            "id": tc_id,
+                            "type": "function",
+                            "function": {
+                                "name": fn_name,
+                                "arguments": fn_args,
+                            },
+                        }
+                    )
+
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": text_out or "",
+                        "tool_calls": tool_calls_payload,
+                    }
+                )
+
+                for tc in tool_calls_payload:
+                    fn_name = str(tc.get("function", {}).get("name") or "").strip()
+                    fn_args = str(tc.get("function", {}).get("arguments") or "{}")
+                    result_content = tool_executor.execute(fn_name, fn_args)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id") or "",
+                            "content": str(result_content),
+                        }
+                    )
+                continue
+
+            # Final answer: keep stream UX by chunking text.
+            final_text = text_out or "我已经完成处理，但当前没有可输出的正文。"
+            chunk_size = 96
+            for i in range(0, len(final_text), chunk_size):
+                yield final_text[i : i + chunk_size]
+            return
+
+        yield "我尝试调用工具完成请求，但达到最大工具轮次。请缩小问题范围后重试。"
 
     def summarize(self, text: str, stream: bool = False) -> str | Iterator[str]:
         messages = [

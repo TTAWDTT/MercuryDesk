@@ -110,14 +110,37 @@ TOOLS_DEFINITIONS = [
     },
 ]
 
+
+def filter_tool_definitions(allowlist: set[str] | None) -> list[dict[str, Any]]:
+    if not allowlist:
+        return TOOLS_DEFINITIONS
+    normalized = {name.strip() for name in allowlist if name and name.strip()}
+    out: list[dict[str, Any]] = []
+    for tool in TOOLS_DEFINITIONS:
+        fn = tool.get("function") if isinstance(tool, dict) else None
+        name = fn.get("name") if isinstance(fn, dict) else None
+        if isinstance(name, str) and name in normalized:
+            out.append(tool)
+    return out
+
+
 class ToolExecutor:
-    def __init__(self, db: Session, user_id: int):
+    def __init__(self, db: Session, user_id: int, *, allowlist: set[str] | None = None):
         self.db = db
         self.user_id = user_id
-        self.map: dict[str, Callable] = {
+        all_map: dict[str, Callable] = {
             "search_messages": self._search_messages,
             "get_contact_info": self._get_contact_info,
         }
+        if allowlist:
+            normalized = {name.strip() for name in allowlist if name and name.strip()}
+            self.map = {k: v for k, v in all_map.items() if k in normalized}
+        else:
+            self.map = all_map
+
+    @property
+    def available_tools(self) -> set[str]:
+        return set(self.map.keys())
 
     def _search_messages(self, query: str) -> str:
         return search_messages(self.db, self.user_id, query)

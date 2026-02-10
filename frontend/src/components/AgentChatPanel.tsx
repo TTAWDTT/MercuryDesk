@@ -4,18 +4,21 @@ import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import TextField from '@mui/material/TextField';
+import Chip from '@mui/material/Chip';
+import Divider from '@mui/material/Divider';
 import Fab from '@mui/material/Fab';
 import Fade from '@mui/material/Fade';
 import Avatar from '@mui/material/Avatar';
 import Tooltip from '@mui/material/Tooltip';
 import Stack from '@mui/material/Stack';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Switch from '@mui/material/Switch';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CloseIcon from '@mui/icons-material/Close';
 import SendIcon from '@mui/icons-material/Send';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import ReactMarkdown from 'react-markdown';
 import { useTheme, alpha } from '@mui/material/styles';
-import { Contact, agentChatStream } from '../api';
+import { AgentMemorySnapshot, Contact, agentChatStream, getAgentMemory } from '../api';
 
 interface AgentChatPanelProps {
   currentContact: Contact | null;
@@ -31,12 +34,26 @@ type ChatMessage = {
   isStreaming?: boolean;
 };
 
+const TOOL_OPTIONS: Array<{ key: string; label: string }> = [
+  { key: 'search_messages', label: '消息搜索' },
+  { key: 'get_contact_info', label: '联系人信息' },
+];
+
+function truncateText(text: string, limit: number): string {
+  if (!text || text.length <= limit) return text;
+  return `${text.slice(0, Math.max(0, limit - 1))}…`;
+}
+
 export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }) => {
   const theme = useTheme();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
+  const [useMemory, setUseMemory] = useState(true);
+  const [selectedTools, setSelectedTools] = useState<string[]>(TOOL_OPTIONS.map(t => t.key));
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memorySnapshot, setMemorySnapshot] = useState<AgentMemorySnapshot | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -62,6 +79,23 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
       ]);
     }
   }, []);
+
+  const loadMemory = async (query = '') => {
+    setMemoryLoading(true);
+    try {
+      const snapshot = await getAgentMemory(query);
+      setMemorySnapshot(snapshot);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMemoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    loadMemory('');
+  }, [isOpen]);
 
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
@@ -96,7 +130,15 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
       setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', isStreaming: true }]);
 
       let fullResponse = '';
-      const generator = agentChatStream(apiMessages, currentContact?.id, controller.signal);
+      const generator = agentChatStream(
+        apiMessages,
+        currentContact?.id,
+        controller.signal,
+        {
+          tools: selectedTools,
+          use_memory: useMemory,
+        }
+      );
 
       for await (const chunk of generator) {
         fullResponse += chunk;
@@ -114,6 +156,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
         const last = prev[prev.length - 1];
         return [...prev.slice(0, -1), { ...last, isStreaming: false }];
       });
+      loadMemory(userText);
 
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
@@ -230,7 +273,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
               </Avatar>
               <Box>
                 <Typography variant="subtitle2" fontWeight="900">Mercury Agent</Typography>
-                <Typography variant="caption" color="text.secondary" display="block" lineHeight={1}>
+                  <Typography variant="caption" color="text.secondary" display="block" lineHeight={1}>
                    {isTyping ? '思考中...' : '在线'}
                 </Typography>
               </Box>
@@ -249,6 +292,39 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                 </Box>
             )}
           </Box>
+          <Box px={2} py={1} borderBottom="1px solid" borderColor="divider" bgcolor="background.default">
+            <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+              {TOOL_OPTIONS.map(tool => {
+                const active = selectedTools.includes(tool.key);
+                return (
+                  <Chip
+                    key={tool.key}
+                    size="small"
+                    label={tool.label}
+                    onClick={() => {
+                      setSelectedTools(prev => {
+                        if (prev.includes(tool.key)) return prev.filter(x => x !== tool.key);
+                        return [...prev, tool.key];
+                      });
+                    }}
+                    color={active ? 'primary' : 'default'}
+                    variant={active ? 'filled' : 'outlined'}
+                  />
+                );
+              })}
+              <FormControlLabel
+                sx={{ ml: 0.5 }}
+                control={
+                  <Switch
+                    size="small"
+                    checked={useMemory}
+                    onChange={(e) => setUseMemory(e.target.checked)}
+                  />
+                }
+                label={<Typography variant="caption">启用记忆</Typography>}
+              />
+            </Stack>
+          </Box>
 
           {/* Messages Area */}
           <Box
@@ -262,7 +338,44 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
               gap: 2,
             }}
           >
-            {messages.map((msg, idx) => {
+            {memorySnapshot && (
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 1.2,
+                  borderRadius: 0,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Typography variant="caption" fontWeight={700} display="block" mb={0.5}>
+                  记忆: 最近关注信息/帖子
+                </Typography>
+                {memoryLoading ? (
+                  <Typography variant="caption" color="text.secondary">更新中...</Typography>
+                ) : (
+                  <>
+                    {memorySnapshot.summary?.trim() && (
+                      <Typography variant="caption" color="text.secondary" display="block" mb={0.8}>
+                        {truncateText(memorySnapshot.summary, 150)}
+                      </Typography>
+                    )}
+                    <Stack spacing={0.4}>
+                      {memorySnapshot.focus_items.slice(0, 4).map(item => (
+                        <Typography key={`${item.message_id}-${item.source}`} variant="caption">
+                          [{item.source_label}] {item.title}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  </>
+                )}
+              </Paper>
+            )}
+            {memorySnapshot && (
+              <Divider flexItem />
+            )}
+            {messages.map((msg) => {
               const isUser = msg.role === 'user';
               return (
                 <Box
