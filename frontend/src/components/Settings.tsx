@@ -1463,7 +1463,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                                 try {
                                                                     await deleteXAuthCookies();
                                                                     mutateXApiConfig();
-                                                                    setToast({ message: 'X Cookie 已删除', severity: 'info' });
+                                                                    setToast({ message: 'X Cookie 已删除', severity: 'success' });
                                                                 } catch (e) {
                                                                     setToast({ message: e instanceof Error ? e.message : '删除失败', severity: 'error' });
                                                                 }

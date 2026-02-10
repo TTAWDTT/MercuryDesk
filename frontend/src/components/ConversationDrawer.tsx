@@ -20,6 +20,7 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import {
   Contact,
   Message,
+  MessageDetail,
   listMessages,
   markContactRead,
   agentSummarizeStream,
@@ -82,7 +83,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
     setSummary(''); // Clear previous if any
     try {
       let text = '';
-      for await (const chunk of agentSummarizeStream(msg.body || msg.body_preview)) {
+      for await (const chunk of agentSummarizeStream(msg.body_preview)) {
         text += chunk;
         setSummary(text);
       }
@@ -101,7 +102,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
     setDraft('');
     try {
       let text = '';
-      for await (const chunk of agentDraftReplyStream(msg.body || msg.body_preview, tone)) {
+      for await (const chunk of agentDraftReplyStream(msg.body_preview, tone)) {
         text += chunk;
         setDraft(text);
       }

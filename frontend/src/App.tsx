@@ -5,6 +5,7 @@ import { AnimatePresence } from "framer-motion";
 import Dashboard from "./components/Dashboard";
 import Login from "./components/Login";
 import Settings from "./components/Settings";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { fetchJson, getToken, setToken } from "./api";
 import { ThemeProvider } from "./theme";
 
@@ -51,17 +52,22 @@ export default function App() {
 
   return (
     <ThemeProvider>
-      <SWRConfig
-        value={{
-          fetcher: (key: string) => fetchJson(key),
-          shouldRetryOnError: false,
-          revalidateOnFocus: false
-        }}
-      >
-        <BrowserRouter>
-          <AnimatedRoutes authed={authed} setAuthed={setAuthed} logout={logout} />
-        </BrowserRouter>
-      </SWRConfig>
+      <ErrorBoundary>
+        <SWRConfig
+          value={{
+            fetcher: (key: string) => fetchJson(key),
+            shouldRetryOnError: true,
+            errorRetryCount: 3,
+            errorRetryInterval: 2000,
+            revalidateOnFocus: true,
+            focusThrottleInterval: 10000,
+          }}
+        >
+          <BrowserRouter>
+            <AnimatedRoutes authed={authed} setAuthed={setAuthed} logout={logout} />
+          </BrowserRouter>
+        </SWRConfig>
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }
