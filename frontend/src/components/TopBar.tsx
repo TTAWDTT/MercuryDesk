@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Typography from '@mui/material/Typography';
@@ -6,7 +6,9 @@ import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
 import { styled, useTheme } from '@mui/material/styles';
 import { headerLight, headerDark } from '../theme';
+import { useAuth } from '../contexts/AuthContext';
 import SearchIcon from '@mui/icons-material/Search';
+import CloseIcon from '@mui/icons-material/Close';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import RefreshIcon from '@mui/icons-material/SyncOutlined';
 import SettingsIcon from '@mui/icons-material/Settings';
@@ -72,7 +74,6 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
 }));
 
 interface TopBarProps {
-  onLogout: () => void;
   onRefresh: () => void;
   onSearch: (query: string) => void;
   loading: boolean;
@@ -80,11 +81,23 @@ interface TopBarProps {
   hideSync?: boolean;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, loading, hideSearch = false, hideSync = false }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hideSearch = false, hideSync = false }) => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { logout } = useAuth();
+  const [searchValue, setSearchValue] = useState('');
   const isLight = theme.palette.mode === 'light';
   const bgTexture = isLight ? headerLight : headerDark;
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchValue(e.target.value);
+    onSearch(e.target.value);
+  };
+
+  const handleClearSearch = () => {
+    setSearchValue('');
+    onSearch('');
+  };
 
   return (
     <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '4px solid', borderColor: 'text.primary', bgcolor: 'primary.main', backgroundImage: bgTexture, backgroundSize: 'auto', color: 'primary.contrastText' }}>
@@ -132,9 +145,19 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
             <StyledInputBase
               placeholder="搜索联系人 / 邮件..."
               inputProps={{ 'aria-label': 'search' }}
-              onChange={(e) => onSearch(e.target.value)}
+              value={searchValue}
+              onChange={handleSearchChange}
               sx={{ fontSize: '0.9rem' }}
             />
+            {searchValue && (
+              <IconButton
+                size="small"
+                onClick={handleClearSearch}
+                sx={{ color: 'primary.contrastText', opacity: 0.7, mr: 0.5, '&:hover': { opacity: 1 } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            )}
           </Search>
         )}
         
@@ -176,7 +199,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onLogout, onRefresh, onSearch, l
         <Tooltip title="退出登录">
           <IconButton 
             size="large" 
-            onClick={onLogout}
+            onClick={logout}
             sx={{ 
                 color: 'primary.contrastText',
                 opacity: 0.8,
