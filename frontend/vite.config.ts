@@ -3,6 +3,13 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    include: [
+      "date-fns",
+      "date-fns/locale",
+      "react-markdown",
+    ],
+  },
   server: {
     port: 5173,
     proxy: {
