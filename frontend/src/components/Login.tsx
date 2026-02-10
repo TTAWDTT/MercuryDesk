@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ApiError, login, register, setToken } from '../api';
+import { useAuth } from '../contexts/AuthContext';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
@@ -13,17 +14,21 @@ import InputAdornment from '@mui/material/InputAdornment';
 import EmailIcon from '@mui/icons-material/EmailOutlined';
 import LockIcon from '@mui/icons-material/LockOutlined';
 import CircularProgress from '@mui/material/CircularProgress';
-import { alpha, useTheme } from '@mui/material/styles';
+import { useTheme } from '@mui/material/styles';
 import { cardBgLight, cardBgDark } from '../theme';
 
-export default function Login(props: { onAuthed: () => void }) {
+export default function Login() {
   const theme = useTheme();
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('password123');
+  const { setAuthed } = useAuth();
+  const [email, setEmail] = useState(import.meta.env.DEV ? 'demo@example.com' : '');
+  const [password, setPassword] = useState(import.meta.env.DEV ? 'password123' : '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const canSubmit = useMemo(() => email.length > 3 && password.length >= 8 && !busy, [email, password, busy]);
+  const canSubmit = useMemo(() => {
+    const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    return isValidEmail && password.length >= 8 && !busy;
+  }, [email, password, busy]);
 
   async function onLogin() {
     setBusy(true);
@@ -31,7 +36,7 @@ export default function Login(props: { onAuthed: () => void }) {
     try {
       const token = await login(email, password);
       setToken(token.access_token);
-      props.onAuthed();
+      setAuthed(true);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) setError('邮箱或密码不正确');
       else setError(e instanceof Error ? e.message : String(e));
@@ -52,6 +57,13 @@ export default function Login(props: { onAuthed: () => void }) {
       setBusy(false);
     }
   }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (canSubmit) onLogin();
+  };
+
+  const shadowColor = theme.palette.text.primary;
 
   return (
     <Box
@@ -80,9 +92,9 @@ export default function Login(props: { onAuthed: () => void }) {
               borderRadius: 0,
               border: '3px solid',
               borderColor: 'text.primary',
-              background: 'background.paper',
+              bgcolor: 'background.paper',
               backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
-              boxShadow: '10px 10px 0 0 rgba(0,0,0,1)',
+              boxShadow: `10px 10px 0 0 ${shadowColor}`,
             }}
           >
             <Box textAlign="center" mb={4}>
@@ -101,7 +113,7 @@ export default function Login(props: { onAuthed: () => void }) {
                   color: 'text.primary',
                   fontWeight: '900',
                   fontSize: '24px',
-                  boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
+                  boxShadow: `4px 4px 0 0 ${shadowColor}`
                 }}
               >
                 M
@@ -115,6 +127,8 @@ export default function Login(props: { onAuthed: () => void }) {
             </Box>
 
             <Stack spacing={3}>
+              <form onSubmit={handleSubmit}>
+              <Stack spacing={3}>
               <TextField
                 label="邮箱"
                 variant="outlined"
@@ -158,8 +172,8 @@ export default function Login(props: { onAuthed: () => void }) {
                 color="primary" 
                 fullWidth 
                 size="large"
+                type="submit"
                 disabled={!canSubmit}
-                onClick={onLogin}
                 sx={{ height: 48, fontSize: '1rem' }}
               >
                 {busy ? <CircularProgress size={24} color="inherit" /> : '登录'}
@@ -176,12 +190,15 @@ export default function Login(props: { onAuthed: () => void }) {
                 color="inherit" 
                 fullWidth 
                 size="large"
+                type="button"
                 disabled={!canSubmit}
                 onClick={onRegisterAndLogin}
                 sx={{ height: 48, borderColor: 'divider', color: 'text.secondary' }}
               >
                 创建账号
               </Button>
+              </Stack>
+              </form>
             </Stack>
           </Paper>
         </motion.div>
