@@ -20,6 +20,15 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { boardLight, boardDark } from '../theme';
 
+const DASHBOARD_SYNC_CONCURRENCY = 4;
+
+const formatRunningAccounts = (labels: string[]) => {
+  if (labels.length === 0) return '';
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return labels.join('、');
+  return `${labels[0]}、${labels[1]} 等 ${labels.length} 个账户`;
+};
+
 export default function Dashboard() {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -165,31 +174,51 @@ export default function Dashboard() {
       }
 
       const total = list.length;
-      let current = 0;
+      let completed = 0;
+      let nextIndex = 0;
       let inserted = 0;
       const failedAccounts: string[] = [];
+      const runningById = new Map<number, string>();
 
-      for (const account of list) {
+      const updateProgress = () => {
+        const runningLabels = Array.from(runningById.values());
+        const runningSummary = formatRunningAccounts(runningLabels);
         setSyncProgress({
-          current,
+          current: completed,
           total,
-          currentAccount: account.identifier || account.provider,
+          currentAccount: runningSummary ? `并发同步中：${runningSummary}` : '完成中...',
           failedAccounts: [...failedAccounts],
         });
-        try {
-          const res = await syncAccount(account.id);
-          inserted += res.inserted;
-        } catch {
-          failedAccounts.push(account.identifier || account.provider);
+      };
+
+      updateProgress();
+
+      const runSyncWorker = async () => {
+        while (true) {
+          const index = nextIndex;
+          nextIndex += 1;
+          if (index >= total) return;
+
+          const account = list[index];
+          const label = account.identifier || account.provider;
+          runningById.set(account.id, label);
+          updateProgress();
+
+          try {
+            const res = await syncAccount(account.id);
+            inserted += res.inserted;
+          } catch {
+            failedAccounts.push(label);
+          } finally {
+            runningById.delete(account.id);
+            completed += 1;
+            updateProgress();
+          }
         }
-        current++;
-        setSyncProgress({
-          current,
-          total,
-          currentAccount: current < total ? (list[current]?.identifier || list[current]?.provider) : '',
-          failedAccounts: [...failedAccounts],
-        });
-      }
+      };
+
+      const workerCount = Math.min(DASHBOARD_SYNC_CONCURRENCY, total);
+      await Promise.all(Array.from({ length: workerCount }, () => runSyncWorker()));
 
       const failed = failedAccounts.length;
       const message =
