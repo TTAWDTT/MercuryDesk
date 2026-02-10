@@ -339,12 +339,12 @@ export async function testAgent(): Promise<{ ok: boolean; provider: string; mess
   });
 }
 
-async function* streamFetch(path: string, init: RequestInit = {}): AsyncGenerator<string, void, unknown> {
+async function* streamFetch(path: string, init: RequestInit = {}, signal?: AbortSignal): AsyncGenerator<string, void, unknown> {
   const headers = new Headers(init.headers);
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await fetch(path, { ...init, headers, signal });
   if (!response.ok) {
       const text = await response.text();
       let msg = text;
@@ -366,20 +366,20 @@ async function* streamFetch(path: string, init: RequestInit = {}): AsyncGenerato
   }
 }
 
-export async function* agentSummarizeStream(text: string): AsyncGenerator<string, void, unknown> {
+export async function* agentSummarizeStream(text: string, signal?: AbortSignal): AsyncGenerator<string, void, unknown> {
   yield* streamFetch("/api/v1/agent/summarize/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text })
-  });
+  }, signal);
 }
 
-export async function* agentDraftReplyStream(text: string, tone: string): AsyncGenerator<string, void, unknown> {
+export async function* agentDraftReplyStream(text: string, tone: string, signal?: AbortSignal): AsyncGenerator<string, void, unknown> {
   yield* streamFetch("/api/v1/agent/draft-reply/stream", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text, tone })
-  });
+  }, signal);
 }
 
 export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalogResponse> {
@@ -389,13 +389,14 @@ export async function getAgentCatalog(forceRefresh = false): Promise<ModelCatalo
 
 export async function* agentChatStream(
   messages: { role: string; content: string }[],
-  contextContactId?: number
+  contextContactId?: number,
+  signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
   yield* streamFetch("/api/v1/agent/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ messages, context_contact_id: contextContactId })
-  });
+  }, signal);
 }
 
 // X API Configuration
