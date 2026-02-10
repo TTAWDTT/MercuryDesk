@@ -198,3 +198,20 @@ class ModelCatalogResponse(BaseModel):
     source_url: str
     fetched_at: datetime
     providers: list[ModelProviderInfo]
+
+
+class SyncJobStartResponse(BaseModel):
+    job_id: str
+    status: str
+    account_id: int
+
+
+class SyncJobStatusResponse(BaseModel):
+    job_id: str
+    status: str
+    account_id: int
+    inserted: Optional[int] = None
+    error: Optional[str] = None
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None

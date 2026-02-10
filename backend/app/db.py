@@ -30,13 +30,16 @@ def get_engine() -> Engine:
     return _engine
 
 
-def get_session() -> Generator[Session, None, None]:
+def create_session() -> Session:
     if _SessionLocal is None:
         init_engine()
     assert _SessionLocal is not None
-    db = _SessionLocal()
+    return _SessionLocal()
+
+
+def get_session() -> Generator[Session, None, None]:
+    db = create_session()
     try:
         yield db
     finally:
         db.close()
-

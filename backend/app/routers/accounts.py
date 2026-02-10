@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import secrets
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -19,13 +20,16 @@ from app.schemas import (
     ForwardAccountInfo,
     OAuthCredentialConfigOut,
     OAuthCredentialConfigUpdate,
+    SyncJobStartResponse,
+    SyncJobStatusResponse,
 )
+from app.services.encryption import decrypt_optional, encrypt_optional
 from app.services.forwarding import build_forward_address
 from app.services.feed_urls import normalize_feed_url
 from app.services.oauth_clients import build_authorization_url, exchange_code_for_tokens, fetch_identifier
 from app.services.oauth_state import consume_state
+from app.services.sync_jobs import enqueue_sync_job, get_sync_job
 from app.settings import settings
-from app.sync import sync_account
 from app.connectors.douyin import _extract_sec_uid as extract_douyin_uid
 from app.connectors.xiaohongshu import _extract_user_id as extract_xhs_uid
 from app.connectors.weibo import _extract_uid as extract_weibo_uid
@@ -37,9 +41,17 @@ def _rsshub_url(path: str) -> str:
     return f"{settings.rsshub_base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
+def _frontend_origin() -> str:
+    parsed = urlparse(settings.frontend_url)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return settings.frontend_url.rstrip("/")
+
+
 def _oauth_popup_html(payload: dict[str, object]) -> HTMLResponse:
     payload_json = json.dumps(payload, ensure_ascii=False)
     settings_url_json = json.dumps(settings.frontend_url.rstrip("/") + "/settings")
+    frontend_origin_json = json.dumps(_frontend_origin())
     html = f"""<!doctype html>
 <html lang="zh-CN">
   <head><meta charset="utf-8"><title>MercuryDesk OAuth</title></head>
@@ -49,12 +61,13 @@ def _oauth_popup_html(payload: dict[str, object]) -> HTMLResponse:
       (function () {{
         var payload = {payload_json};
         var settingsUrl = {settings_url_json};
+        var frontendOrigin = {frontend_origin_json};
         var isOk = !!payload.ok;
         var title = isOk ? "授权完成" : "授权失败";
         var message = payload.error ? String(payload.error) : (isOk ? "你可以返回 MercuryDesk 继续操作。" : "请返回 MercuryDesk 重试。");
         try {{
           if (window.opener && !window.opener.closed) {{
-            window.opener.postMessage(payload, "*");
+            window.opener.postMessage(payload, frontendOrigin);
             window.close();
             return;
           }}
@@ -421,7 +434,7 @@ def get_forward_info(
     )
 
 
-@router.post("/{account_id}/sync")
+@router.post("/{account_id}/sync", response_model=SyncJobStartResponse, status_code=202)
 def sync_connected_account(
     account_id: int,
     force_full: bool = False,
@@ -431,19 +444,28 @@ def sync_connected_account(
     account = crud.get_account(db, user_id=current_user.id, account_id=account_id)
     if account is None:
         raise HTTPException(status_code=404, detail="Account not found")
+    job = enqueue_sync_job(user_id=current_user.id, account_id=account.id, force_full=force_full)
+    return SyncJobStartResponse(job_id=job.job_id, status=job.status, account_id=job.account_id)
 
-    # Self-healing: Ensure feed config exists before syncing
-    if account.provider in {"rss", "bilibili", "x", "douyin", "xiaohongshu", "weibo"}:
-        # Check relationship; if missing, create default config
-        if not account.feed_config:
-            crud.ensure_feed_account_config(db, account_id=account.id)
-            db.refresh(account)
 
-    try:
-        inserted = sync_account(db, account=account, force_full=force_full)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    return {"inserted": inserted, "account_id": account.id}
+@router.get("/sync-jobs/{job_id}", response_model=SyncJobStatusResponse)
+def get_sync_job_status(
+    job_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    job = get_sync_job(job_id=job_id, user_id=current_user.id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Sync job not found")
+    return SyncJobStatusResponse(
+        job_id=job.job_id,
+        status=job.status,
+        account_id=job.account_id,
+        inserted=job.inserted,
+        error=job.error,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+    )
 
 
 @router.delete("/{account_id}", status_code=204)
@@ -468,12 +490,13 @@ def get_x_api_config(
 ):
     """Get X API configuration status"""
     config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
-    token = (config.bearer_token or "") if config else ""
+    token = (decrypt_optional(config.bearer_token) if config else "") or ""
     cookies_configured = False
     if config and config.auth_cookies:
         import json as _json
         try:
-            c = _json.loads(config.auth_cookies)
+            cookie_payload = decrypt_optional(config.auth_cookies) or ""
+            c = _json.loads(cookie_payload) if cookie_payload else {}
             cookies_configured = bool(c.get("auth_token") and c.get("ct0"))
         except Exception:
             pass
@@ -498,10 +521,13 @@ def update_x_api_config(
     # Get or create config
     config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
     if not config:
-        config = XApiConfig(user_id=current_user.id, bearer_token=bearer_token)
+        config = XApiConfig(
+            user_id=current_user.id,
+            bearer_token=encrypt_optional(bearer_token) or bearer_token,
+        )
         db.add(config)
     else:
-        config.bearer_token = bearer_token
+        config.bearer_token = encrypt_optional(bearer_token) or bearer_token
 
     db.commit()
 
@@ -531,10 +557,13 @@ def update_x_auth_cookies(
 
     config = db.query(XApiConfig).filter(XApiConfig.user_id == current_user.id).first()
     if not config:
-        config = XApiConfig(user_id=current_user.id, auth_cookies=cookies_json)
+        config = XApiConfig(
+            user_id=current_user.id,
+            auth_cookies=encrypt_optional(cookies_json) or cookies_json,
+        )
         db.add(config)
     else:
-        config.auth_cookies = cookies_json
+        config.auth_cookies = encrypt_optional(cookies_json) or cookies_json
 
     db.commit()
 

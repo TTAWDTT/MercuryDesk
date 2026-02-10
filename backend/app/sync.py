@@ -107,12 +107,13 @@ def _connector_for(db: Session, account: ConnectedAccount):
         )
         # 从数据库读取用户配置的 X API Bearer Token 和 Cookie
         x_api_config = db.query(XApiConfig).filter(XApiConfig.user_id == account.user_id).first()
-        bearer_token = x_api_config.bearer_token if x_api_config else None
+        bearer_token = decrypt_optional(x_api_config.bearer_token) if x_api_config else None
         auth_cookies = None
         if x_api_config and x_api_config.auth_cookies:
             import json as _json
             try:
-                auth_cookies = _json.loads(x_api_config.auth_cookies)
+                cookies_payload = decrypt_optional(x_api_config.auth_cookies) or ""
+                auth_cookies = _json.loads(cookies_payload) if cookies_payload else None
             except Exception:
                 auth_cookies = None
         return XConnector(

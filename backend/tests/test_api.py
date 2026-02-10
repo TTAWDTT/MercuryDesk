@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -151,12 +152,34 @@ def test_register_login_sync_and_list():
         )
         assert push.status_code == 200, push.text
 
+        def run_sync_and_wait(target_account_id: int) -> dict:
+            started = client.post(f"/api/v1/accounts/{target_account_id}/sync", headers=headers)
+            assert started.status_code in {200, 202}, started.text
+            started_payload = started.json()
+            if "inserted" in started_payload:
+                return started_payload
+
+            job_id = started_payload.get("job_id")
+            assert isinstance(job_id, str) and job_id
+            for _ in range(200):
+                job_resp = client.get(f"/api/v1/accounts/sync-jobs/{job_id}", headers=headers)
+                assert job_resp.status_code == 200, job_resp.text
+                job_payload = job_resp.json()
+                if job_payload.get("status") == "succeeded":
+                    return {
+                        "inserted": int(job_payload.get("inserted") or 0),
+                        "account_id": int(job_payload["account_id"]),
+                    }
+                if job_payload.get("status") == "failed":
+                    raise AssertionError(f"sync job failed: {job_payload.get('error')}")
+                time.sleep(0.05)
+            raise AssertionError("sync job timed out")
+
         # Sync it
-        sync = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
-        assert sync.status_code == 200, sync.text
-        assert sync.json()["inserted"] >= 1
-        sync_again = client.post(f"/api/v1/accounts/{account_id}/sync", headers=headers)
-        assert sync_again.status_code == 200, sync_again.text
+        sync = run_sync_and_wait(account_id)
+        assert sync["inserted"] >= 1
+        sync_again = run_sync_and_wait(account_id)
+        assert sync_again["inserted"] >= 0
 
         accounts = client.get("/api/v1/accounts", headers=headers)
         assert accounts.status_code == 200, accounts.text
