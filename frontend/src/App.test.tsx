@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import App from "./App";
 
-test("renders login when not authed", () => {
+test("renders login when not authed", async () => {
   localStorage.removeItem("mercurydesk_token");
   render(<App />);
-  expect(screen.getByText("MercuryDesk")).toBeInTheDocument();
-  expect(screen.getByText("登录")).toBeInTheDocument();
+  expect(await screen.findByText("MercuryDesk")).toBeInTheDocument();
+  expect(await screen.findByText("登录")).toBeInTheDocument();
 });

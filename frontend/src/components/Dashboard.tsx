@@ -1,24 +1,20 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import useSWR from 'swr';
 import Box from '@mui/material/Box';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
-import DialogActions from '@mui/material/DialogActions';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Divider from '@mui/material/Divider';
-import LinearProgress from '@mui/material/LinearProgress';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
 import { AgentChatPanel } from './AgentChatPanel';
 import { GuideCards } from './GuideCards';
+import { GmailBindDialog } from './dashboard/GmailBindDialog';
+import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
 import { useToast } from '../contexts/ToastContext';
+import { extractRedirectOriginFromAuthUrl, openOAuthPopup, waitForOAuthPopupMessage } from '../utils/oauthPopup';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
@@ -32,12 +28,7 @@ export default function Dashboard() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [drawerContact, setDrawerContact] = useState<Contact | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [syncProgress, setSyncProgress] = useState<{
-    current: number;
-    total: number;
-    currentAccount: string;
-    failedAccounts: string[];
-  } | null>(null);
+  const [syncProgress, setSyncProgress] = useState<DashboardSyncProgress | null>(null);
   const [gmailPromptOpen, setGmailPromptOpen] = useState(false);
   const [bindingGmail, setBindingGmail] = useState(false);
 
@@ -116,49 +107,13 @@ export default function Dashboard() {
     let allowFallback = false;
     let popup: Window | null = null;
     try {
-      popup = window.open(
-        'about:blank',
-        'oauth-gmail-login-bind',
-        'width=560,height=760,menubar=no,toolbar=no,status=no'
-      );
-      if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
-      const _popup = popup; // narrow for closure
-      _popup.document.title = 'MercuryDesk Gmail OAuth';
-      _popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到 Google 授权页面…</p>';
-
+      popup = openOAuthPopup('oauth-gmail-login-bind', '正在跳转到 Google 授权页面…');
       const started = await startAccountOAuth('gmail');
-      _popup.location.href = started.auth_url;
+      const allowedOrigin = extractRedirectOriginFromAuthUrl(started.auth_url);
+      popup.location.href = started.auth_url;
       allowFallback = true;
 
-      const result = await new Promise<{ ok: boolean; account_id?: number; error?: string }>((resolve, reject) => {
-        let onMessage: (event: MessageEvent) => void;
-        let settled = false;
-        const finish = (
-          fn: (value: any) => void,
-          value: { ok: boolean; account_id?: number; error?: string } | Error
-        ) => {
-          if (settled) return;
-          settled = true;
-          window.clearInterval(watcher);
-          window.clearTimeout(timeout);
-          window.removeEventListener('message', onMessage);
-          fn(value);
-        };
-        const timeout = window.setTimeout(() => finish(reject, new Error('授权超时，请重试')), 180000);
-        const watcher = window.setInterval(() => {
-          if (_popup.closed) {
-            window.setTimeout(() => {
-              if (!settled) finish(reject, new Error('授权窗口已关闭'));
-            }, 450);
-          }
-        }, 500);
-        onMessage = (event: MessageEvent) => {
-          const data = event.data as { source?: string; ok?: boolean; account_id?: number; error?: string };
-          if (data?.source !== 'mercurydesk-oauth') return;
-          finish(resolve, { ok: !!data.ok, account_id: data.account_id, error: data.error });
-        };
-        window.addEventListener('message', onMessage);
-      });
+      const result = await waitForOAuthPopupMessage(popup, { allowedOrigin });
 
       if (!result.ok || !result.account_id) {
         throw new Error(result.error || 'Gmail 授权失败');
@@ -286,28 +241,7 @@ export default function Dashboard() {
               onOpenSettings={() => navigate('/settings')}
               onSync={handleSyncAll}
             />
-            {syncProgress && (
-              <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 0 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="body2" fontWeight="bold">
-                    正在同步: {syncProgress.currentAccount || '完成中...'}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {syncProgress.current}/{syncProgress.total}
-                  </Typography>
-                </Box>
-                <LinearProgress
-                  variant="determinate"
-                  value={(syncProgress.current / syncProgress.total) * 100}
-                  sx={{ height: 8, borderRadius: 0 }}
-                />
-                {syncProgress.failedAccounts.length > 0 && (
-                  <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
-                    同步失败: {syncProgress.failedAccounts.join(', ')}
-                  </Typography>
-                )}
-              </Box>
-            )}
+            {syncProgress && <SyncProgressPanel progress={syncProgress} />}
           </Box>
           <Divider />
           <ContactGrid 
@@ -329,22 +263,12 @@ export default function Dashboard() {
 
       <AgentChatPanel currentContact={selectedContact} />
 
-      <Dialog open={gmailPromptOpen} onClose={deferGmailBinding} maxWidth="xs" fullWidth>
-        <DialogTitle>绑定 Gmail（推荐）</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" color="text.secondary">
-            当前账号尚未授权 Gmail 读取权限。绑定后可自动同步邮件并集中展示在 MercuryDesk。
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={deferGmailBinding} color="inherit">
-            稍后再说
-          </Button>
-          <Button onClick={connectGmailFromPrompt} variant="contained" disabled={bindingGmail}>
-            {bindingGmail ? '授权中…' : '同意并绑定 Gmail'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <GmailBindDialog
+        open={gmailPromptOpen}
+        binding={bindingGmail}
+        onClose={deferGmailBinding}
+        onConfirm={connectGmailFromPrompt}
+      />
     </Box>
   );
 }
