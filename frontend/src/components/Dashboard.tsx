@@ -20,7 +20,15 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { boardLight, boardDark } from '../theme';
 
-const DASHBOARD_SYNC_CONCURRENCY = 4;
+const DEFAULT_DASHBOARD_SYNC_CONCURRENCY = 12;
+const DASHBOARD_SYNC_CONCURRENCY = (() => {
+  const raw = Number(
+    import.meta.env.VITE_DASHBOARD_SYNC_CONCURRENCY ??
+      DEFAULT_DASHBOARD_SYNC_CONCURRENCY
+  );
+  if (!Number.isFinite(raw)) return DEFAULT_DASHBOARD_SYNC_CONCURRENCY;
+  return Math.max(1, Math.floor(raw));
+})();
 
 const formatRunningAccounts = (labels: string[]) => {
   if (labels.length === 0) return '';

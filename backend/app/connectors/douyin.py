@@ -10,13 +10,14 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
 import logging
-import os
 import re
 import json
 import threading
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -25,6 +26,7 @@ from app.connectors.base import IncomingMessage
 
 from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
+from app.settings import settings
 
 try:
     from playwright.sync_api import sync_playwright
@@ -155,6 +157,48 @@ class DouyinConnector:
         self._max_items = max(1, max_items)
         self._transport = transport
 
+    @staticmethod
+    def _resolve_browser_data_dir(platform: str) -> str:
+        base_dir = Path(settings.crawler_browser_data_dir).expanduser()
+        if not base_dir.is_absolute():
+            base_dir = Path(__file__).resolve().parents[2] / base_dir
+        target = base_dir / platform
+        target.mkdir(parents=True, exist_ok=True)
+        return str(target)
+
+    def _create_playwright_context(self, playwright: Any, *, fresh: bool):
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ]
+        if settings.crawler_use_persistent_login and not fresh:
+            user_data_dir = self._resolve_browser_data_dir("douyin")
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=settings.crawler_headless,
+                args=launch_args,
+                user_agent=_CHROME_UA,
+                viewport={"width": 1920, "height": 1080},
+                locale="zh-CN",
+                timezone_id="Asia/Shanghai",
+                bypass_csp=True,
+            )
+            return context, None
+
+        browser = playwright.chromium.launch(
+            headless=settings.crawler_headless,
+            args=launch_args,
+        )
+        context = browser.new_context(
+            user_agent=_CHROME_UA,
+            viewport={"width": 1920, "height": 1080},
+            locale="zh-CN",
+            timezone_id="Asia/Shanghai",
+            bypass_csp=True,
+        )
+        return context, browser
+
     # ------------------------------------------------------------------
     # 策略 1: Playwright 精简模式（跳过首页, ~13s）
     # ------------------------------------------------------------------
@@ -201,21 +245,8 @@ class DouyinConnector:
 
         try:
             with sync_playwright() as pw:
-                # 非持久化上下文 — 启动更快
-                browser = pw.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                    ],
-                )
-                context = browser.new_context(
-                    user_agent=_CHROME_UA,
-                    viewport={"width": 1920, "height": 1080},
-                    locale="zh-CN",
-                    timezone_id="Asia/Shanghai",
-                    bypass_csp=True,
+                context, browser = self._create_playwright_context(
+                    pw, fresh=fresh
                 )
                 context.add_init_script(
                     "Object.defineProperty(navigator,'webdriver',"
@@ -223,7 +254,7 @@ class DouyinConnector:
                     "window.chrome={runtime:{}};"
                 )
 
-                page = context.new_page()
+                page = context.pages[0] if context.pages else context.new_page()
                 page.on("response", _on_response)
 
                 logger.info("Playwright: 正在打开 %s", url)
@@ -231,8 +262,23 @@ class DouyinConnector:
                 # 直达用户页面，跳过首页访问
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
 
-                # 轮询等待 API 数据到达（每秒检查一次，最多 15 秒）
-                poll_limit = min(15, self._timeout_seconds - 5)
+                # 兼容旧版 Playwright：不依赖 wait_for_response，仅使用轮询等待。
+                try:
+                    if hasattr(page, "wait_for_response"):
+                        page.wait_for_response(
+                            lambda resp: _POST_API_PATTERN in resp.url and resp.status == 200,  # noqa: E731
+                            timeout=min(10_000, timeout_ms),
+                        )
+                except PlaywrightTimeout:
+                    pass
+
+                poll_limit = max(
+                    1,
+                    min(
+                        int(settings.crawler_playwright_poll_seconds),
+                        max(1, self._timeout_seconds - 5),
+                    ),
+                )
                 for _ in range(poll_limit):
                     if collected:
                         break
@@ -263,7 +309,8 @@ class DouyinConnector:
                             logger.debug("RENDER_DATA 解析失败: %s", exc)
 
                 context.close()
-                browser.close()
+                if browser is not None:
+                    browser.close()
 
         except PlaywrightError as exc:
             msg = str(exc)
@@ -448,6 +495,47 @@ class DouyinConnector:
 
         return urls
 
+    def _fetch_rsshub_in_parallel(
+        self, *, rsshub_urls: list[str], since: datetime | None
+    ) -> tuple[list[IncomingMessage] | None, list[str]]:
+        if not rsshub_urls:
+            return None, []
+
+        parallelism = max(
+            1, min(int(settings.crawler_rsshub_parallelism), len(rsshub_urls))
+        )
+        errors: list[str] = []
+
+        if parallelism == 1:
+            for feed_url in rsshub_urls:
+                try:
+                    messages = self._try_rsshub_feed(feed_url=feed_url, since=since)
+                    if messages:
+                        return messages, errors
+                except Exception as exc:
+                    errors.append(f"{feed_url}: {exc}")
+            return None, errors
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=parallelism, thread_name_prefix="douyin-rsshub"
+        ) as executor:
+            future_map = {
+                executor.submit(
+                    self._try_rsshub_feed, feed_url=feed_url, since=since
+                ): feed_url
+                for feed_url in rsshub_urls
+            }
+            for future in concurrent.futures.as_completed(future_map):
+                feed_url = future_map[future]
+                try:
+                    messages = future.result()
+                    if messages:
+                        return messages, errors
+                except Exception as exc:
+                    errors.append(f"{feed_url}: {exc}")
+
+        return None, errors
+
     # ------------------------------------------------------------------
     # 公开入口
     # ------------------------------------------------------------------
@@ -460,7 +548,7 @@ class DouyinConnector:
         # ── 主策略: Playwright 精简模式（~13s）──
         if _HAS_PLAYWRIGHT:
             try:
-                messages = self._fetch_via_playwright(since=since)
+                messages = self._fetch_via_playwright(since=since, fresh=False)
                 logger.info(
                     "Playwright 成功获取 %d 条抖音消息",
                     len(messages),
@@ -469,6 +557,19 @@ class DouyinConnector:
             except Exception as e:
                 errors.append(f"Playwright: {e}")
                 logger.warning("Playwright 抖音抓取失败: %s", e)
+                if settings.crawler_use_persistent_login:
+                    try:
+                        messages = self._fetch_via_playwright(since=since, fresh=True)
+                        logger.info(
+                            "Playwright(Fresh) 成功获取 %d 条抖音消息",
+                            len(messages),
+                        )
+                        return messages
+                    except Exception as fresh_error:
+                        errors.append(f"Playwright(Fresh): {fresh_error}")
+                        logger.warning(
+                            "Playwright Fresh 抖音抓取失败: %s", fresh_error
+                        )
         else:
             errors.append(
                 "playwright 未安装 — pip install playwright && "
@@ -479,35 +580,24 @@ class DouyinConnector:
                 "请运行: pip install playwright && playwright install chromium"
             )
 
-        # ── 回退: RSSHub 镜像 ──
+        # ── 回退: RSSHub 镜像（并发探测） ──
         rsshub_urls = self._collect_rsshub_urls()
-        last_err: Exception | None = None
         for i, feed_url in enumerate(rsshub_urls):
-            try:
-                logger.info(
-                    "尝试 RSSHub [%d/%d]: %s",
-                    i + 1,
-                    len(rsshub_urls),
-                    feed_url,
-                )
-                messages = self._try_rsshub_feed(
-                    feed_url=feed_url, since=since
-                )
-                if messages:
-                    logger.info(
-                        "RSSHub 成功: %s (%d 条消息)",
-                        feed_url,
-                        len(messages),
-                    )
-                    return messages
-            except Exception as e:
-                last_err = e
-                logger.debug("RSSHub 失败 [%s]: %s", feed_url, e)
+            logger.info("加入 RSSHub 并发探测 [%d/%d]: %s", i + 1, len(rsshub_urls), feed_url)
+        messages, rsshub_errors = self._fetch_rsshub_in_parallel(
+            rsshub_urls=rsshub_urls,
+            since=since,
+        )
+        if messages:
+            logger.info("RSSHub 成功 (%d 条消息)", len(messages))
+            return messages
+        if rsshub_errors:
+            for item in rsshub_errors:
+                logger.debug("RSSHub 失败: %s", item)
 
         if rsshub_urls:
             errors.append(
                 f"已尝试 {len(rsshub_urls)} 个 RSSHub 镜像均失败"
-                + (f": {last_err}" if last_err else "")
             )
 
         raise ValueError(
@@ -517,4 +607,3 @@ class DouyinConnector:
             "playwright install chromium\n"
             "2. 或自建 RSSHub 并配置 DOUYIN_COOKIE 环境变量"
         )
-

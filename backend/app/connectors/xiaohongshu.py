@@ -8,13 +8,14 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
 import time
-import urllib.parse as _up
 from datetime import datetime, timezone
 from html import escape
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ import httpx
 from app.connectors.base import IncomingMessage
 from app.connectors.feed import FeedConnector
 from app.services.avatar import normalize_http_avatar_url
+from app.settings import settings
 
 try:
     from playwright.sync_api import sync_playwright
@@ -121,12 +123,50 @@ class XiaohongshuConnector:
         self._max_items = max(1, max_items)
         self._transport = transport
 
+    @staticmethod
+    def _resolve_browser_data_dir(platform: str) -> str:
+        base_dir = Path(settings.crawler_browser_data_dir).expanduser()
+        if not base_dir.is_absolute():
+            base_dir = Path(__file__).resolve().parents[2] / base_dir
+        target = base_dir / platform
+        target.mkdir(parents=True, exist_ok=True)
+        return str(target)
+
+    def _create_playwright_context(self, playwright: Any, *, fresh: bool):
+        launch_args = [
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+        ]
+        if settings.crawler_use_persistent_login and not fresh:
+            user_data_dir = self._resolve_browser_data_dir("xiaohongshu")
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=settings.crawler_headless,
+                args=launch_args,
+                user_agent=_DEFAULT_USER_AGENT,
+                viewport={"width": 1920, "height": 1080},
+                locale="zh-CN",
+            )
+            return context, None
+
+        browser = playwright.chromium.launch(
+            headless=settings.crawler_headless,
+            args=launch_args,
+        )
+        context = browser.new_context(
+            user_agent=_DEFAULT_USER_AGENT,
+            viewport={"width": 1920, "height": 1080},
+            locale="zh-CN",
+        )
+        return context, browser
+
     # ------------------------------------------------------------------
     # 策略 1: Playwright 精简模式
     # ------------------------------------------------------------------
 
     def _fetch_via_playwright(
-        self, *, since: datetime | None
+        self, *, since: datetime | None, fresh: bool = False
     ) -> list[IncomingMessage]:
         """使用 Playwright 打开用户页面，提取 __INITIAL_STATE__ SSR 数据"""
         if not _HAS_PLAYWRIGHT:
@@ -138,42 +178,44 @@ class XiaohongshuConnector:
 
         try:
             with sync_playwright() as pw:
-                browser = pw.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--no-sandbox",
-                    ],
-                )
-                ctx = browser.new_context(
-                    user_agent=_DEFAULT_USER_AGENT,
-                    viewport={"width": 1920, "height": 1080},
-                    locale="zh-CN",
+                ctx, browser = self._create_playwright_context(
+                    pw, fresh=fresh
                 )
                 ctx.add_init_script(
                     "Object.defineProperty(navigator,'webdriver',"
                     "{get:()=>undefined})"
                 )
-                page = ctx.new_page()
+                page = ctx.pages[0] if ctx.pages else ctx.new_page()
 
                 logger.info("Playwright 小红书: 正在打开 %s", url)
-                page.goto(url, wait_until="networkidle", timeout=30000)
-                page.wait_for_timeout(2000)
-
-                # 提取 __INITIAL_STATE__
-                initial_state = page.evaluate(
-                    """() => {
-                        try {
-                            return window.__INITIAL_STATE__ || null;
-                        } catch(e) { return null; }
-                    }"""
+                page.goto(
+                    url,
+                    wait_until="domcontentloaded",
+                    timeout=self._timeout_seconds * 1000,
                 )
 
-                # 提取页面内容中的笔记链接（回退方式）
+                initial_state: Any = None
+                poll_limit = max(
+                    1, min(int(settings.crawler_playwright_poll_seconds), 12)
+                )
+                for _ in range(poll_limit):
+                    initial_state = page.evaluate(
+                        """() => {
+                            try {
+                                return window.__INITIAL_STATE__ || null;
+                            } catch(e) { return null; }
+                        }"""
+                    )
+                    if isinstance(initial_state, dict):
+                        break
+                    page.wait_for_timeout(1000)
+
+                # 回退：页面 HTML 提取 note id
                 content = page.content() or ""
 
                 ctx.close()
-                browser.close()
+                if browser is not None:
+                    browser.close()
 
         except PlaywrightError as exc:
             msg = str(exc)
@@ -449,25 +491,47 @@ class XiaohongshuConnector:
             if url not in urls:
                 urls.append(url)
 
-        last_error: Exception | None = None
-        for feed_url in urls:
-            try:
-                msgs = FeedConnector(
-                    feed_url=feed_url,
-                    source="xiaohongshu",
-                    default_sender=self._default_sender,
-                    timeout_seconds=min(15, self._timeout_seconds),
-                    max_entries=self._max_items,
-                ).fetch_new_messages(since=since)
-                if msgs:
-                    return msgs
-            except Exception as e:
-                last_error = e
-                logger.debug("RSSHub 失败 [%s]: %s", feed_url, e)
+        parallelism = max(1, min(int(settings.crawler_rsshub_parallelism), len(urls)))
+        errors: list[str] = []
 
-        if last_error:
-            raise last_error
-        raise ValueError("所有 RSSHub 镜像均失败")
+        def _fetch(url: str) -> list[IncomingMessage]:
+            return FeedConnector(
+                feed_url=url,
+                source="xiaohongshu",
+                default_sender=self._default_sender,
+                timeout_seconds=min(15, self._timeout_seconds),
+                max_entries=self._max_items,
+            ).fetch_new_messages(since=since)
+
+        if parallelism == 1:
+            for feed_url in urls:
+                try:
+                    msgs = _fetch(feed_url)
+                    if msgs:
+                        return msgs
+                except Exception as exc:
+                    errors.append(f"{feed_url}: {exc}")
+        else:
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=parallelism, thread_name_prefix="xhs-rsshub"
+            ) as executor:
+                future_map = {
+                    executor.submit(_fetch, feed_url): feed_url for feed_url in urls
+                }
+                for future in concurrent.futures.as_completed(future_map):
+                    feed_url = future_map[future]
+                    try:
+                        msgs = future.result()
+                        if msgs:
+                            return msgs
+                    except Exception as exc:
+                        errors.append(f"{feed_url}: {exc}")
+
+        if errors:
+            for item in errors:
+                logger.debug("RSSHub 失败: %s", item)
+            raise ValueError("所有 RSSHub 镜像均失败")
+        raise ValueError("没有可用的 RSSHub 镜像 URL")
 
     # ------------------------------------------------------------------
     # 主入口
@@ -482,7 +546,7 @@ class XiaohongshuConnector:
         if _HAS_PLAYWRIGHT:
             try:
                 t0 = time.monotonic()
-                messages = self._fetch_via_playwright(since=since)
+                messages = self._fetch_via_playwright(since=since, fresh=False)
                 elapsed = time.monotonic() - t0
                 logger.info(
                     "Playwright 成功获取 %d 条小红书消息 (%.2fs)",
@@ -493,6 +557,24 @@ class XiaohongshuConnector:
             except Exception as e:
                 errors.append(f"Playwright: {e}")
                 logger.debug("Playwright 小红书失败: %s", e)
+                if settings.crawler_use_persistent_login:
+                    try:
+                        t0 = time.monotonic()
+                        messages = self._fetch_via_playwright(
+                            since=since, fresh=True
+                        )
+                        elapsed = time.monotonic() - t0
+                        logger.info(
+                            "Playwright(Fresh) 成功获取 %d 条小红书消息 (%.2fs)",
+                            len(messages),
+                            elapsed,
+                        )
+                        return messages
+                    except Exception as fresh_error:
+                        errors.append(f"Playwright(Fresh): {fresh_error}")
+                        logger.debug(
+                            "Playwright Fresh 小红书失败: %s", fresh_error
+                        )
 
         # ── 回退 1: jina.ai ──
         try:

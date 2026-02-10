@@ -8,12 +8,16 @@ from uuid import uuid4
 
 from app import crud
 from app.db import create_session
+from app.settings import settings
 from app.sync import sync_account
 
 _FEED_PROVIDERS = {"rss", "bilibili", "x", "douyin", "xiaohongshu", "weibo"}
 _JOBS_RETENTION = timedelta(hours=6)
 _jobs_lock = Lock()
-_jobs_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sync-job")
+_jobs_executor = ThreadPoolExecutor(
+    max_workers=max(1, int(settings.sync_job_max_workers)),
+    thread_name_prefix="sync-job",
+)
 
 
 @dataclass(slots=True)

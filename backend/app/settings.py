@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     # X (Twitter) API v2 Bearer Token for official API access
     x_bearer_token: str | None = None
 
+    # Sync job concurrency (accounts can be synced in parallel).
+    sync_job_max_workers: int = 12
+
+    # Crawler runtime tuning.
+    crawler_headless: bool = False
+    crawler_use_persistent_login: bool = True
+    crawler_browser_data_dir: str = "./browser_data"
+    crawler_rsshub_parallelism: int = 12
+    crawler_playwright_poll_seconds: int = 10
+
     # Optional Fernet key used to encrypt stored secrets (OAuth tokens, IMAP passwords).
     # Generate one via: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: str | None = None
