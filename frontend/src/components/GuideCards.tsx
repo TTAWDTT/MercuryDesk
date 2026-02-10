@@ -52,11 +52,11 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             overflow: 'hidden',
             position: 'relative',
             transition: 'all 0.25s ease',
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
             backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
-              boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+              boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
             },
           }}
         >
@@ -72,7 +72,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'text.primary',
-                boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
+                boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
               }}
             />
           </Box>
@@ -91,7 +91,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                   justifyContent: 'center',
                   bgcolor: 'transparent',
                   color: 'text.primary',
-                  boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
+                  boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
                 }}
               >
                 <EmailOutlinedIcon />
@@ -148,11 +148,11 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
             borderColor: 'text.primary',
             overflow: 'hidden',
             transition: 'all 0.25s ease',
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
             backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
             '&:hover': {
               transform: 'translate(-2px, -2px)',
-              boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+              boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
             },
           }}
         >

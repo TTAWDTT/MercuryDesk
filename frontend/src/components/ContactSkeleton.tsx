@@ -11,7 +11,7 @@ export const ContactSkeleton: React.FC<{ variant?: 'standard' | 'feature' }> = (
     <Card sx={{ height: '100%' }}>
       <CardContent sx={{ p: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 } }}>
         <Box display="flex" alignItems="center" mb={isFeature ? 3 : 2.5}>
-          <Skeleton variant="rounded" width={isFeature ? 72 : 60} height={isFeature ? 72 : 60} sx={{ borderRadius: '14px' }} />
+          <Skeleton variant="rounded" width={isFeature ? 72 : 60} height={isFeature ? 72 : 60} sx={{ borderRadius: 0 }} />
           <Box ml={2} flexGrow={1}>
             <Skeleton variant="text" width="60%" height={isFeature ? 40 : 32} />
             <Skeleton variant="text" width="45%" height={22} />

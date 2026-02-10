@@ -112,6 +112,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           border: '1px solid',
           borderColor: 'divider',
+          opacity: disabled ? 0.65 : 1,
           '&:hover': {
             ...(disabled
               ? {}
@@ -143,7 +144,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
+                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
               }}
             />
           </Box>
@@ -183,7 +184,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                   borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'divider',
-                  boxShadow: '3px 3px 0 0 rgba(0,0,0,1)'
+                  boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}

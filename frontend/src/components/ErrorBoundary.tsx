@@ -43,7 +43,7 @@ export class ErrorBoundary extends Component<Props, State> {
           alignItems="center"
           justifyContent="center"
           minHeight="100vh"
-          bgcolor="#fafafa"
+          bgcolor="background.default"
           p={3}
         >
           <Paper
@@ -51,9 +51,10 @@ export class ErrorBoundary extends Component<Props, State> {
             sx={{
               p: 4,
               maxWidth: 480,
-              border: '3px solid #000',
+              border: '3px solid',
+              borderColor: 'text.primary',
               borderRadius: 0,
-              boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+              boxShadow: (t: any) => `6px 6px 0 0 ${t.palette.text.primary}`,
               textAlign: 'center',
             }}
           >
