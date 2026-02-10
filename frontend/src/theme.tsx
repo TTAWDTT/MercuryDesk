@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { ThemeProvider as MuiThemeProvider, createTheme, alpha } from '@mui/material/styles';
+import { ThemeProvider as MuiThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 
 type ColorMode = 'light' | 'dark';
@@ -64,11 +64,36 @@ export const cardBgDark = `
 export const boardLight = `rgba(255,255,255,0.9)`;
 export const boardDark = `rgba(0,0,0,0.9)`;
 
-// Legacy exports
-export const heavyComicLight = canvasLight;
-export const heavyComicDark = canvasDark;
-export const crossHatchLight = cardBgLight;
-export const crossHatchDark = cardBgDark;
+// High Contrast Pop-Manga Palette (defined outside component for referential stability)
+const lightPalette = {
+  primary: '#000000',
+  secondary: '#000000',
+  background: '#F3F4F6',
+  paper: '#ffffff',
+  textPrimary: '#000000',
+  textSecondary: '#4B5563',
+  divider: '#000000',
+  action: {
+      active: '#000000',
+      hover: 'rgba(0, 0, 0, 0.08)',
+      selected: 'rgba(0, 0, 0, 0.12)',
+  }
+};
+
+const darkPalette = {
+  primary: '#ffffff',
+  secondary: '#ffffff',
+  background: '#111827',
+  paper: '#000000',
+  textPrimary: '#ffffff',
+  textSecondary: '#9CA3AF',
+  divider: '#ffffff',
+  action: {
+      active: '#ffffff',
+      hover: 'rgba(255, 255, 255, 0.15)',
+      selected: 'rgba(255, 255, 255, 0.25)',
+  }
+};
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [mode, setMode] = useState<ColorMode>(() => {
@@ -82,37 +107,6 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       localStorage.setItem('theme_mode', next);
       return next;
     });
-  };
-
-  // High Contrast Pop-Manga Palette
-  const lightPalette = {
-    primary: '#000000',
-    secondary: '#000000',
-    background: '#F3F4F6', // Light gray to make white cards pop
-    paper: '#ffffff',
-    textPrimary: '#000000',
-    textSecondary: '#4B5563',
-    divider: '#000000',
-    action: {
-        active: '#000000',
-        hover: 'rgba(0, 0, 0, 0.08)',
-        selected: 'rgba(0, 0, 0, 0.12)',
-    }
-  };
-
-  const darkPalette = {
-    primary: '#ffffff',
-    secondary: '#ffffff',
-    background: '#111827', // Dark gray
-    paper: '#000000',
-    textPrimary: '#ffffff',
-    textSecondary: '#9CA3AF',
-    divider: '#ffffff',
-    action: {
-        active: '#ffffff',
-        hover: 'rgba(255, 255, 255, 0.15)',
-        selected: 'rgba(255, 255, 255, 0.25)',
-    }
   };
 
   const colors = mode === 'light' ? lightPalette : darkPalette;
