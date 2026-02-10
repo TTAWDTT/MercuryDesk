@@ -16,32 +16,27 @@ import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useNavigate } from 'react-router-dom';
 
-const Search = styled('div')(({ theme }) => {
-  const isLight = theme.palette.mode === 'light';
-  return {
-    position: 'relative',
-    borderRadius: 0,
-    border: `2px solid ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
-    backgroundColor: isLight ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
-    '&:hover': {
-      backgroundColor: isLight ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)',
-      borderColor: isLight ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
-    },
-    '&:focus-within': {
-      backgroundColor: isLight ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
-      borderColor: isLight ? '#ffffff' : '#000000',
-      boxShadow: `2px 2px 0 0 ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
-    },
-    marginRight: theme.spacing(2),
-    marginLeft: 0,
-    width: '100%',
-    transition: 'all 0.2s ease',
-    [theme.breakpoints.up('sm')]: {
-      marginLeft: theme.spacing(3),
-      width: 'auto',
-    },
-  };
-});
+const Search = styled('div')(({ theme }) => ({
+  position: 'relative',
+  borderRadius: 0,
+  border: `2px solid ${theme.palette.divider}`,
+  backgroundColor: theme.palette.background.default,
+  '&:hover': {
+    borderColor: theme.palette.text.primary,
+  },
+  '&:focus-within': {
+    borderColor: theme.palette.text.primary,
+    boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`,
+  },
+  marginRight: theme.spacing(2),
+  marginLeft: 0,
+  width: '100%',
+  transition: 'all 0.15s ease',
+  [theme.breakpoints.up('sm')]: {
+    marginLeft: theme.spacing(3),
+    width: 'auto',
+  },
+}));
 
 const SearchIconWrapper = styled('div')(({ theme }) => ({
   padding: theme.spacing(0, 2),
@@ -51,12 +46,11 @@ const SearchIconWrapper = styled('div')(({ theme }) => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  color: theme.palette.primary.contrastText,
-  opacity: 0.7,
+  color: theme.palette.text.secondary,
 }));
 
 const StyledInputBase = styled(InputBase)(({ theme }) => ({
-  color: theme.palette.primary.contrastText,
+  color: theme.palette.text.primary,
   width: '100%',
   '& .MuiInputBase-input': {
     padding: theme.spacing(1.5, 1, 1.5, 0),
@@ -85,7 +79,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [searchValue, setSearchValue] = useState('');
-  const isLight = theme.palette.mode === 'light';
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchValue(e.target.value);
@@ -98,7 +91,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
   };
 
   return (
-    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '3px solid', borderColor: 'text.primary', bgcolor: 'primary.main', backgroundImage: 'none', color: 'primary.contrastText' }}>
+    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '3px solid', borderColor: 'text.primary', bgcolor: 'background.paper', backgroundImage: 'none', color: 'text.primary' }}>
       <Toolbar sx={{ height: 56, minHeight: 56 }}>
         <Box
           onClick={() => navigate('/')}
@@ -125,9 +118,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             onClick={() => navigate('/')}
             sx={{
                 display: { xs: 'none', sm: 'block' },
-                fontWeight: 700,
-                color: 'primary.contrastText',
-                letterSpacing: '-0.5px',
+                fontWeight: 900,
+                color: 'text.primary',
+                letterSpacing: '-0.03em',
                 cursor: 'pointer',
                 fontSize: '1.1rem'
             }}
@@ -151,7 +144,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
               <IconButton
                 size="small"
                 onClick={handleClearSearch}
-                sx={{ color: 'primary.contrastText', opacity: 0.7, mr: 0.5, '&:hover': { opacity: 1 } }}
+                sx={{ color: 'text.secondary', mr: 0.5, '&:hover': { color: 'text.primary' } }}
               >
                 <CloseIcon fontSize="small" />
               </IconButton>
@@ -169,9 +162,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
               disabled={loading}
               sx={{ 
                   mr: 1, 
-                  color: 'primary.contrastText',
-                  opacity: 0.8,
-                  '&:hover': { opacity: 1, bgcolor: isLight ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' } 
+                  color: 'text.primary',
+                  '&:hover': { bgcolor: 'action.hover' } 
               }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
@@ -185,9 +177,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             onClick={() => navigate('/settings')}
             sx={{ 
                 mr: 1, 
-                color: 'primary.contrastText',
-                opacity: 0.8,
-                '&:hover': { opacity: 1, bgcolor: isLight ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)' } 
+                color: 'text.primary',
+                '&:hover': { bgcolor: 'action.hover' } 
             }}
           >
             <SettingsIcon />
@@ -199,9 +190,8 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             size="large" 
             onClick={logout}
             sx={{ 
-                color: 'primary.contrastText',
-                opacity: 0.8,
-                '&:hover': { opacity: 1, color: '#ef4444', bgcolor: 'rgba(239,68,68,0.15)' } 
+                color: 'text.primary',
+                '&:hover': { color: '#ef4444', bgcolor: 'rgba(239,68,68,0.08)' } 
             }}
           >
             <LogoutIcon />

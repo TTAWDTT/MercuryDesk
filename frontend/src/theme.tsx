@@ -276,7 +276,146 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
             boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
           }
         }
-      }
+      },
+      // KOMA: Native select & option styling
+      MuiNativeSelect: {
+        styleOverrides: {
+          select: {
+            borderRadius: 0,
+            '&:focus': {
+              borderRadius: 0,
+              backgroundColor: 'transparent',
+            },
+            // Style native <option> elements
+            '& option': {
+              backgroundColor: colors.paper,
+              color: colors.textPrimary,
+              fontWeight: 500,
+              fontFamily: font,
+            },
+          },
+          icon: {
+            color: colors.textPrimary,
+          },
+        },
+      },
+      MuiSelect: {
+        styleOverrides: {
+          select: {
+            borderRadius: 0,
+            '&:focus': {
+              borderRadius: 0,
+              backgroundColor: 'transparent',
+            },
+          },
+          icon: {
+            color: colors.textPrimary,
+          },
+        },
+      },
+      // KOMA: Switch — square track, hard borders
+      MuiSwitch: {
+        styleOverrides: {
+          root: {
+            width: 48,
+            height: 28,
+            padding: 0,
+          },
+          switchBase: {
+            padding: 3,
+            '&.Mui-checked': {
+              transform: 'translateX(20px)',
+              color: mode === 'light' ? '#fff' : '#000',
+              '& + .MuiSwitch-track': {
+                opacity: 1,
+                backgroundColor: colors.textPrimary,
+                borderColor: colors.textPrimary,
+              },
+            },
+          },
+          thumb: {
+            width: 22,
+            height: 22,
+            borderRadius: 0,
+            boxShadow: 'none',
+            backgroundColor: mode === 'light' ? '#fff' : '#000',
+          },
+          track: {
+            borderRadius: 0,
+            opacity: 1,
+            backgroundColor: mode === 'light' ? '#ddd' : '#333',
+            border: `2px solid ${colors.divider}`,
+            boxSizing: 'border-box',
+          },
+        },
+      },
+      // KOMA: Slider
+      MuiSlider: {
+        styleOverrides: {
+          root: {
+            borderRadius: 0,
+            height: 6,
+          },
+          thumb: {
+            width: 16,
+            height: 16,
+            borderRadius: 0,
+            border: `2px solid ${colors.textPrimary}`,
+            backgroundColor: colors.paper,
+            boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
+            '&:hover, &.Mui-focusVisible': {
+              boxShadow: `3px 3px 0 0 ${colors.textPrimary}`,
+            },
+          },
+          track: {
+            borderRadius: 0,
+            border: 'none',
+          },
+          rail: {
+            borderRadius: 0,
+            opacity: 0.3,
+          },
+        },
+      },
+      // KOMA: Tooltip
+      MuiTooltip: {
+        styleOverrides: {
+          tooltip: {
+            borderRadius: 0,
+            border: `1.5px solid ${colors.divider}`,
+            backgroundColor: colors.paper,
+            color: colors.textPrimary,
+            fontWeight: 600,
+            fontSize: '0.75rem',
+            boxShadow: `2px 2px 0 0 ${colors.dividerLight}`,
+          },
+          arrow: {
+            color: colors.divider,
+          },
+        },
+      },
+      // KOMA: List items
+      MuiListItem: {
+        styleOverrides: {
+          root: {
+            '&:hover': {
+              backgroundColor: colors.action.hover,
+            },
+          },
+        },
+      },
+      // KOMA: IconButton
+      MuiIconButton: {
+        styleOverrides: {
+          root: {
+            borderRadius: 0,
+            transition: 'all 0.12s ease',
+            '&:hover': {
+              backgroundColor: colors.action.hover,
+            },
+          },
+        },
+      },
     },
   }), [canvasBg, colors, font, mode]);
 

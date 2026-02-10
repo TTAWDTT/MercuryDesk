@@ -810,7 +810,7 @@ export default function Settings() {
                             <Box>
                                 <Typography variant="h6">外观</Typography>
                                 <Typography variant="body2" color="textSecondary">
-                                    浅色：浅蓝色系；深色：纯黑底 + 深蓝强调
+                                    浅色：暖白页纸 + 墨色边框；深色：纯黑底 + 灰白线条
                                 </Typography>
                             </Box>
                             <Box display="flex" alignItems="center" gap={1}>
@@ -872,7 +872,7 @@ export default function Settings() {
                                 ))}
                             </List>
 
-                            <Box mt={4} p={3} bgcolor="action.hover" borderRadius={4}>
+                            <Box mt={4} p={3} bgcolor="action.hover" borderRadius={0} border={1} borderColor="divider">
                                 <Typography variant="subtitle2" fontWeight="bold" mb={0.5}>连接新来源（简化版）</Typography>
                                 <Typography variant="caption" color="textSecondary">
                                     只填必要字段，连接后自动同步一次验证。
