@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import useSWR from 'swr';
 import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
@@ -12,7 +12,7 @@ import { GuideCards } from './GuideCards';
 import { GmailBindDialog } from './dashboard/GmailBindDialog';
 import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
+import { AgentCardLayoutItem, Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount, syncAgentCardLayout } from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { extractRedirectOriginFromAuthUrl, openOAuthPopup, waitForOAuthPopupMessage } from '../utils/oauthPopup';
 import { motion } from 'framer-motion';
@@ -48,6 +48,7 @@ export default function Dashboard() {
   const [syncProgress, setSyncProgress] = useState<DashboardSyncProgress | null>(null);
   const [gmailPromptOpen, setGmailPromptOpen] = useState(false);
   const [bindingGmail, setBindingGmail] = useState(false);
+  const layoutSyncTimerRef = useRef<number | null>(null);
 
   // Keep drawer contact for close animation
   useEffect(() => {
@@ -242,6 +243,27 @@ export default function Dashboard() {
     }
   };
 
+  const handleCardLayoutChange = useCallback((cards: AgentCardLayoutItem[]) => {
+    if (layoutSyncTimerRef.current !== null) {
+      window.clearTimeout(layoutSyncTimerRef.current);
+    }
+    layoutSyncTimerRef.current = window.setTimeout(async () => {
+      try {
+        await syncAgentCardLayout(cards);
+      } catch (error) {
+        console.error('syncAgentCardLayout failed', error);
+      }
+    }, 500);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (layoutSyncTimerRef.current !== null) {
+        window.clearTimeout(layoutSyncTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
     <Box
         component={motion.div}
@@ -284,7 +306,8 @@ export default function Dashboard() {
           <ContactGrid 
             contacts={contacts} 
             loading={!contacts}
-            onContactClick={setSelectedContact} 
+            onContactClick={setSelectedContact}
+            onCardLayoutChange={handleCardLayoutChange}
           />
         </Paper>
       </Container>

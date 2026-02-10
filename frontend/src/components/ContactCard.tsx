@@ -5,11 +5,15 @@ import Typography from '@mui/material/Typography';
 import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
+import IconButton from '@mui/material/IconButton';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import EmailIcon from '@mui/icons-material/Email';
 import PersonIcon from '@mui/icons-material/Person';
 import RssFeedIcon from '@mui/icons-material/RssFeed';
 import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
+import PushPinIcon from '@mui/icons-material/PushPin';
+import ZoomInIcon from '@mui/icons-material/ZoomIn';
+import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
@@ -28,6 +32,10 @@ interface ContactCardProps {
   variant?: 'standard' | 'feature';
   disabled?: boolean;
   tag?: string;
+  pinned?: boolean;
+  scale?: number;
+  onTogglePin?: (contact: Contact) => void;
+  onScaleChange?: (contact: Contact, nextScale: number) => void;
 }
 
 export const ContactCard: React.FC<ContactCardProps> = ({
@@ -37,10 +45,15 @@ export const ContactCard: React.FC<ContactCardProps> = ({
   variant = 'standard',
   disabled = false,
   tag,
+  pinned = false,
+  scale = 1,
+  onTogglePin,
+  onScaleChange,
 }) => {
   const theme = useTheme();
   const isFeature = variant === 'feature';
   const [previewImageLoadFailed, setPreviewImageLoadFailed] = React.useState(false);
+  const safeScale = Math.max(0.8, Math.min(1.5, Number.isFinite(scale) ? scale : 1));
 
   const getSourceIcon = (source?: string | null) => {
     if (!source) return <EmailIcon fontSize="small" />;
@@ -122,6 +135,63 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           }
         }}
       >
+        {!disabled && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              zIndex: 3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              bgcolor: alpha(theme.palette.background.paper, 0.94),
+              border: '1px solid',
+              borderColor: 'divider',
+              boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.25)}`,
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <IconButton
+              size="small"
+              onClick={() => onScaleChange?.(contact, Math.max(0.8, safeScale - 0.1))}
+              sx={{ borderRadius: 0 }}
+              aria-label="缩小卡片"
+            >
+              <ZoomOutIcon fontSize="inherit" />
+            </IconButton>
+            <Typography
+              variant="caption"
+              sx={{
+                width: 30,
+                textAlign: 'center',
+                fontWeight: 700,
+                lineHeight: 1,
+              }}
+            >
+              {Math.round(safeScale * 100)}%
+            </Typography>
+            <IconButton
+              size="small"
+              onClick={() => onScaleChange?.(contact, Math.min(1.5, safeScale + 0.1))}
+              sx={{ borderRadius: 0 }}
+              aria-label="放大卡片"
+            >
+              <ZoomInIcon fontSize="inherit" />
+            </IconButton>
+            <IconButton
+              size="small"
+              onClick={() => onTogglePin?.(contact)}
+              sx={{
+                borderRadius: 0,
+                color: pinned ? 'primary.main' : 'text.secondary',
+              }}
+              aria-label={pinned ? '取消置顶' : '置顶卡片'}
+            >
+              <PushPinIcon fontSize="inherit" />
+            </IconButton>
+          </Box>
+        )}
         {tag && (
           <Box
             sx={{
@@ -151,8 +221,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             <Box 
                 sx={{
                     position: 'absolute',
-                    top: -5,
-                    right: -5,
+                    top: 8,
+                    right: disabled ? 8 : 136,
                     width: 12,
                     height: 12,
                     bgcolor: 'text.primary',
@@ -166,8 +236,14 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
         <CardContent
           sx={{
-            p: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 },
-            '&:last-child': { pb: isFeature ? { xs: 3.5, md: 4 } : { xs: 3, md: 3.5 } }
+            p: isFeature
+              ? { xs: 3.5 * safeScale, md: 4 * safeScale }
+              : { xs: 3 * safeScale, md: 3.5 * safeScale },
+            '&:last-child': {
+              pb: isFeature
+                ? { xs: 3.5 * safeScale, md: 4 * safeScale }
+                : { xs: 3 * safeScale, md: 3.5 * safeScale }
+            }
           }}
         >
           <Box display="flex" alignItems="center" mb={2}>
@@ -177,8 +253,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               sx={{ 
                   bgcolor: alpha(theme.palette.primary.main, 0.1),
                   color: theme.palette.primary.main,
-                  width: isFeature ? 72 : 60,
-                  height: isFeature ? 72 : 60,
+                  width: (isFeature ? 72 : 60) * safeScale,
+                  height: (isFeature ? 72 : 60) * safeScale,
                   fontWeight: 600,
                   borderRadius: 0,
                   border: '2px solid',
@@ -193,7 +269,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 variant={isFeature ? 'h5' : 'h6'}
                 noWrap
                 sx={{
-                  fontSize: isFeature ? { xs: '1.25rem', md: '1.4rem' } : { xs: '1.1rem', md: '1.18rem' },
+                  fontSize: isFeature
+                    ? { xs: `${1.25 * safeScale}rem`, md: `${1.4 * safeScale}rem` }
+                    : { xs: `${1.1 * safeScale}rem`, md: `${1.18 * safeScale}rem` },
                   fontWeight: 700,
                 }}
               >
@@ -203,7 +281,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 variant="body2"
                 color="textSecondary"
                 noWrap
-                sx={{ fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem' }}
+                sx={{ fontSize: isFeature ? { xs: `${0.9 * safeScale}rem`, md: `${0.95 * safeScale}rem` } : `${0.85 * safeScale}rem` }}
               >
                 {contact.handle}
               </Typography>
@@ -212,12 +290,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
           <Box
             sx={{
-                p: isFeature ? { xs: 2.25, md: 2.75 } : 2,
                 bgcolor: theme.palette.background.default,
                 border: '1px dashed',
                 borderColor: alpha(theme.palette.text.primary, 0.2),
                 borderRadius: 0,
-                mb: isFeature ? 2.5 : 2,
+                p: isFeature ? { xs: 2.25 * safeScale, md: 2.75 * safeScale } : 2 * safeScale,
+                mb: (isFeature ? 2.5 : 2) * safeScale,
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (
@@ -259,6 +337,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 lineHeight: 1.25,
+                fontSize: isFeature ? `${1.06 * safeScale}rem` : `${0.92 * safeScale}rem`,
               }}
             >
               {previewTitle}
@@ -269,7 +348,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
+              fontSize: isFeature ? { xs: `${0.9 * safeScale}rem`, md: `${0.95 * safeScale}rem` } : `${0.85 * safeScale}rem`,
               lineHeight: 1.7
             }}>
               {previewText}

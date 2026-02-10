@@ -44,6 +44,36 @@ function truncateText(text: string, limit: number): string {
   return `${text.slice(0, Math.max(0, limit - 1))}…`;
 }
 
+function ThinkingDots() {
+  return (
+    <Box
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.6,
+        '@keyframes md-thinking-dot': {
+          '0%, 80%, 100%': { transform: 'scale(0.6)', opacity: 0.35 },
+          '40%': { transform: 'scale(1)', opacity: 1 },
+        },
+      }}
+    >
+      {[0, 1, 2].map((idx) => (
+        <Box
+          key={idx}
+          sx={{
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            bgcolor: 'text.primary',
+            animation: 'md-thinking-dot 1s ease-in-out infinite',
+            animationDelay: `${idx * 0.15}s`,
+          }}
+        />
+      ))}
+    </Box>
+  );
+}
+
 export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }) => {
   const theme = useTheme();
   const [isOpen, setIsOpen] = useState(false);
@@ -377,44 +407,75 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             )}
             {messages.map((msg) => {
               const isUser = msg.role === 'user';
+              const isAssistant = msg.role === 'assistant';
+              const showTypingAnim = isAssistant && msg.isStreaming && !msg.content.trim();
               return (
                 <Box
                   key={msg.id}
                   alignSelf={isUser ? 'flex-end' : 'flex-start'}
-                  maxWidth="85%"
+                  maxWidth="92%"
                 >
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 1.5,
-                      px: 2,
-                      borderRadius: 0,
-                      border: '2px solid',
-                      borderColor: 'text.primary',
-                      bgcolor: isUser ? 'text.primary' : 'background.paper',
-                      color: isUser ? 'background.paper' : 'text.primary',
-                      boxShadow: isUser ? `4px 4px 0 0 ${alpha(theme.palette.text.primary, 0.2)}` : `4px 4px 0 0 ${theme.palette.text.primary}`,
-                    }}
-                  >
-                    {isUser ? (
-                      <Typography variant="body2">{msg.content}</Typography>
-                    ) : (
-                      <Box
-                        sx={{
-                          '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
-                          '& code': {
-                             bgcolor: alpha(theme.palette.text.primary, 0.1),
-                             px: 0.5,
-                             borderRadius: 0.5,
-                             fontFamily: 'monospace'
-                          },
-                          fontSize: '0.875rem'
-                        }}
-                      >
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </Box>
-                    )}
-                  </Paper>
+                  <Stack direction={isUser ? 'row-reverse' : 'row'} spacing={1} alignItems="flex-end">
+                    <Avatar
+                      src={isAssistant ? '/avatar.png' : undefined}
+                      sx={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: 0,
+                        border: '2px solid',
+                        borderColor: 'text.primary',
+                        bgcolor: isAssistant ? 'background.paper' : 'text.primary',
+                        color: isAssistant ? 'text.primary' : 'background.paper',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {isAssistant ? 'AI' : '我'}
+                    </Avatar>
+                    <Paper
+                      elevation={0}
+                      sx={{
+                        p: 1.5,
+                        px: 2,
+                        borderRadius: 0,
+                        border: '2px solid',
+                        borderColor: 'text.primary',
+                        bgcolor: isUser ? 'text.primary' : 'background.paper',
+                        color: isUser ? 'background.paper' : 'text.primary',
+                        boxShadow: isUser ? `4px 4px 0 0 ${alpha(theme.palette.text.primary, 0.2)}` : `4px 4px 0 0 ${theme.palette.text.primary}`,
+                        minWidth: showTypingAnim ? 72 : 'auto',
+                      }}
+                    >
+                      {isUser ? (
+                        <Typography variant="body2">{msg.content}</Typography>
+                      ) : showTypingAnim ? (
+                        <ThinkingDots />
+                      ) : (
+                        <>
+                          <Box
+                            sx={{
+                              '& p': { m: 0, mb: 1, '&:last-child': { mb: 0 } },
+                              '& code': {
+                                bgcolor: alpha(theme.palette.text.primary, 0.1),
+                                px: 0.5,
+                                borderRadius: 0.5,
+                                fontFamily: 'monospace'
+                              },
+                              fontSize: '0.875rem'
+                            }}
+                          >
+                            <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          </Box>
+                          {msg.isStreaming && (
+                            <Box mt={0.8}>
+                              <ThinkingDots />
+                            </Box>
+                          )}
+                        </>
+                      )}
+                    </Paper>
+                  </Stack>
                 </Box>
               );
             })}

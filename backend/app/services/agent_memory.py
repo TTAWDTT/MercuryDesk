@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 import re
 from typing import Iterable
 
@@ -151,6 +152,77 @@ class AgentMemoryService:
             return False
         db.delete(row)
         return True
+
+    def upsert_card_layout(self, db: Session, user_id: int, cards: list[dict]) -> AgentMemoryNote:
+        cleaned_cards: list[dict[str, object]] = []
+        for item in cards:
+            try:
+                contact_id = int(item.get("contact_id") or 0)
+            except Exception:
+                contact_id = 0
+            if contact_id <= 0:
+                continue
+
+            display_name = _truncate(_clean_text(str(item.get("display_name") or "")), 60) or f"contact-{contact_id}"
+            pinned = bool(item.get("pinned"))
+            try:
+                scale = float(item.get("scale") or 1.0)
+            except Exception:
+                scale = 1.0
+            scale = max(0.8, min(1.5, scale))
+            try:
+                order = int(item.get("order") or 0)
+            except Exception:
+                order = 0
+            order = max(0, order)
+            cleaned_cards.append(
+                {
+                    "contact_id": contact_id,
+                    "display_name": display_name,
+                    "pinned": pinned,
+                    "scale": round(scale, 2),
+                    "order": order,
+                }
+            )
+            if len(cleaned_cards) >= 60:
+                break
+
+        cleaned_cards.sort(key=lambda x: (0 if bool(x["pinned"]) else 1, int(x["order"]), str(x["display_name"])))
+        pinned_names = [str(c["display_name"]) for c in cleaned_cards if bool(c["pinned"])][:8]
+        scaled_names = [f"{c['display_name']}({c['scale']})" for c in cleaned_cards if abs(float(c["scale"]) - 1.0) > 0.01][:8]
+        order_preview = [str(c["display_name"]) for c in cleaned_cards[:12]]
+
+        summary_lines = [
+            "卡片布局偏好:",
+            f"- 置顶: {', '.join(pinned_names) if pinned_names else '无'}",
+            f"- 缩放: {', '.join(scaled_names) if scaled_names else '默认'}",
+            f"- 顺序预览: {' > '.join(order_preview) if order_preview else '无'}",
+        ]
+        payload = json.dumps(cleaned_cards, ensure_ascii=False, separators=(",", ":"))
+        content = "\n".join(summary_lines) + f"\n- 布局数据: {payload}"
+        content = _truncate(content, 3500)
+
+        existing = db.scalar(
+            select(AgentMemoryNote)
+            .where(AgentMemoryNote.user_id == user_id, AgentMemoryNote.source == "card_layout")
+            .order_by(AgentMemoryNote.updated_at.desc(), AgentMemoryNote.id.desc())
+            .limit(1)
+        )
+        if existing is not None:
+            existing.kind = "layout"
+            existing.source = "card_layout"
+            existing.content = content
+            db.add(existing)
+            return existing
+
+        row = AgentMemoryNote(
+            user_id=user_id,
+            kind="layout",
+            source="card_layout",
+            content=content,
+        )
+        db.add(row)
+        return row
 
     def build_focus_items(self, db: Session, user_id: int, *, query: str = "", limit: int = 8) -> list[FocusItem]:
         n = max(1, min(20, int(limit or 8)))
@@ -301,4 +373,3 @@ class AgentMemoryService:
 
         for c in deduped:
             self.add_note(db, user_id, c, kind="preference", source="chat")
-

@@ -109,6 +109,31 @@ def test_agent_memory_endpoints():
     notes = memory2.json().get("notes", [])
     assert any("AI 出海工具类帖子" in n.get("content", "") for n in notes)
 
+    layout = client.post(
+        "/api/v1/agent/memory/layout",
+        json={
+            "cards": [
+                {
+                    "contact_id": 1,
+                    "display_name": "MercuryDesk 编辑台",
+                    "pinned": True,
+                    "scale": 1.2,
+                    "order": 0,
+                },
+                {
+                    "contact_id": 2,
+                    "display_name": "octocat",
+                    "pinned": False,
+                    "scale": 0.9,
+                    "order": 1,
+                },
+            ]
+        },
+        headers=headers,
+    )
+    assert layout.status_code == 200, layout.text
+    assert layout.json()["ok"] is True
+
     deleted = client.delete(f"/api/v1/agent/memory/notes/{note['id']}", headers=headers)
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["deleted"] is True
@@ -123,4 +148,3 @@ def test_agent_memory_endpoints():
         headers=headers,
     )
     assert chat.status_code == 200, chat.text
-

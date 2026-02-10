@@ -167,6 +167,19 @@ class AgentMemorySnapshot(BaseModel):
     notes: list[AgentMemoryNoteOut] = Field(default_factory=list)
     focus_items: list[AgentFocusItemOut] = Field(default_factory=list)
 
+
+class AgentCardLayoutItem(BaseModel):
+    contact_id: int
+    display_name: str = Field(min_length=1, max_length=255)
+    pinned: bool = False
+    scale: float = Field(default=1.0, ge=0.8, le=1.5)
+    order: int = Field(default=0, ge=0)
+
+
+class AgentCardLayoutUpdate(BaseModel):
+    cards: list[AgentCardLayoutItem] = Field(default_factory=list)
+
+
 class AgentSummarizeRequest(BaseModel):
     text: str
 

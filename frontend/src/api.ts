@@ -109,6 +109,14 @@ export type AgentMemorySnapshot = {
   focus_items: AgentFocusItem[];
 };
 
+export type AgentCardLayoutItem = {
+  contact_id: number;
+  display_name: string;
+  pinned: boolean;
+  scale: number;
+  order: number;
+};
+
 export type AccountOAuthStart = {
   provider: string;
   auth_url: string;
@@ -481,6 +489,14 @@ export async function addAgentMemoryNote(content: string, kind = "note"): Promis
 export async function deleteAgentMemoryNote(noteId: number): Promise<{ deleted: boolean; note_id: number }> {
   return await fetchJson<{ deleted: boolean; note_id: number }>(`/api/v1/agent/memory/notes/${noteId}`, {
     method: "DELETE",
+  });
+}
+
+export async function syncAgentCardLayout(cards: AgentCardLayoutItem[]): Promise<{ ok: boolean; note_id: number; count: number }> {
+  return await fetchJson<{ ok: boolean; note_id: number; count: number }>("/api/v1/agent/memory/layout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cards }),
   });
 }
 

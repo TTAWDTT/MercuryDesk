@@ -2,17 +2,27 @@
 
 更新时间: 2026-02-11
 
-## 表 1: 当前爬取信息机制
+## 表 1: 全平台爬取/采集机制（按 provider）
 
-| 模块 | 现状机制 | 并发策略 | 失败兜底 |
-|---|---|---|---|
-| 同步任务调度 | `backend/app/services/sync_jobs.py` 使用线程池执行账户同步任务 | 全局 `sync_job_max_workers=12`（`backend/app/settings.py`） | 作业状态可轮询，失败记录错误 |
-| 多账号“同步全部” | 前端 Dashboard 并发触发多账号同步 | 默认并发 `12`（可由 `VITE_DASHBOARD_SYNC_CONCURRENCY` 覆盖） | 单账号失败不阻断其他账号 |
-| 通用 Feed 类源（RSS/X/B站等） | 走各 Connector + URL 规范化 + 入库去重 | 账号级并行 + 源内策略并行 | 重试与多入口 URL |
-| 抖音抓取 | 优先 Playwright（登录态持久化浏览器上下文）抓取；失败后 RSSHub | RSSHub 镜像并行探测，`crawler_rsshub_parallelism=12` | Playwright 失败自动退 RSSHub，多镜像并发兜底 |
-| 小红书抓取 | 优先 Playwright；再尝试 RSSHub / 页面提取链路 | RSSHub 镜像并行（同上） | 多策略回退（浏览器/API/页面） |
-| 数据入库与去重 | 以 `(user_id, source, external_id)` 去重，联系人聚合更新 | 入库在每账户任务内串行提交 | 幂等: 重复拉取不重复写入 |
-| 摘要生成 | 同步流程可生成消息摘要（LLM 或规则摘要） | 不作为高并发核心瓶颈 | LLM 不可用时规则摘要兜底 |
+| 平台/Provider   | Connector                      | 主策略                                     | 回退策略                                                                | 认证与关键依赖                                    | 并发与调度特征                                     |
+| ------------- | ------------------------------ | --------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------- |
+| `mock`        | `MockConnector`                | 本地模拟消息生成                                | 无                                                                   | 无外部依赖                                      | 由同步任务线程池调度                                  |
+| `forward`     | `_NoopConnector`（同步时）          | 不主动拉取；通过 `/inbound/forward` 被动接收        | 无                                                                   | 依赖 inbound secret 路由鉴权                     | 无抓取并发，仅入站写库                                 |
+| `github`      | `GitHubNotificationsConnector` | GitHub REST `/notifications` 拉取通知       | 无显式二级回退                                                             | OAuth/Token（`Authorization: Bearer`）       | 由账号级同步并发驱动                                  |
+| `gmail`       | `GmailConnector`               | Gmail API 列表 + 按 message id 拉详情         | Token 失效时尝试 refresh token                                           | OAuth access token（可刷新）                    | 由账号级同步并发驱动                                  |
+| `outlook`     | `OutlookConnector`             | Microsoft Graph 邮件拉取                    | Token 失效时尝试 refresh token                                           | OAuth access token（可刷新）                    | 由账号级同步并发驱动                                  |
+| `imap`        | `ImapConnector`                | IMAP 协议登录邮箱后搜索/抓取邮件                     | 错误人类可读化提示（账号/SSL/网络）                                                | 主机端口+用户名+授权码/密码                            | 由账号级同步并发驱动                                  |
+| `rss`         | `FeedConnector`                | 标准 RSS/Atom 解析（`feedparser`）            | URL 规范化后重试链路                                                        | 无统一鉴权，取决于 feed 源                           | 由账号级同步并发驱动                                  |
+| `x`           | `XConnector`                   | 官方 API（Bearer）优先                        | GraphQL Cookie 认证 -> GraphQL Guest -> RSSHub -> 自定义 fallback feed   | Bearer token / `auth_token+ct0` / 访客 token | 单账号内多策略串联，账号级并发                             |
+| `bilibili`    | `BilibiliConnector`            | `recArchivesByKeywords` API（主）          | WBI API -> jina.ai + API详情 -> RSSHub -> Playwright -> fallback feed | 无头 API 为主；Playwright 为最后手段                 | 单账号内多策略串联，账号级并发                             |
+| `douyin`      | `DouyinConnector`              | Playwright 精简模式（直达用户页+XHR/SSR）          | Playwright fresh context -> RSSHub 多镜像并发探测                          | Playwright 环境；可结合自建 RSSHub/cookie          | RSSHub 镜像并发，`crawler_rsshub_parallelism=12` |
+| `xiaohongshu` | `XiaohongshuConnector`         | Playwright 精简模式（提取 `__INITIAL_STATE__`） | Playwright fresh context -> jina.ai -> RSSHub 并发 -> fallback feed   | Playwright / jina.ai / 可选 RSSHub           | RSSHub 镜像并发，`crawler_rsshub_parallelism=12` |
+| `weibo`       | `WeiboConnector`               | m.weibo.cn API 抓取用户时间线                  | RSSHub 镜像 -> fallback feed                                          | 无统一 token；依赖公开接口可用性                        | 账号级并发；RSSHub 为回退                            |
+
+补充（全局并发控制）:
+- 同步任务线程池: `backend/app/settings.py` `sync_job_max_workers=12`
+- RSSHub 镜像并发: `backend/app/settings.py` `crawler_rsshub_parallelism=12`
+- 前端“同步全部”默认并发: `frontend/src/components/Dashboard.tsx` 默认 `12`（可被 `VITE_DASHBOARD_SYNC_CONCURRENCY` 覆盖）
 
 ## 表 2: 当前完备 Chat Agent 架构
 

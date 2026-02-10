@@ -154,11 +154,23 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
+          ':root': {
+            '--md-select-bg': colors.paper,
+            '--md-select-fg': colors.textPrimary,
+            '--md-select-border': colors.divider,
+          },
           body: {
             backgroundColor: colors.background,
             backgroundImage: canvasBg,
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
+          },
+          'select, option, optgroup': {
+            backgroundColor: `${colors.paper} !important`,
+            color: `${colors.textPrimary} !important`,
+          },
+          'select:disabled, option:disabled': {
+            color: `${colors.textSecondary} !important`,
           },
         },
       },
@@ -256,6 +268,14 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
               },
             },
+            '& .MuiInputBase-input.MuiSelect-nativeInput + .MuiSelect-select': {
+              backgroundColor: colors.paper,
+              color: colors.textPrimary,
+            },
+            '& .MuiSelect-select': {
+              backgroundColor: colors.paper,
+              color: colors.textPrimary,
+            },
           }
         }
       },
@@ -303,13 +323,29 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           select: {
             borderRadius: 0,
+            backgroundColor: colors.paper,
+            color: colors.textPrimary,
             '&:focus': {
               borderRadius: 0,
-              backgroundColor: 'transparent',
+              backgroundColor: colors.paper,
             },
           },
           icon: {
             color: colors.textPrimary,
+          },
+        },
+      },
+      MuiMenuItem: {
+        styleOverrides: {
+          root: {
+            backgroundColor: colors.paper,
+            color: colors.textPrimary,
+            '&.Mui-selected': {
+              backgroundColor: colors.action.selected,
+            },
+            '&.Mui-selected:hover': {
+              backgroundColor: colors.action.hover,
+            },
           },
         },
       },

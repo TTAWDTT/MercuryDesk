@@ -14,6 +14,7 @@ from app.models import User
 from app.routers.auth import get_current_user
 from app.schemas import (
     AgentChatRequest,
+    AgentCardLayoutUpdate,
     AgentConfigOut,
     AgentConfigUpdate,
     AgentFocusItemOut,
@@ -347,6 +348,22 @@ def delete_agent_memory_note(
     if deleted:
         db.commit()
     return {"deleted": deleted, "note_id": note_id}
+
+
+@router.post("/memory/layout")
+def upsert_agent_card_layout(
+    payload: AgentCardLayoutUpdate,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    row = _memory.upsert_card_layout(
+        db,
+        current_user.id,
+        cards=[item.model_dump() for item in payload.cards],
+    )
+    db.flush()
+    db.commit()
+    return {"ok": True, "note_id": row.id, "count": len(payload.cards)}
 
 
 @router.post("/test", response_model=AgentTestResponse)
