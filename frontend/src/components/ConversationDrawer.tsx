@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import Drawer from '@mui/material/Drawer';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -60,8 +60,9 @@ function renderTextWithLinks(text: string) {
   });
 }
 
-const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
+const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number }) => {
   const theme = useTheme();
+  const abortRef = useRef<AbortController | null>(null);
   const [summary, setSummary] = useState<string | null>(msg.summary || null);
   const [isSummarizing, setIsSummarizing] = useState(false);
 
@@ -69,7 +70,12 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
   const [isDrafting, setIsDrafting] = useState(false);
   const [draftAnchorEl, setDraftAnchorEl] = useState<null | HTMLElement>(null);
 
-  // Reset state if msg prop changes (though keys usually handle this)
+  // Cleanup AbortController on unmount
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
+
+  // Reset state if msg prop changes
   useEffect(() => {
     setSummary(msg.summary || null);
     setDraft(null);
@@ -79,15 +85,19 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
 
   const handleSummarize = async () => {
     if (isSummarizing) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsSummarizing(true);
-    setSummary(''); // Clear previous if any
+    setSummary('');
     try {
       let text = '';
-      for await (const chunk of agentSummarizeStream(msg.body_preview)) {
+      for await (const chunk of agentSummarizeStream(msg.body_preview, controller.signal)) {
         text += chunk;
         setSummary(text);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       console.error(err);
       setSummary(prev => prev ? prev + '\n(摘要生成失败)' : '(摘要生成失败)');
     } finally {
@@ -98,15 +108,19 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
   const handleDraftReply = async (tone: string) => {
     setDraftAnchorEl(null);
     if (isDrafting) return;
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setIsDrafting(true);
     setDraft('');
     try {
       let text = '';
-      for await (const chunk of agentDraftReplyStream(msg.body_preview, tone)) {
+      for await (const chunk of agentDraftReplyStream(msg.body_preview, tone, controller.signal)) {
         text += chunk;
         setDraft(text);
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       console.error(err);
       setDraft(prev => prev ? prev + '\n(草稿生成失败)' : '(草稿生成失败)');
     } finally {
@@ -133,7 +147,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
       initial={{ opacity: 0, y: 30, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{
-        delay: index * 0.08,
+        delay: Math.min(index * 0.08, 0.5),
         duration: 0.5,
         type: 'spring',
         stiffness: 100,
@@ -151,9 +165,9 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             transition: 'all 0.2s',
             position: 'relative',
             overflow: 'hidden',
-            boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+            boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
             '&:hover': {
-                boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
+                boxShadow: `8px 8px 0 0 ${theme.palette.text.primary}`,
                 transform: 'translate(-1px, -1px)'
             }
         }}
@@ -190,7 +204,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
               p: 1.5,
               mb: 2,
               bgcolor: 'transparent',
-              boxShadow: '4px 4px 0 0 rgba(0,0,0,1)'
+              boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
             }}
           >
             {previewImageUrl && (
@@ -283,7 +297,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             sx={{
                 border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
+                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
@@ -325,7 +339,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
             sx={{
                 border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: '6px 6px 0 0 rgba(0,0,0,1)'
+                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
@@ -364,7 +378,7 @@ const MessageItem = ({ msg, index }: { msg: Message; index: number }) => {
       </Paper>
     </motion.div>
   );
-};
+});
 
 interface ConversationDrawerProps {
   open: boolean;
@@ -378,6 +392,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
   const theme = useTheme();
 
   useEffect(() => {
+    let cancelled = false;
     if (open && contact) {
       setLoading(true);
       // Mark as read immediately when opening
@@ -386,13 +401,14 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
       }
 
       listMessages({ contactId: contact.id, limit: 50 })
-        .then(setMessages)
+        .then(data => { if (!cancelled) setMessages(data); })
         .catch(console.error)
-        .finally(() => setLoading(false));
+        .finally(() => { if (!cancelled) setLoading(false); });
     } else {
       setMessages([]);
     }
-  }, [open, contact]);
+    return () => { cancelled = true; };
+  }, [open, contact?.id]);
 
   if (!contact) return null;
 
@@ -407,7 +423,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             m: { xs: 0, md: 2 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
             borderRadius: 0,
-            boxShadow: '-8px 8px 0 0 rgba(0,0,0,1)',
+            boxShadow: `-8px 8px 0 0 ${theme.palette.text.primary}`,
             overflow: 'hidden',
             border: '2px solid',
             borderColor: 'divider',
