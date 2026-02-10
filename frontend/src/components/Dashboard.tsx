@@ -1,8 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import Box from '@mui/material/Box';
-import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -20,20 +18,19 @@ import { AgentChatPanel } from './AgentChatPanel';
 import { GuideCards } from './GuideCards';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { Contact, ConnectedAccount, createAccount, listAccounts, startAccountOAuth, syncAccount } from '../api';
+import { useToast } from '../contexts/ToastContext';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
 import { boardLight, boardDark } from '../theme';
 
-interface DashboardProps {
-  onLogout: () => void;
-}
-
-export default function Dashboard({ onLogout }: DashboardProps) {
+export default function Dashboard() {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { showToast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [drawerContact, setDrawerContact] = useState<Contact | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{
     current: number;
@@ -41,9 +38,13 @@ export default function Dashboard({ onLogout }: DashboardProps) {
     currentAccount: string;
     failedAccounts: string[];
   } | null>(null);
-  const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
   const [gmailPromptOpen, setGmailPromptOpen] = useState(false);
   const [bindingGmail, setBindingGmail] = useState(false);
+
+  // Keep drawer contact for close animation
+  useEffect(() => {
+    if (selectedContact) setDrawerContact(selectedContact);
+  }, [selectedContact]);
 
   const debouncedQuery = useDebouncedValue(searchQuery, 300);
 
@@ -75,14 +76,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
   const syncSingleAccount = async (accountId: number, label: string) => {
     try {
       const res = await syncAccount(accountId);
-      setToast({ message: `${label}已连接并同步：+${res.inserted}`, severity: 'success' });
+      showToast(`${label}已连接并同步：+${res.inserted}`, 'success');
     } catch (error) {
-      setToast({
-        message: error instanceof Error
+      showToast(
+        error instanceof Error
           ? `${label}已连接，但首次同步失败（${error.message}）。可稍后在设置中手动同步。`
           : `${label}已连接，但首次同步失败。可稍后在设置中手动同步。`,
-        severity: 'warning',
-      });
+        'warning'
+      );
     }
   };
 
@@ -121,18 +122,19 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         'width=560,height=760,menubar=no,toolbar=no,status=no'
       );
       if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
-      popup.document.title = 'MercuryDesk Gmail OAuth';
-      popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到 Google 授权页面…</p>';
+      const _popup = popup; // narrow for closure
+      _popup.document.title = 'MercuryDesk Gmail OAuth';
+      _popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到 Google 授权页面…</p>';
 
       const started = await startAccountOAuth('gmail');
-      popup.location.href = started.auth_url;
+      _popup.location.href = started.auth_url;
       allowFallback = true;
 
       const result = await new Promise<{ ok: boolean; account_id?: number; error?: string }>((resolve, reject) => {
         let onMessage: (event: MessageEvent) => void;
         let settled = false;
         const finish = (
-          fn: (value: { ok: boolean; account_id?: number; error?: string } | Error) => void,
+          fn: (value: any) => void,
           value: { ok: boolean; account_id?: number; error?: string } | Error
         ) => {
           if (settled) return;
@@ -144,7 +146,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         };
         const timeout = window.setTimeout(() => finish(reject, new Error('授权超时，请重试')), 180000);
         const watcher = window.setInterval(() => {
-          if (popup.closed) {
+          if (_popup.closed) {
             window.setTimeout(() => {
               if (!settled) finish(reject, new Error('授权窗口已关闭'));
             }, 450);
@@ -181,10 +183,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
           return;
         }
       }
-      setToast({
-        message: `Gmail 绑定失败：${message}`,
-        severity: 'error',
-      });
+      showToast(`Gmail 绑定失败：${message}`, 'error');
     } finally {
       setBindingGmail(false);
     }
@@ -240,11 +239,11 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       const failed = failedAccounts.length;
       const message =
         failed === 0 ? `同步完成：+${inserted}` : `同步完成：+${inserted}（失败 ${failed} 个：${failedAccounts.join(', ')}）`;
-      setToast({ message, severity: failed === 0 ? 'success' : 'error' });
+      showToast(message, failed === 0 ? 'success' : 'error');
 
       await Promise.all([mutateContacts(), mutateAccounts()]);
     } catch (e) {
-      setToast({ message: e instanceof Error ? e.message : '同步失败', severity: 'error' });
+      showToast(e instanceof Error ? e.message : '同步失败', 'error');
     } finally {
       setSyncing(false);
       setSyncProgress(null);
@@ -261,7 +260,6 @@ export default function Dashboard({ onLogout }: DashboardProps) {
         sx={{ minHeight: '100vh', bgcolor: 'transparent', pb: 8 }}
     >
       <TopBar 
-        onLogout={onLogout} 
         onRefresh={handleSyncAll} 
         onSearch={setSearchQuery} 
         loading={syncing}
@@ -278,7 +276,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             border: '4px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
-            boxShadow: '12px 12px 0 0 rgba(0,0,0,1)',
+            boxShadow: `12px 12px 0 0 ${theme.palette.text.primary}`,
           }}
         >
           <Box p={{ xs: 2, md: 2.5 }}>
@@ -289,7 +287,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
               onSync={handleSyncAll}
             />
             {syncProgress && (
-              <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 0 }}>
                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
                   <Typography variant="body2" fontWeight="bold">
                     正在同步: {syncProgress.currentAccount || '完成中...'}
@@ -301,7 +299,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
                 <LinearProgress
                   variant="determinate"
                   value={(syncProgress.current / syncProgress.total) * 100}
-                  sx={{ height: 8, borderRadius: 4 }}
+                  sx={{ height: 8, borderRadius: 0 }}
                 />
                 {syncProgress.failedAccounts.length > 0 && (
                   <Typography variant="caption" color="error" sx={{ mt: 1, display: 'block' }}>
@@ -322,25 +320,14 @@ export default function Dashboard({ onLogout }: DashboardProps) {
 
       <ConversationDrawer
         open={!!selectedContact}
-        contact={selectedContact}
+        contact={drawerContact}
         onClose={() => {
             setSelectedContact(null);
-            mutateContacts(); // Refresh to update unread counts
+            mutateContacts();
         }}
       />
 
       <AgentChatPanel currentContact={selectedContact} />
-
-      <Snackbar
-        open={!!toast}
-        autoHideDuration={4000} 
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert severity={toast?.severity} onClose={() => setToast(null)}>
-          {toast?.message}
-        </Alert>
-      </Snackbar>
 
       <Dialog open={gmailPromptOpen} onClose={deferGmailBinding} maxWidth="xs" fullWidth>
         <DialogTitle>绑定 Gmail（推荐）</DialogTitle>
