@@ -261,11 +261,47 @@ export async function uploadAvatar(file: File): Promise<User> {
   return (await resp.json()) as User;
 }
 
+type SyncJobStart = {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  account_id: number;
+};
+
+type SyncJobStatus = {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  account_id: number;
+  inserted?: number | null;
+  error?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+const waitFor = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForSyncJob(jobId: string, timeoutMs = 180_000): Promise<{ inserted: number; account_id: number }> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const job = await fetchJson<SyncJobStatus>(`/api/v1/accounts/sync-jobs/${jobId}`);
+    if (job.status === "succeeded") {
+      return { inserted: Number(job.inserted || 0), account_id: job.account_id };
+    }
+    if (job.status === "failed") {
+      throw new ApiError(job.error?.trim() || "同步失败", 500);
+    }
+    await waitFor(900);
+  }
+  throw new ApiError("同步超时，请稍后重试", 408);
+}
+
 export async function syncAccount(accountId: number, forceFull = false) {
   const qs = forceFull ? '?force_full=true' : '';
-  return await fetchJson<{ inserted: number; account_id: number }>(`/api/v1/accounts/${accountId}/sync${qs}`, {
+  const result = await fetchJson<{ inserted: number; account_id: number } | SyncJobStart>(`/api/v1/accounts/${accountId}/sync${qs}`, {
     method: "POST"
   });
+  if ("inserted" in result) return result;
+  return waitForSyncJob(result.job_id);
 }
 
 export async function listContacts(params?: { q?: string; limit?: number; offset?: number }): Promise<Contact[]> {
