@@ -57,13 +57,11 @@ import {
     uploadAvatar
 } from '../api';
 import CircularProgress from '@mui/material/CircularProgress';
-import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 import { TopBar } from './TopBar';
-
-interface SettingsProps {
-    onLogout: () => void;
-}
+import { useToast } from '../contexts/ToastContext';
+import { useConfirmDialog } from '../hooks/useConfirmDialog';
+import { useAuth } from '../contexts/AuthContext';
 
 type SourceProvider = 'mock' | 'github' | 'gmail' | 'outlook' | 'forward' | 'imap' | 'rss' | 'bilibili' | 'x' | 'douyin' | 'xiaohongshu' | 'weibo';
 type OAuthSourceProvider = OAuthProvider;
@@ -95,9 +93,12 @@ function accountIcon(provider: string) {
     return <EmailIcon />;
 }
 
-export default function Settings({ onLogout }: SettingsProps) {
+export default function Settings() {
     const navigate = useNavigate();
     const { mode, toggleColorMode } = useColorMode();
+    const { showToast } = useToast();
+    const { confirm, ConfirmDialog } = useConfirmDialog();
+    const { logout } = useAuth();
     const { data: user, mutate: mutateUser } = useSWR<User>('/api/v1/auth/me');
     const { data: accounts, mutate: mutateAccounts } = useSWR<ConnectedAccount[]>('/api/v1/accounts');
     const { data: agentConfig, mutate: mutateAgentConfig } = useSWR<AgentConfig>('/api/v1/agent/config');
@@ -106,7 +107,6 @@ export default function Settings({ onLogout }: SettingsProps) {
         () => getAgentCatalog(false)
     );
 
-    const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'warning' } | null>(null);
     const [syncing, setSyncing] = useState<number | null>(null);
     const [refreshingCatalog, setRefreshingCatalog] = useState(false);
     
@@ -253,11 +253,11 @@ export default function Settings({ onLogout }: SettingsProps) {
         setUpdatingProfile(true);
         try {
             const updated = await uploadAvatar(avatarFile);
-            setToast({ message: '头像已上传', severity: 'success' });
+            showToast('头像已上传', 'success');
             mutateUser(updated, { revalidate: false });
             setAvatarFile(null);
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '头像上传失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '头像上传失败', 'error');
         } finally {
             setUpdatingProfile(false);
         }
@@ -268,9 +268,9 @@ export default function Settings({ onLogout }: SettingsProps) {
         try {
             const fresh = await getAgentCatalog(true);
             mutateModelCatalog(fresh, { revalidate: false });
-            setToast({ message: `模型目录已刷新（${fresh.providers.length} 个服务商）`, severity: 'success' });
+            showToast(`模型目录已刷新（${fresh.providers.length} 个服务商）`, 'success');
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '刷新失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '刷新失败', 'error');
         } finally {
             setRefreshingCatalog(false);
         }
@@ -298,9 +298,9 @@ export default function Settings({ onLogout }: SettingsProps) {
             const updated = await updateAgentConfig(payload);
             mutateAgentConfig(updated, { revalidate: false });
             setAgentApiKey('');
-            setToast({ message: 'AI 助手配置已保存', severity: 'success' });
+            showToast('AI 助手配置已保存', 'success');
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '保存失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '保存失败', 'error');
         } finally {
             setSavingAgent(false);
         }
@@ -310,9 +310,9 @@ export default function Settings({ onLogout }: SettingsProps) {
         setTestingAgent(true);
         try {
             const res = await testAgent();
-            setToast({ message: `测试通过：${res.message || 'OK'}`, severity: 'success' });
+            showToast(`测试通过：${res.message || 'OK'}`, 'success');
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '测试失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '测试失败', 'error');
         } finally {
             setTestingAgent(false);
         }
@@ -321,14 +321,14 @@ export default function Settings({ onLogout }: SettingsProps) {
     const postConnectSync = async (accountId: number, connectedLabel: string) => {
         try {
             const res = await syncAccount(accountId);
-            setToast({ message: `${connectedLabel}已连接并同步：+${res.inserted}`, severity: 'success' });
+            showToast(`${connectedLabel}已连接并同步：+${res.inserted}`, 'success');
         } catch (e) {
-            setToast({
-                message: e instanceof Error
+            showToast(
+                e instanceof Error
                     ? `${connectedLabel}已连接，首次同步失败（${e.message}）。可稍后手动点“同步”重试。`
                     : `${connectedLabel}已连接，首次同步失败。可稍后手动点“同步”重试。`,
-                severity: 'warning',
-            });
+                'warning',
+            );
         }
     };
 
@@ -394,8 +394,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                 'width=560,height=760,menubar=no,toolbar=no,status=no'
             );
             if (!popup) throw new Error('浏览器拦截了授权弹窗，请允许弹窗后重试');
-            popup.document.title = 'MercuryDesk OAuth';
-            popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到授权页面…</p>';
+            const _popup = popup; // narrow for closure
+            _popup.document.title = 'MercuryDesk OAuth';
+            _popup.document.body.innerHTML = '<p style="font-family:system-ui;padding:24px;">正在跳转到授权页面…</p>';
 
             const baselineAccounts = await listAccounts().catch(() => accounts ?? []);
             baselineAccounts
@@ -403,7 +404,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                 .forEach((item) => knownAccountIds.add(item.id));
 
             const started = await startAccountOAuth(provider);
-            popup.location.href = started.auth_url;
+            _popup.location.href = started.auth_url;
             allowFallback = true;
 
             const result = await new Promise<{ ok: boolean; account_id?: number; identifier?: string; error?: string }>(
@@ -411,7 +412,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     let onMessage: (event: MessageEvent) => void;
                     let settled = false;
                     const finish = (
-                        fn: (value: { ok: boolean; account_id?: number; identifier?: string; error?: string } | Error) => void,
+                        fn: (value: any) => void,
                         value: { ok: boolean; account_id?: number; identifier?: string; error?: string } | Error
                     ) => {
                         if (settled) return;
@@ -425,7 +426,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                         finish(reject, new Error('授权超时，请重试'));
                     }, 180000);
                     const watcher = window.setInterval(() => {
-                        if (popup.closed) {
+                        if (_popup.closed) {
                             window.setTimeout(() => {
                                 if (!settled) {
                                     finish(reject, new Error('授权窗口已关闭'));
@@ -473,9 +474,9 @@ export default function Settings({ onLogout }: SettingsProps) {
     const copyText = async (text: string) => {
         try {
             await navigator.clipboard.writeText(text);
-            setToast({ message: '已复制到剪贴板', severity: 'success' });
+            showToast('已复制到剪贴板', 'success');
         } catch {
-            setToast({ message: '复制失败，请手动复制', severity: 'error' });
+            showToast('复制失败，请手动复制', 'error');
         }
     };
 
@@ -504,10 +505,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             setOauthClientIdInput(clientIdTrimmed);
             setOauthClientSecretInput('');
             if (!options?.silent) {
-                setToast({
-                    message: `${OAUTH_PROVIDER_LABEL[provider]} OAuth 凭据已保存`,
-                    severity: 'success',
-                });
+                showToast(`${OAUTH_PROVIDER_LABEL[provider]} OAuth 凭据已保存`, 'success');
             }
         } finally {
             setSavingOAuthConfig(false);
@@ -534,10 +532,7 @@ export default function Settings({ onLogout }: SettingsProps) {
             setOauthClientSecretInput(clientSecret);
             await saveOAuthConfig(provider, clientId, clientSecret);
         } catch (e) {
-            setToast({
-                message: e instanceof Error ? `导入失败：${e.message}` : '导入失败',
-                severity: 'error',
-            });
+            showToast(e instanceof Error ? `导入失败：${e.message}` : '导入失败', 'error');
         }
     };
 
@@ -574,7 +569,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                 });
                 const info = await getForwardAccountInfo(created.id);
                 setLatestForwardInfo(info);
-                setToast({ message: '转发地址已生成，请在邮箱里设置自动转发', severity: 'success' });
+                showToast('转发地址已生成，请在邮箱里设置自动转发', 'success');
             } else if (newProvider === 'imap') {
                 const email = imapUsername.trim();
                 const host = imapHost.trim();
@@ -695,20 +690,21 @@ export default function Settings({ onLogout }: SettingsProps) {
             setXUsername('');
             setGithubToken('');
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '连接失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '连接失败', 'error');
         } finally {
             setAddingAccount(false);
         }
     };
 
     const handleDeleteAccount = async (id: number) => {
-        if (!confirm('确定要断开该账户吗？')) return;
+        const ok = await confirm({ title: '断开账户', message: '确定要断开该账户吗？', severity: 'error' });
+        if (!ok) return;
         try {
             await deleteAccount(id);
-            setToast({ message: '已断开连接', severity: 'success' });
+            showToast('已断开连接', 'success');
             mutateAccounts();
         } catch (e) {
-            setToast({ message: '断开失败', severity: 'error' });
+            showToast('断开失败', 'error');
         }
     };
 
@@ -716,10 +712,10 @@ export default function Settings({ onLogout }: SettingsProps) {
         setSyncing(id);
         try {
             const res = await syncAccount(id, forceFull);
-            setToast({ message: `同步完成：+${res.inserted}`, severity: 'success' });
+            showToast(`同步完成：+${res.inserted}`, 'success');
             mutateAccounts(); // Update last synced time
         } catch (e) {
-            setToast({ message: e instanceof Error ? e.message : '同步失败', severity: 'error' });
+            showToast(e instanceof Error ? e.message : '同步失败', 'error');
         } finally {
             setSyncing(null);
         }
@@ -750,7 +746,6 @@ export default function Settings({ onLogout }: SettingsProps) {
             sx={{ minHeight: '100vh', bgcolor: 'transparent' }}
         >
             <TopBar 
-                onLogout={onLogout} 
                 onRefresh={() => {}} 
                 onSearch={() => {}} 
                 loading={false} 
@@ -844,11 +839,11 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     <IconButton 
                                                         edge="end" 
                                                         onClick={() => handleSync(account.id)} 
-                                                        onContextMenu={(e) => {
+                                                        onContextMenu={async (e) => {
                                                             e.preventDefault();
-                                                            if (confirm('全量重新同步？将忽略上次同步时间，拉取所有历史消息。')) {
-                                                                handleSync(account.id, true);
-                                                            }
+                                                            const ok = await confirm({ title: '全量同步', message: '全量重新同步？这会清除旧数据并重新拉取。', severity: 'warning' });
+                                                            if (!ok) return;
+                                                            handleSync(account.id, true);
                                                         }}
                                                         disabled={syncing === account.id}
                                                         sx={{ mr: 1 }}
@@ -932,7 +927,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 {useOAuthConnectFlow && (
                                                     <>
                                                         <Grid size={{ xs: 12 }}>
-                                                            <Alert severity="success" sx={{ borderRadius: 3 }}>
+                                                            <Alert severity="success" sx={{ borderRadius: 0 }}>
                                                                 推荐方式：点击下方按钮，跳转到
                                                                 {' '}
                                                                 {newProvider === 'gmail'
@@ -947,7 +942,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                             </Alert>
                                                         </Grid>
                                                         <Grid size={{ xs: 12 }}>
-                                                            <Alert severity={oauthProviderConfig?.configured ? 'info' : 'warning'} sx={{ borderRadius: 3 }}>
+                                                            <Alert severity={oauthProviderConfig?.configured ? 'info' : 'warning'} sx={{ borderRadius: 0 }}>
                                                                 {oauthProviderConfig?.configured
                                                                     ? `已保存 ${OAUTH_PROVIDER_LABEL[newProvider as OAuthSourceProvider]} OAuth 配置：${oauthProviderConfig.client_id_hint || '已隐藏'}`
                                                                     : `尚未保存 ${OAUTH_PROVIDER_LABEL[newProvider as OAuthSourceProvider]} OAuth 配置。你可以直接在当前页面保存，无需改 .env。`}
@@ -990,10 +985,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                                         oauthClientIdInput,
                                                                         oauthClientSecretInput
                                                                     ).catch((e) =>
-                                                                        setToast({
-                                                                            message: e instanceof Error ? e.message : '保存 OAuth 配置失败',
-                                                                            severity: 'error',
-                                                                        })
+                                                                        showToast(e instanceof Error ? e.message : '保存 OAuth 配置失败', 'error')
                                                                     )
                                                                 }
                                                             >
@@ -1064,7 +1056,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 {showGithubTokenForm && (
                                                     <>
                                                         <Grid size={{ xs: 12 }}>
-                                                            <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                            <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                                 兼容旧方式：可直接填写 GitHub Token 接入通知，无需 OAuth 应用。建议使用 Classic PAT 并授予
                                                                 {' '}
                                                                 <code>notifications</code>
@@ -1127,13 +1119,13 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         创建后会生成一个专属转发地址。去你的邮箱设置里添加“自动转发到该地址”即可接入，无需再配置 Webhook。
                                                     </Alert>
                                                 </Grid>
                                                 {latestForwardInfo && (
                                                     <Grid size={{ xs: 12 }}>
-                                                        <Alert severity="success" sx={{ borderRadius: 3 }}>
+                                                        <Alert severity="success" sx={{ borderRadius: 0 }}>
                                                             <Box display="flex" alignItems="center" justifyContent="space-between" gap={1} flexWrap="wrap">
                                                                 <Typography variant="body2">
                                                                     专属转发地址：{latestForwardInfo.forward_address}
@@ -1198,7 +1190,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                 </Grid>
 
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         高级接入（兜底方案）：三步完成 ① 开启 IMAP ② 生成授权码 ③ 填写邮箱+授权码。优先推荐 Gmail/Outlook 一键授权。
                                                     </Alert>
                                                 </Grid>
@@ -1326,7 +1318,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         使用 B 站公开页面抓取 UP 最新视频动态；若抓取失败会自动回退订阅源抓取。
                                                     </Alert>
                                                 </Grid>
@@ -1346,7 +1338,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         {xApiConfig?.configured
                                                             ? `已配置官方 X API（${xApiConfig.token_hint || '已隐藏'}），将优先使用官方 API 获取推文。`
                                                             : '默认使用公共网页接口抓取；配置官方 API Bearer Token 可获得更稳定的抓取效果。'}
@@ -1375,9 +1367,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                                 const updated = await updateXApiConfig(xBearerToken.trim());
                                                                 mutateXApiConfig(updated, { revalidate: false });
                                                                 setXBearerToken('');
-                                                                setToast({ message: 'X API Token 已保存', severity: 'success' });
+                                                                showToast('X API Token 已保存', 'success');
                                                             } catch (e) {
-                                                                setToast({ message: e instanceof Error ? e.message : '保存失败', severity: 'error' });
+                                                                showToast(e instanceof Error ? e.message : '保存失败', 'error');
                                                             } finally {
                                                                 setSavingXConfig(false);
                                                             }
@@ -1399,7 +1391,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                                                 {/* Cookie Authentication Section */}
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity={xApiConfig?.cookies_configured ? 'success' : 'warning'} sx={{ borderRadius: 3 }}>
+                                                    <Alert severity={xApiConfig?.cookies_configured ? 'success' : 'warning'} sx={{ borderRadius: 0 }}>
                                                         {xApiConfig?.cookies_configured
                                                             ? '已配置浏览器 Cookie 认证，将优先使用认证接口获取最新推文（支持按时间排序）。'
                                                             : '推荐配置浏览器 Cookie：未认证接口只能获取热门推文（按互动量排序），可能遗漏最新推文。'}
@@ -1441,9 +1433,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                                 mutateXApiConfig();
                                                                 setXAuthToken('');
                                                                 setXCt0('');
-                                                                setToast({ message: 'X Cookie 认证已保存', severity: 'success' });
+                                                                showToast('X Cookie 认证已保存', 'success');
                                                             } catch (e) {
-                                                                setToast({ message: e instanceof Error ? e.message : '保存失败', severity: 'error' });
+                                                                showToast(e instanceof Error ? e.message : '保存失败', 'error');
                                                             } finally {
                                                                 setSavingXCookies(false);
                                                             }
@@ -1463,9 +1455,9 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                                 try {
                                                                     await deleteXAuthCookies();
                                                                     mutateXApiConfig();
-                                                                    setToast({ message: 'X Cookie 已删除', severity: 'success' });
+                                                                    showToast('X Cookie 已删除', 'success');
                                                                 } catch (e) {
-                                                                    setToast({ message: e instanceof Error ? e.message : '删除失败', severity: 'error' });
+                                                                    showToast(e instanceof Error ? e.message : '删除失败', 'error');
                                                                 }
                                                             }}
                                                             sx={{ height: '40px' }}
@@ -1491,7 +1483,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         支持抖音号或 sec_uid，抓取用户最新视频动态。
                                                     </Alert>
                                                 </Grid>
@@ -1512,7 +1504,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         抓取小红书用户最新笔记动态。
                                                     </Alert>
                                                 </Grid>
@@ -1533,7 +1525,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                                     />
                                                 </Grid>
                                                 <Grid size={{ xs: 12 }}>
-                                                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                                    <Alert severity="info" sx={{ borderRadius: 0 }}>
                                                         抓取微博用户最新动态。
                                                     </Alert>
                                                 </Grid>
@@ -1542,7 +1534,7 @@ export default function Settings({ onLogout }: SettingsProps) {
 
                                         {newProvider === 'mock' && (
                                             <Grid size={{ xs: 12 }}>
-                                                <Alert severity="success" sx={{ borderRadius: 3 }}>
+                                                <Alert severity="success" sx={{ borderRadius: 0 }}>
                                                     连接演示数据用于快速体验界面（不会访问真实邮箱）。
                                                 </Alert>
                                             </Grid>
@@ -1585,7 +1577,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                             </Box>
 
                             <Box mt={2} mb={2}>
-                                <Alert severity="info" sx={{ borderRadius: 3 }}>
+                                <Alert severity="info" sx={{ borderRadius: 0 }}>
                                     ✨ <b>即将推出：MercuryDesk Agent</b> —— 这里的配置将用于驱动未来的智能体功能（自动分类消息、生成回复草稿、每日智能简报等）。目前仅用于简单的摘要测试。
                                 </Alert>
                             </Box>
@@ -1685,7 +1677,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                                             />
                                         </Grid>
                                         <Grid size={{ xs: 12 }}>
-                                            <Alert severity="warning" sx={{ borderRadius: 3 }}>
+                                            <Alert severity="warning" sx={{ borderRadius: 0 }}>
                                                 当前通过 OpenAI-Compatible 接口调用模型。请确保 Base URL 与模型 ID 对应同一服务商。
                                                 {selectedModelProvider?.doc && (
                                                     <>
@@ -1717,16 +1709,7 @@ export default function Settings({ onLogout }: SettingsProps) {
                     </Grid>
                 </Grid>
 
-                <Snackbar 
-                    open={!!toast} 
-                    autoHideDuration={4500} 
-                    onClose={() => setToast(null)}
-                    anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-                >
-                    <Alert severity={toast?.severity} onClose={() => setToast(null)}>
-                        {toast?.message}
-                    </Alert>
-                </Snackbar>
+                {ConfirmDialog}
             </Container>
         </Box>
     );
