@@ -22,7 +22,11 @@ interface AgentChatPanelProps {
   currentContact: Contact | null;
 }
 
+let _msgId = 0;
+const nextId = () => `msg-${Date.now()}-${++_msgId}`;
+
 type ChatMessage = {
+  id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
   isStreaming?: boolean;
@@ -35,17 +39,24 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen]);
 
+  // Abort on unmount
+  useEffect(() => {
+    return () => { abortRef.current?.abort(); };
+  }, []);
+
   // Initial welcome message
   useEffect(() => {
     if (messages.length === 0) {
       setMessages([
         {
+          id: nextId(),
           role: 'assistant',
           content: '你好！我是 MercuryDesk 智能助手。我可以帮你搜索消息、总结对话，或者草拟回复。'
         }
@@ -60,10 +71,15 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
     setInput('');
     const newMessages: ChatMessage[] = [
       ...messages,
-      { role: 'user', content: userText }
+      { id: nextId(), role: 'user', content: userText }
     ];
     setMessages(newMessages);
     setIsTyping(true);
+
+    // Abort any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       // Prepare context message if contact is open
@@ -77,10 +93,11 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
       }
 
       // Add placeholder for assistant response
-      setMessages(prev => [...prev, { role: 'assistant', content: '', isStreaming: true }]);
+      const assistantId = nextId();
+      setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content: '', isStreaming: true }]);
 
       let fullResponse = '';
-      const generator = agentChatStream(apiMessages, currentContact?.id);
+      const generator = agentChatStream(apiMessages, currentContact?.id, controller.signal);
 
       for await (const chunk of generator) {
         fullResponse += chunk;
@@ -100,10 +117,11 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
       });
 
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return;
       console.error(err);
       setMessages(prev => [
         ...prev,
-        { role: 'assistant', content: `(Error: ${err instanceof Error ? err.message : 'Unknown error'})` }
+        { id: nextId(), role: 'assistant', content: `(Error: ${err instanceof Error ? err.message : 'Unknown error'})` }
       ]);
     } finally {
       setIsTyping(false);
@@ -127,10 +145,10 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
           onClick={() => setIsOpen(!isOpen)}
           sx={{
             position: 'fixed',
-            bottom: 32,
-            right: 32,
+            bottom: { xs: 16, sm: 32 },
+            right: { xs: 16, sm: 32 },
             zIndex: 1200,
-            boxShadow: '4px 4px 0 0 rgba(0,0,0,1)',
+            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
             border: '2px solid',
             borderColor: 'text.primary',
             borderRadius: 0,
@@ -142,7 +160,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             overflow: 'hidden',
             '&:hover': {
                transform: 'translate(-2px, -2px)',
-               boxShadow: '6px 6px 0 0 rgba(0,0,0,1)',
+               boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
                background: theme.palette.background.paper,
             }
           }}
@@ -165,14 +183,14 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
       </Tooltip>
 
       {/* Chat Window */}
-      <Fade in={isOpen} mountOnEnter unmountOnExit>
+      <Fade in={isOpen} mountOnEnter>
         <Paper
           elevation={24}
           sx={{
             position: 'fixed',
-            bottom: 100,
-            right: 32,
-            width: 380,
+            bottom: { xs: 88, sm: 100 },
+            right: { xs: 8, sm: 32 },
+            width: { xs: 'calc(100vw - 16px)', sm: 380 },
             height: 550,
             maxHeight: 'calc(100vh - 120px)',
             display: 'flex',
@@ -184,7 +202,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
             borderColor: 'text.primary',
             bgcolor: 'background.paper',
             backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
-            boxShadow: '8px 8px 0 0 rgba(0,0,0,1)',
+            boxShadow: `8px 8px 0 0 ${theme.palette.text.primary}`,
           }}
         >
           {/* Header */}
@@ -249,7 +267,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
               const isUser = msg.role === 'user';
               return (
                 <Box
-                  key={idx}
+                  key={msg.id}
                   alignSelf={isUser ? 'flex-end' : 'flex-start'}
                   maxWidth="85%"
                 >
@@ -263,7 +281,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                       borderColor: 'text.primary',
                       bgcolor: isUser ? 'text.primary' : 'background.paper',
                       color: isUser ? 'background.paper' : 'text.primary',
-                      boxShadow: isUser ? '4px 4px 0 0 rgba(0,0,0,0.2)' : '4px 4px 0 0 rgba(0,0,0,1)',
+                      boxShadow: isUser ? `4px 4px 0 0 ${alpha(theme.palette.text.primary, 0.2)}` : `4px 4px 0 0 ${theme.palette.text.primary}`,
                     }}
                   >
                     {isUser ? (
@@ -322,7 +340,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                     color: 'text.primary',
                     '&:hover': {
                         bgcolor: 'action.hover',
-                        boxShadow: '2px 2px 0 0 rgba(0,0,0,1)'
+                        boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
                     }
                 }}
               >
