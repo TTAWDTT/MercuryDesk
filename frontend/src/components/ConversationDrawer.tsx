@@ -162,12 +162,35 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
             border: '3px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
-            transition: 'all 0.2s',
+            transition: 'all 0.15s',
             position: 'relative',
-            overflow: 'hidden',
-            boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
+            overflow: 'visible',
+            boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
+            // P2: Speech bubble triangle (manga dialogue box)
+            '&::before': {
+                content: '""',
+                position: 'absolute',
+                top: 16,
+                left: -12,
+                width: 0,
+                height: 0,
+                borderStyle: 'solid',
+                borderWidth: '8px 12px 8px 0',
+                borderColor: `transparent ${theme.palette.divider} transparent transparent`,
+            },
+            '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 18,
+                left: -8,
+                width: 0,
+                height: 0,
+                borderStyle: 'solid',
+                borderWidth: '6px 9px 6px 0',
+                borderColor: `transparent ${theme.palette.background.paper} transparent transparent`,
+            },
             '&:hover': {
-                boxShadow: `8px 8px 0 0 ${theme.palette.text.primary}`,
+                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
                 transform: 'translate(-1px, -1px)'
             }
         }}
@@ -204,7 +227,7 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
               p: 1.5,
               mb: 2,
               bgcolor: 'transparent',
-              boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
+              boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
             }}
           >
             {previewImageUrl && (
@@ -297,7 +320,7 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
             sx={{
                 border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
@@ -339,7 +362,7 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
             sx={{
                 border: '3px solid',
                 borderColor: 'divider',
-                boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`
+                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`
             }}
           >
              <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
@@ -423,7 +446,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             m: { xs: 0, md: 2 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
             borderRadius: 0,
-            boxShadow: `-8px 8px 0 0 ${theme.palette.text.primary}`,
+            boxShadow: `-6px 6px 0 0 ${theme.palette.text.primary}`,
             overflow: 'hidden',
             border: '2px solid',
             borderColor: 'divider',

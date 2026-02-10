@@ -94,16 +94,20 @@ export default function Login() {
               borderColor: 'text.primary',
               bgcolor: 'background.paper',
               backgroundImage: theme.palette.mode === 'light' ? cardBgLight : cardBgDark,
-              boxShadow: `10px 10px 0 0 ${shadowColor}`,
+              boxShadow: `8px 8px 0 0 ${shadowColor}`,
+              // Manga cover: slight rotation for hand-drawn feel
+              transform: 'rotate(-0.8deg)',
+              '&:hover': { transform: 'rotate(0deg)', transition: 'transform 0.3s ease' },
+              transition: 'transform 0.3s ease',
             }}
           >
             <Box textAlign="center" mb={4}>
               <Box
                 sx={{
-                  width: 48,
-                  height: 48,
+                  width: 96,
+                  height: 96,
                   borderRadius: 0,
-                  border: '2px solid',
+                  border: '3px solid',
                   borderColor: 'text.primary',
                   background: 'transparent',
                   margin: '0 auto 16px',
@@ -112,14 +116,19 @@ export default function Login() {
                   justifyContent: 'center',
                   color: 'text.primary',
                   fontWeight: '900',
-                  fontSize: '24px',
+                  fontSize: '52px',
+                  fontFamily: '"Inter", sans-serif',
+                  letterSpacing: '-0.04em',
                   boxShadow: `4px 4px 0 0 ${shadowColor}`
                 }}
               >
                 M
               </Box>
-              <Typography variant="h4" fontWeight="800" color="textPrimary" gutterBottom>
+              <Typography variant="h3" fontWeight="900" color="textPrimary" sx={{ letterSpacing: '-0.02em' }} gutterBottom>
                 MercuryDesk
+              </Typography>
+              <Typography variant="body2" color="textSecondary" sx={{ fontStyle: 'italic', letterSpacing: '0.05em', mb: 0.5 }}>
+                Vol.1 • Issue 2026
               </Typography>
               <Typography variant="body1" color="textSecondary">
                 统一收件箱（按发信人聚合）。
@@ -204,8 +213,8 @@ export default function Login() {
         </motion.div>
         
         <Box textAlign="center" mt={4}>
-          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6 }}>
-             © 2026 MercuryDesk • Sender‑Centric MVP
+          <Typography variant="caption" color="text.secondary" sx={{ opacity: 0.6, fontStyle: 'italic' }}>
+             © 2026 MercuryDesk • Sender‑Centric MVP • 初版
           </Typography>
         </Box>
       </Container>

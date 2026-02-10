@@ -276,7 +276,7 @@ export default function Dashboard() {
             border: '4px solid',
             borderColor: 'text.primary',
             overflow: 'hidden',
-            boxShadow: `12px 12px 0 0 ${theme.palette.text.primary}`,
+            boxShadow: `8px 8px 0 0 ${theme.palette.text.primary}`,
           }}
         >
           <Box p={{ xs: 2, md: 2.5 }}>

@@ -31,7 +31,7 @@ const Search = styled('div')(({ theme }) => {
     '&:focus-within': {
       backgroundColor: isLight ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
       borderColor: isLight ? '#ffffff' : '#000000',
-      boxShadow: `3px 3px 0 0 ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
+      boxShadow: `2px 2px 0 0 ${isLight ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.3)'}`,
     },
     marginRight: theme.spacing(2),
     marginLeft: 0,

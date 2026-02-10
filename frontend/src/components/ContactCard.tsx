@@ -117,9 +117,20 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             ...(disabled
               ? {}
               : {
-                  transform: isFeature ? 'translateY(-3px)' : 'translateY(-4px)',
+                  transform: 'translate(-2px, -2px)',
                   borderColor: 'primary.main',
-                  boxShadow: theme.shadows[4],
+                  boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
+                  // P1: Paper fold-corner on hover (manga page-turn)
+                  '&::after': {
+                    content: '""',
+                    position: 'absolute',
+                    top: 0,
+                    right: 0,
+                    width: 20,
+                    height: 20,
+                    background: `linear-gradient(135deg, ${theme.palette.text.primary} 50%, ${theme.palette.background.paper} 50%)`,
+                    zIndex: 2,
+                  },
                 }),
           }
         }}
@@ -153,13 +164,16 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             <Box 
                 sx={{
                     position: 'absolute',
-                    top: 16,
-                    right: 16,
-                    width: 10,
-                    height: 10,
-                    borderRadius: '50%',
-                    bgcolor: 'error.main',
-                    boxShadow: '0 0 0 2px ' + theme.palette.background.paper,
+                    top: 14,
+                    right: 14,
+                    width: 14,
+                    height: 14,
+                    bgcolor: 'text.primary',
+                    border: '2px solid',
+                    borderColor: 'background.paper',
+                    // Ink-drop shape: manga unread marker
+                    borderRadius: '50% 50% 50% 0',
+                    transform: 'rotate(-45deg)',
                     zIndex: 1
                 }}
             />
@@ -184,7 +198,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                   borderRadius: 0,
                   border: '2px solid',
                   borderColor: 'divider',
-                  boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+                  boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
@@ -274,7 +288,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
-              lineHeight: 1.5
+              lineHeight: 1.7
             }}>
               {previewText}
             </Typography>

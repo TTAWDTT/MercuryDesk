@@ -91,7 +91,7 @@ export function GuideCards({ hasAccounts, syncing, onOpenSettings, onSync }: Gui
                   justifyContent: 'center',
                   bgcolor: 'transparent',
                   color: 'text.primary',
-                  boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+                  boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`
                 }}
               >
                 <EmailOutlinedIcon />

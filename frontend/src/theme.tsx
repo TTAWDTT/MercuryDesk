@@ -17,46 +17,74 @@ const ColorModeContext = createContext<ColorModeContextType>({
 export const useColorMode = () => useContext(ColorModeContext);
 
 // =============================================================================
-// MANGA TEXTURE ASSETS (POP ART / HALFTONE REVISION)
+// MANGA TEXTURE ASSETS — HALFTONE / CROSS-HATCH / SPEED-LINE
 // =============================================================================
 
 // 【CANVAS】: Global Background
-// Concept: "Blueprint Grid" - Subtle perpendicular grid aligned with Neo-Brutalism's
-// geometric precision. Clean, structured, and non-distracting.
+// Concept: "Ben-Day Dots" — The signature halftone dot pattern of printed manga
+// and Roy Lichtenstein pop art. Immediately signals "comic book page".
 export const canvasLight = `
-  linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
-  linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px)
+  radial-gradient(circle, rgba(0,0,0,0.07) 1px, transparent 1px)
 `;
 export const canvasDark = `
-  linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
-  linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px)
+  radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)
 `;
 
 // 【HEADER】: Top Bar
-// Concept: "Solid Ink Block" - Pure black/white contrast for maximum impact.
-// We use a linear gradient to simulate a solid block that still works with backgroundImage prop.
-export const headerLight = `linear-gradient(to bottom, #000000, #000000)`;
-export const headerDark = `linear-gradient(to bottom, #ffffff, #ffffff)`;
+// Concept: "Speed Lines" — Horizontal lines rushing across the header bar,
+// evoking manga action panels and the flow of incoming messages.
+export const headerLight = `
+  repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(255,255,255,0.04) 3px,
+    rgba(255,255,255,0.04) 4px
+  )
+`;
+export const headerDark = `
+  repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0,0,0,0.06) 3px,
+    rgba(0,0,0,0.06) 4px
+  )
+`;
 
 // 【CARD_BG】: Card Interior
-// Concept: "Clean Canvas" - Subtle diagonal lines for texture without noise.
-// Much cleaner than the previous "dirty" noise.
+// Concept: "Cross-Hatch" — Two-directional diagonal lines overlaid,
+// the classic manga shading technique for indicating tone/depth.
 export const cardBgLight = `
   repeating-linear-gradient(
     45deg,
     transparent,
-    transparent 10px,
-    rgba(0,0,0,0.03) 10px,
-    rgba(0,0,0,0.03) 11px
+    transparent 7px,
+    rgba(0,0,0,0.035) 7px,
+    rgba(0,0,0,0.035) 8px
+  ),
+  repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 7px,
+    rgba(0,0,0,0.035) 7px,
+    rgba(0,0,0,0.035) 8px
   )
 `;
 export const cardBgDark = `
   repeating-linear-gradient(
     45deg,
     transparent,
-    transparent 10px,
-    rgba(255,255,255,0.03) 10px,
-    rgba(255,255,255,0.03) 11px
+    transparent 7px,
+    rgba(255,255,255,0.035) 7px,
+    rgba(255,255,255,0.035) 8px
+  ),
+  repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 7px,
+    rgba(255,255,255,0.035) 7px,
+    rgba(255,255,255,0.035) 8px
   )
 `;
 
@@ -151,8 +179,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       h6: { fontFamily: headingFont, fontWeight: 800 },
       subtitle1: { fontFamily: headingFont, fontWeight: 700 },
       subtitle2: { fontFamily: headingFont, fontWeight: 700 },
-      body1: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.6 },
-      body2: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.875rem' },
+      body1: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.75 },
+      body2: { fontFamily: bodyFont, fontWeight: 500, fontSize: '0.875rem', lineHeight: 1.7 },
       button: { fontFamily: headingFont, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em' },
       caption: { fontFamily: bodyFont, fontWeight: 500 },
       overline: { fontFamily: headingFont, fontWeight: 800, letterSpacing: '0.1em' },
@@ -163,8 +191,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           body: {
             backgroundColor: colors.background,
-            backgroundImage: canvasBg, // 【CANVAS】
-            backgroundSize: '24px 24px', // Consistent Pop Art Grid
+            backgroundImage: canvasBg, // 【CANVAS】Ben-Day Dots
+            backgroundSize: '14px 14px', // Halftone dot spacing
             backgroundAttachment: 'fixed',
             color: colors.textPrimary,
           },
@@ -173,19 +201,19 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
       MuiPaper: {
         styleOverrides: {
           root: {
-            backgroundImage: activePaperBg, // 【CARD_BG】
-            backgroundColor: colors.paper, // Ensure solid background so we don't see body dots through cards
+            backgroundImage: activePaperBg, // 【CARD_BG】Cross-Hatch
+            backgroundColor: colors.paper,
             backgroundSize: 'auto',
             border: `2px solid ${colors.divider}`,
-            // Pop Art Shadow: Deep, solid, sharp
-            boxShadow: `8px 8px 0 0 ${colors.textPrimary}`,
+            // Three-tier shadow system: 墨点(2) / 墨线(4) / 墨块(8)
+            boxShadow: `4px 4px 0 0 ${colors.textPrimary}`,
             borderRadius: 0,
-            transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+            transition: 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
           },
-          elevation0: { boxShadow: 'none' }, // Allow overrides
-          elevation1: { boxShadow: `6px 6px 0 0 ${colors.divider}` },
-          elevation2: { boxShadow: `8px 8px 0 0 ${colors.divider}` },
-          elevation3: { boxShadow: `12px 12px 0 0 ${colors.divider}` },
+          elevation0: { boxShadow: 'none' },
+          elevation1: { boxShadow: `2px 2px 0 0 ${colors.divider}` },   // 墨点
+          elevation2: { boxShadow: `4px 4px 0 0 ${colors.divider}` },   // 墨线
+          elevation3: { boxShadow: `8px 8px 0 0 ${colors.divider}` },   // 墨块
         }
       },
       MuiButton: {
@@ -193,17 +221,19 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.primary}`,
             borderRadius: 0,
-            boxShadow: `4px 4px 0 0 ${colors.primary}`,
+            boxShadow: `3px 3px 0 0 ${colors.primary}`,
             fontWeight: 800,
+            transition: 'all 0.12s cubic-bezier(0.4, 0, 0.2, 1)',
             '&:hover': {
               transform: 'translate(-1px, -1px)',
-              boxShadow: `6px 6px 0 0 ${colors.primary}`,
+              boxShadow: `5px 5px 0 0 ${colors.primary}`,
               backgroundColor: colors.primary,
               color: mode === 'light' ? '#ffffff' : '#000000',
             },
             '&:active': {
-              transform: 'translate(2px, 2px)',
-              boxShadow: `2px 2px 0 0 ${colors.primary}`,
+              transform: 'translate(2px, 2px) scale(0.98)',
+              boxShadow: `1px 1px 0 0 ${colors.primary}`,
+              transition: 'all 0.06s cubic-bezier(0.4, 0, 0.2, 1)',
             },
           },
           contained: {
@@ -220,17 +250,18 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `8px 8px 0 0 ${colors.divider}`,
+            boxShadow: `4px 4px 0 0 ${colors.divider}`,  // 墨线 level
+            transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
           },
         },
       },
       MuiChip: {
         styleOverrides: {
           root: {
-            border: `2px solid ${colors.divider}`,
+            border: `1.5px solid ${colors.divider}`,
             fontWeight: 700,
             borderRadius: 0,
-            boxShadow: `3px 3px 0 0 ${colors.divider}`,
+            boxShadow: `2px 2px 0 0 ${colors.divider}`,  // 墨点 level
           },
         },
       },
@@ -239,7 +270,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `3px 3px 0 0 ${colors.divider}`,
+            boxShadow: `2px 2px 0 0 ${colors.divider}`,  // 墨点 level
           }
         }
       },
@@ -270,8 +301,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         styleOverrides: {
           root: {
             borderBottomWidth: '2px',
+            borderStyle: 'dashed',
             borderColor: colors.divider,
-            opacity: 0.2,
+            opacity: 0.25,
           }
         }
       },
@@ -280,7 +312,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           root: {
             border: `2px solid ${colors.divider}`,
             borderRadius: 0,
-            boxShadow: `5px 5px 0 0 ${colors.divider}`,
+            boxShadow: `3px 3px 0 0 ${colors.divider}`,  // 墨点~墨线
           }
         }
       }
