@@ -640,13 +640,15 @@ class XConnector:
             canonical_avatar_url = _extract_user_avatar_url(user_result, user_legacy)
 
             # 4. 获取用户推文（认证后返回时间线而非热门）
-            timeline_count = min(max(self._max_items * 2, 40), 200)
-            max_pages = 6
+            timeline_count = min(max(self._max_items, 20), 100)
+            max_pages = 2
             entries: list[dict[str, Any]] = []
             cursor: str | None = None
             seen_cursors: set[str] = set()
 
-            for _ in range(max_pages):
+            for page_idx in range(max_pages):
+                if page_idx > 0:
+                    time.sleep(2)  # 翻页间延迟，避免触发 429
                 variables: dict[str, Any] = {
                     "userId": rest_id,
                     "count": timeline_count,
@@ -686,6 +688,10 @@ class XConnector:
                 if not page_entries:
                     break
                 entries.extend(page_entries)
+
+                # 已收集足够数据则提前结束
+                if len(entries) >= self._max_items:
+                    break
 
                 next_cursor = _extract_bottom_cursor(page_entries)
                 if not next_cursor or next_cursor in seen_cursors:
@@ -866,13 +872,15 @@ class XConnector:
             canonical_screen_name = str(user_legacy.get("screen_name") or self._username).strip() or self._username
             canonical_name = str(user_legacy.get("name") or f"@{canonical_screen_name}").strip() or f"@{canonical_screen_name}"
             canonical_avatar_url = _extract_user_avatar_url(user_result, user_legacy)
-            timeline_count = min(max(self._max_items * 2, 40), 200)
-            max_pages = 6
+            timeline_count = min(max(self._max_items, 20), 100)
+            max_pages = 2
             entries: list[dict[str, Any]] = []
             cursor: str | None = None
             seen_cursors: set[str] = set()
 
-            for _ in range(max_pages):
+            for page_idx in range(max_pages):
+                if page_idx > 0:
+                    time.sleep(2)  # 翻页间延迟，避免触发 429
                 variables: dict[str, Any] = {
                     "userId": rest_id,
                     "count": timeline_count,
@@ -884,15 +892,20 @@ class XConnector:
                 if cursor:
                     variables["cursor"] = cursor
 
-                tweets_payload = self._call_graphql(
-                    client=client,
-                    operation_name="UserTweets",
-                    query_id=tweets_query_id,
-                    variables=variables,
-                    feature_switches=tweets_features,
-                    field_toggles=tweets_toggles,
-                    headers=api_headers,
-                )
+                try:
+                        tweets_payload = self._call_graphql(
+                        client=client,
+                        operation_name="UserTweets",
+                        query_id=tweets_query_id,
+                        variables=variables,
+                        feature_switches=tweets_features,
+                        field_toggles=tweets_toggles,
+                        headers=api_headers,
+                    )
+                except _RateLimitError:
+                    if entries:
+                        break
+                    raise
 
                 timeline = (
                     tweets_payload.get("data", {})
@@ -906,6 +919,10 @@ class XConnector:
                 if not page_entries:
                     break
                 entries.extend(page_entries)
+
+                # 已收集足够数据则提前结束
+                if len(entries) >= self._max_items:
+                    break
 
                 next_cursor = _extract_bottom_cursor(page_entries)
                 if not next_cursor or next_cursor in seen_cursors:
@@ -926,7 +943,7 @@ class XConnector:
         if not self._username:
             raise ValueError("RSSHub 回退需要有效用户名")
         base = os.environ.get("MERCURYDESK_RSSHUB_BASE_URL", "https://rsshub.app").rstrip("/")
-        feed_url = f"{base}/twitter/user/{self._username}"
+        feed_url = f"{base}/x/user/{self._username}"
         # RSSHub 返回的是按时间排序的 Feed，无需进行 strict stale 检查 (那是针对 Guest Token 的乱序问题)
         return FeedConnector(
             feed_url=feed_url,
@@ -994,12 +1011,10 @@ class XConnector:
                     return result
 
         # 第三优先级：GraphQL Guest Token（访客模式，部分用户可能只返回热门推文）
-        # 注意：如果已配置 Cookie 认证但被限流，跳过 Guest GraphQL
-        # 因为 Guest 只能获取热门推文（按互动量排序），质量远低于认证接口
-        if not cookie_auth_rate_limited:
-            result = _try("GraphQL", lambda: self._fetch_via_graphql(since=since))
-            if result is not None:
-                return result
+        # Guest Token 有独立限流配额，即使 Cookie 认证被限流也应尝试
+        result = _try("GraphQL", lambda: self._fetch_via_graphql(since=since))
+        if result is not None:
+            return result
 
         # 第四优先级：RSSHub 回退
         result = _try("RSSHub", lambda: self._fetch_via_rsshub(since=since))
