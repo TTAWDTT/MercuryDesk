@@ -115,6 +115,8 @@ export type AgentCardLayoutItem = {
   pinned: boolean;
   scale: number;
   order: number;
+  x?: number;
+  y?: number;
 };
 
 export type AccountOAuthStart = {

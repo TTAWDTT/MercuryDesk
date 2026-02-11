@@ -1,11 +1,12 @@
 import React from 'react';
-import { Contact, AgentCardLayoutItem } from '../api';
+import { AgentCardLayoutItem, Contact } from '../api';
 import { ContactCard } from './ContactCard';
 import { ContactSkeleton } from './ContactSkeleton';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import { motion } from 'framer-motion';
-import PushPinIcon from '@mui/icons-material/PushPin';
+import { alpha, useTheme } from '@mui/material/styles';
+import useMediaQuery from '@mui/material/useMediaQuery';
 
 interface ContactGridProps {
   contacts: Contact[] | undefined;
@@ -15,16 +16,31 @@ interface ContactGridProps {
 }
 
 type CardLayoutState = {
-  order: number;
-  pinned: boolean;
+  x: number;
+  y: number;
   scale: number;
+  pinned: boolean;
+  z: number;
 };
 
-const STORAGE_KEY = 'mercurydesk:contact-card-layout:v1';
+type DraggingState = {
+  id: number;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  originX: number;
+  originY: number;
+};
+
+const STORAGE_KEY = 'mercurydesk:contact-card-layout:v2';
 
 function clampScale(value: number): number {
   if (!Number.isFinite(value)) return 1;
   return Math.max(0.8, Math.min(1.5, Number(value)));
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function readStoredLayout(): Record<number, CardLayoutState> {
@@ -39,9 +55,11 @@ function readStoredLayout(): Record<number, CardLayoutState> {
       if (!Number.isInteger(id) || id <= 0) continue;
       const row = value as Partial<CardLayoutState> | undefined;
       out[id] = {
-        order: Math.max(0, Number(row?.order ?? 0) || 0),
-        pinned: Boolean(row?.pinned),
+        x: Math.max(0, Number(row?.x ?? 0) || 0),
+        y: Math.max(0, Number(row?.y ?? 0) || 0),
         scale: clampScale(Number(row?.scale ?? 1)),
+        pinned: Boolean(row?.pinned),
+        z: Math.max(1, Number(row?.z ?? 1) || 1),
       };
     }
     return out;
@@ -58,140 +76,206 @@ function writeStoredLayout(layout: Record<number, CardLayoutState>) {
   }
 }
 
-function byLayout(a: Contact, b: Contact, map: Record<number, CardLayoutState>, fallback: Map<number, number>) {
-  const la = map[a.id];
-  const lb = map[b.id];
-  const pinnedA = Boolean(la?.pinned);
-  const pinnedB = Boolean(lb?.pinned);
-  if (pinnedA !== pinnedB) return pinnedA ? -1 : 1;
-
-  const orderA = Number.isFinite(la?.order) ? (la?.order as number) : (fallback.get(a.id) ?? 0);
-  const orderB = Number.isFinite(lb?.order) ? (lb?.order as number) : (fallback.get(b.id) ?? 0);
-  if (orderA !== orderB) return orderA - orderB;
-
-  const fallbackA = fallback.get(a.id) ?? 0;
-  const fallbackB = fallback.get(b.id) ?? 0;
-  return fallbackA - fallbackB;
-}
-
 export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactClick, onCardLayoutChange, loading }) => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const pinnedZoneHeight = isMobile ? 96 : 118;
+  const baseCardWidth = isMobile ? 260 : 312;
+  const baseCardHeight = isMobile ? 272 : 316;
+  const gap = isMobile ? 14 : 18;
+  const columns = isMobile ? 1 : 3;
+
   const [layoutMap, setLayoutMap] = React.useState<Record<number, CardLayoutState>>(() => readStoredLayout());
   const [draggingId, setDraggingId] = React.useState<number | null>(null);
-  const [dragOverId, setDragOverId] = React.useState<number | null>(null);
-
-  const layoutForIndex = (index: number) => {
-    if (index === 0) {
-      return {
-        gridColumn: { xs: '1 / -1', sm: '1 / -1', md: 'span 12', lg: 'span 8' },
-      };
-    }
-    if (index === 1) {
-      return {
-        gridColumn: { xs: '1 / -1', sm: 'span 1', md: 'span 6', lg: 'span 4' },
-      };
-    }
-    if (index === 5 || index === 6) {
-      return {
-        gridColumn: { xs: '1 / -1', sm: '1 / -1', md: 'span 12', lg: 'span 6' },
-      };
-    }
-    return {
-      gridColumn: { xs: '1 / -1', sm: 'span 1', md: 'span 6', lg: 'span 4' },
-    };
-  };
+  const draggingRef = React.useRef<DraggingState | null>(null);
+  const zRef = React.useRef<number>(400);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
     setLayoutMap((prev) => {
       const next: Record<number, CardLayoutState> = {};
       contacts.forEach((contact, index) => {
-        const current = prev[contact.id];
+        const old = prev[contact.id];
+        if (old) {
+          next[contact.id] = {
+            x: Math.max(0, Number(old.x) || 0),
+            y: Math.max(0, Number(old.y) || 0),
+            scale: clampScale(old.scale),
+            pinned: Boolean(old.pinned),
+            z: Math.max(1, Number(old.z) || 1),
+          };
+          return;
+        }
+
+        const col = index % columns;
+        const row = Math.floor(index / columns);
         next[contact.id] = {
-          order: Math.max(0, Number(current?.order ?? index) || 0),
-          pinned: Boolean(current?.pinned),
-          scale: clampScale(Number(current?.scale ?? 1)),
+          x: 20 + col * (baseCardWidth + gap),
+          y: pinnedZoneHeight + 24 + row * (baseCardHeight + gap),
+          scale: 1,
+          pinned: false,
+          z: ++zRef.current,
         };
       });
       return next;
     });
-  }, [contacts]);
-
-  const fallbackOrderMap = React.useMemo(() => {
-    const map = new Map<number, number>();
-    (contacts ?? []).forEach((contact, index) => map.set(contact.id, index));
-    return map;
-  }, [contacts]);
-
-  const orderedContacts = React.useMemo(() => {
-    if (!contacts) return [];
-    const cloned = [...contacts];
-    cloned.sort((a, b) => byLayout(a, b, layoutMap, fallbackOrderMap));
-    return cloned;
-  }, [contacts, fallbackOrderMap, layoutMap]);
+  }, [baseCardHeight, baseCardWidth, columns, contacts, gap, pinnedZoneHeight]);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
     writeStoredLayout(layoutMap);
-    if (!onCardLayoutChange) return;
-    const payload: AgentCardLayoutItem[] = orderedContacts.map((contact, index) => ({
-      contact_id: contact.id,
-      display_name: contact.display_name || contact.handle || `contact-${contact.id}`,
-      pinned: Boolean(layoutMap[contact.id]?.pinned),
-      scale: clampScale(Number(layoutMap[contact.id]?.scale ?? 1)),
-      order: index,
-    }));
+  }, [contacts, layoutMap]);
+
+  const sortedForMemory = React.useMemo(() => {
+    if (!contacts) return [];
+    return [...contacts].sort((a, b) => {
+      const la = layoutMap[a.id];
+      const lb = layoutMap[b.id];
+      if (!la || !lb) return a.id - b.id;
+      // 序数按左上角位置确定。
+      if (la.y !== lb.y) return la.y - lb.y;
+      if (la.x !== lb.x) return la.x - lb.x;
+      return a.id - b.id;
+    });
+  }, [contacts, layoutMap]);
+
+  React.useEffect(() => {
+    if (!contacts || contacts.length === 0 || !onCardLayoutChange) return;
+    const payload: AgentCardLayoutItem[] = sortedForMemory.map((contact, index) => {
+      const layout = layoutMap[contact.id];
+      return {
+        contact_id: contact.id,
+        display_name: contact.display_name || contact.handle || `contact-${contact.id}`,
+        pinned: Boolean(layout?.pinned),
+        scale: clampScale(layout?.scale ?? 1),
+        order: index,
+        x: Math.max(0, Math.round(layout?.x ?? 0)),
+        y: Math.max(0, Math.round(layout?.y ?? 0)),
+      };
+    });
     onCardLayoutChange(payload);
-  }, [contacts, layoutMap, onCardLayoutChange, orderedContacts]);
+  }, [contacts, layoutMap, onCardLayoutChange, sortedForMemory]);
 
-  const updateScale = React.useCallback((contact: Contact, nextScale: number) => {
-    setLayoutMap((prev) => ({
-      ...prev,
-      [contact.id]: {
-        order: prev[contact.id]?.order ?? 0,
-        pinned: Boolean(prev[contact.id]?.pinned),
-        scale: clampScale(nextScale),
-      },
-    }));
-  }, []);
-
-  const togglePin = React.useCallback((contact: Contact) => {
+  const handleTogglePin = React.useCallback((contact: Contact) => {
     setLayoutMap((prev) => {
-      const current = prev[contact.id] ?? { order: 0, pinned: false, scale: 1 };
-      const nextPinned = !current.pinned;
-      const orders = Object.values(prev).map((item) => item.order);
-      const minOrder = orders.length ? Math.min(...orders) : 0;
-      const maxOrder = orders.length ? Math.max(...orders) : 0;
+      const current = prev[contact.id] ?? {
+        x: 20,
+        y: pinnedZoneHeight + 24,
+        scale: 1,
+        pinned: false,
+        z: ++zRef.current,
+      };
+      const toPinned = !current.pinned;
+      if (!toPinned) {
+        return {
+          ...prev,
+          [contact.id]: {
+            ...current,
+            pinned: false,
+            y: current.y < pinnedZoneHeight ? pinnedZoneHeight + 24 : current.y,
+            z: ++zRef.current,
+          },
+        };
+      }
+
+      const pinnedCount = Object.values(prev).filter((x) => x.pinned && x !== current).length;
+      const pinnedCol = pinnedCount % columns;
+      const pinnedRow = Math.floor(pinnedCount / columns);
       return {
         ...prev,
         [contact.id]: {
-          order: nextPinned ? minOrder - 1 : maxOrder + 1,
-          pinned: nextPinned,
-          scale: clampScale(current.scale),
+          ...current,
+          pinned: true,
+          x: 16 + pinnedCol * (baseCardWidth * 0.86),
+          y: 12 + pinnedRow * Math.max(74, baseCardHeight * 0.32),
+          z: ++zRef.current,
+        },
+      };
+    });
+  }, [baseCardHeight, baseCardWidth, columns, pinnedZoneHeight]);
+
+  const handleScaleChange = React.useCallback((contact: Contact, nextScale: number) => {
+    setLayoutMap((prev) => {
+      const current = prev[contact.id];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [contact.id]: {
+          ...current,
+          scale: round2(clampScale(nextScale)),
+          z: ++zRef.current,
         },
       };
     });
   }, []);
 
-  const reorder = React.useCallback((fromId: number, toId: number) => {
-    if (fromId === toId) return;
+  const handlePointerDown = React.useCallback(
+    (contactId: number, event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const state = layoutMap[contactId];
+      if (!state) return;
+
+      if ((event.target as HTMLElement)?.closest('[data-card-control="1"]')) return;
+
+      event.preventDefault();
+      (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
+      draggingRef.current = {
+        id: contactId,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: state.x,
+        originY: state.y,
+      };
+      setDraggingId(contactId);
+      setLayoutMap((prev) => ({
+        ...prev,
+        [contactId]: {
+          ...prev[contactId],
+          z: ++zRef.current,
+        },
+      }));
+    },
+    [layoutMap],
+  );
+
+  const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = draggingRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.startX;
+    const dy = event.clientY - drag.startY;
     setLayoutMap((prev) => {
-      const ids = orderedContacts.map((contact) => contact.id);
-      const fromIndex = ids.indexOf(fromId);
-      const toIndex = ids.indexOf(toId);
-      if (fromIndex < 0 || toIndex < 0) return prev;
-      ids.splice(toIndex, 0, ids.splice(fromIndex, 1)[0]);
-      const next: Record<number, CardLayoutState> = { ...prev };
-      ids.forEach((id, index) => {
-        const cur = next[id] ?? { pinned: false, scale: 1, order: index };
-        next[id] = {
-          pinned: Boolean(cur.pinned),
-          scale: clampScale(cur.scale),
-          order: index,
-        };
-      });
-      return next;
+      const current = prev[drag.id];
+      if (!current) return prev;
+      return {
+        ...prev,
+        [drag.id]: {
+          ...current,
+          x: Math.max(0, drag.originX + dx),
+          y: Math.max(0, drag.originY + dy),
+        },
+      };
     });
-  }, [orderedContacts]);
+  }, []);
+
+  const finishDrag = React.useCallback((pointerId: number | null = null) => {
+    if (pointerId !== null && draggingRef.current && draggingRef.current.pointerId !== pointerId) return;
+    draggingRef.current = null;
+    setDraggingId(null);
+  }, []);
+
+  const canvasHeight = React.useMemo(() => {
+    if (!contacts || contacts.length === 0) return 580;
+    let maxBottom = pinnedZoneHeight + 120;
+    contacts.forEach((contact) => {
+      const layout = layoutMap[contact.id];
+      if (!layout) return;
+      const h = baseCardHeight * clampScale(layout.scale);
+      const bottom = layout.y + h;
+      if (bottom > maxBottom) maxBottom = bottom;
+    });
+    return Math.max(580, Math.ceil(maxBottom + 90));
+  }, [baseCardHeight, contacts, layoutMap, pinnedZoneHeight]);
 
   if (loading || !contacts) {
     return (
@@ -202,16 +286,14 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
             gridTemplateColumns: {
               xs: '1fr',
               sm: 'repeat(2, minmax(0, 1fr))',
-              md: 'repeat(12, minmax(0, 1fr))',
+              md: 'repeat(3, minmax(0, 1fr))',
             },
             gap: { xs: 2, md: 3 },
             alignItems: 'start',
           }}
         >
           {Array.from({ length: 8 }).map((_, i) => (
-            <Box key={i} sx={layoutForIndex(i)}>
-              <ContactSkeleton variant={i === 0 ? 'feature' : 'standard'} />
-            </Box>
+            <ContactSkeleton key={i} variant={i === 0 ? 'feature' : 'standard'} />
           ))}
         </Box>
       </Box>
@@ -219,83 +301,14 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
   }
 
   if (contacts.length === 0) {
-    const now = new Date();
-    const sampleContacts: Contact[] = [
-      {
-        id: -1,
-        display_name: 'MercuryDesk 编辑台',
-        handle: 'editorial@mercurydesk',
-        avatar_url: null,
-        last_message_at: now.toISOString(),
-        unread_count: 0,
-        latest_subject: '欢迎来到「按发信人聚合」收件箱',
-        latest_preview:
-          '连接你的真实邮箱后即可同步邮件。这张卡片是样例，用来展示“重点发信人（大卡）”在杂志式布局中的效果。',
-        latest_source: 'email',
-        latest_received_at: now.toISOString(),
-      },
-      {
-        id: -2,
-        display_name: 'octocat',
-        handle: 'octocat@github',
-        avatar_url: null,
-        last_message_at: new Date(now.getTime() - 1000 * 60 * 42).toISOString(),
-        unread_count: 0,
-        latest_subject: '请求你 Review：优化主面板交互',
-        latest_preview:
-          '这是一张“标准卡片”样例——信息更密但依然清晰。你也可以连接 GitHub 来同步真实通知。',
-        latest_source: 'github',
-        latest_received_at: new Date(now.getTime() - 1000 * 60 * 42).toISOString(),
-      },
-    ];
-
     return (
-      <Box
-        component={motion.div}
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.5 }}
-        p={{ xs: 2, md: 5 }}
-      >
-        <Box sx={{ mb: { xs: 2.5, md: 3 } }}>
-          <Typography variant="overline" sx={{ letterSpacing: '0.22em', opacity: 0.75 }}>
-            样例布局
-          </Typography>
-          <Typography variant="h4" fontWeight={900} sx={{ letterSpacing: '-0.03em', mt: 0.5 }}>
-            你的收件箱还没有内容。
-          </Typography>
-          <Typography variant="body1" color="textSecondary" sx={{ maxWidth: 760, mt: 1.25 }}>
-            点击顶部 <b>同步</b> 拉取演示消息，或先到设置里连接真实邮箱/GitHub。现在支持拖拽排序、置顶与缩放卡片。
-          </Typography>
-        </Box>
-
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: {
-              xs: '1fr',
-              sm: 'repeat(2, minmax(0, 1fr))',
-              md: 'repeat(12, minmax(0, 1fr))',
-            },
-            gap: { xs: 2, md: 3 },
-            gridAutoFlow: { md: 'row dense' },
-            alignItems: 'start',
-          }}
-        >
-          {sampleContacts.map((contact, index) => (
-            <Box key={contact.id} sx={layoutForIndex(index)}>
-              <ContactCard
-                contact={contact}
-                onClick={() => {}}
-                index={index}
-                variant={index === 0 ? 'feature' : 'standard'}
-                disabled
-                tag="样例"
-              />
-            </Box>
-          ))}
-        </Box>
+      <Box p={{ xs: 2, md: 5 }}>
+        <Typography variant="h5" fontWeight={900}>
+          你的收件箱还没有内容。
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          连接账号后，这里会变成可拖放与缩放的卡片画板。
+        </Typography>
       </Box>
     );
   }
@@ -306,72 +319,90 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.5 }}
+      transition={{ duration: 0.45 }}
       p={{ xs: 2, md: 5 }}
     >
-      <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <PushPinIcon fontSize="small" />
+      <Box sx={{ mb: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
-          支持拖拽排序、置顶、缩放。你的布局偏好会同步到 Agent 记忆。
+          画板模式: 拖动卡片到任意位置，左上角坐标决定序数。置顶卡片会吸附到顶部置顶带。
         </Typography>
       </Box>
+
       <Box
         sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: '1fr',
-            sm: 'repeat(2, minmax(0, 1fr))',
-            md: 'repeat(12, minmax(0, 1fr))',
-          },
-          gap: { xs: 2, md: 3 },
-          gridAutoFlow: { md: 'row dense' },
-          alignItems: 'start',
+          position: 'relative',
+          minHeight: canvasHeight,
+          border: '2px solid',
+          borderColor: 'divider',
+          boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
+          backgroundColor: alpha(theme.palette.background.paper, 0.86),
+          backgroundImage: `
+            linear-gradient(${alpha(theme.palette.text.primary, 0.06)} 1px, transparent 1px),
+            linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.06)} 1px, transparent 1px)
+          `,
+          backgroundSize: `${isMobile ? 18 : 24}px ${isMobile ? 18 : 24}px`,
+          overflow: 'hidden',
         }}
       >
-        {orderedContacts.map((contact, index) => {
-          const id = contact.id;
-          const pinned = Boolean(layoutMap[id]?.pinned);
-          const scale = clampScale(Number(layoutMap[id]?.scale ?? 1));
-          const isDragging = draggingId === id;
-          const isDragOver = dragOverId === id && draggingId !== null && draggingId !== id;
+        <Box
+          sx={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            right: 0,
+            height: pinnedZoneHeight,
+            px: 2,
+            py: 1,
+            borderBottom: '2px dashed',
+            borderColor: alpha(theme.palette.primary.main, 0.5),
+            bgcolor: alpha(theme.palette.primary.main, 0.08),
+            pointerEvents: 'none',
+          }}
+        >
+          <Typography variant="overline" sx={{ fontWeight: 900, letterSpacing: '0.1em' }}>
+            置顶带
+          </Typography>
+        </Box>
+
+        {contacts.map((contact) => {
+          const layout = layoutMap[contact.id];
+          if (!layout) return null;
+          const scale = clampScale(layout.scale);
+          const width = baseCardWidth * scale;
+          const height = baseCardHeight * scale;
+          const pinned = Boolean(layout.pinned);
+          const dragging = draggingId === contact.id;
+
           return (
             <Box
-              key={id}
+              key={contact.id}
               sx={{
-                ...layoutForIndex(index),
-                opacity: isDragging ? 0.35 : 1,
-                outline: isDragOver ? '2px dashed' : 'none',
-                outlineColor: isDragOver ? 'primary.main' : 'transparent',
-                outlineOffset: 4,
+                position: 'absolute',
+                left: layout.x,
+                top: layout.y,
+                width,
+                height,
+                zIndex: dragging ? 9999 : layout.z,
+                transition: dragging ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
+                transform: dragging ? 'scale(1.015)' : 'scale(1)',
+                boxShadow: dragging
+                  ? `0 0 0 2px ${theme.palette.primary.main}, 0 10px 26px ${alpha(theme.palette.text.primary, 0.35)}`
+                  : undefined,
               }}
-              draggable
-              onDragStart={() => {
-                setDraggingId(id);
-              }}
-              onDragEnd={() => {
-                setDraggingId(null);
-                setDragOverId(null);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setDragOverId(id);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (draggingId !== null) reorder(draggingId, id);
-                setDraggingId(null);
-                setDragOverId(null);
-              }}
+              onPointerDown={(event) => handlePointerDown(contact.id, event)}
+              onPointerMove={handlePointerMove}
+              onPointerUp={(event) => finishDrag(event.pointerId)}
+              onPointerCancel={(event) => finishDrag(event.pointerId)}
             >
               <ContactCard
                 contact={contact}
                 onClick={onContactClick}
-                index={index}
-                variant={index === 0 ? 'feature' : 'standard'}
+                index={0}
+                variant={pinned ? 'feature' : 'standard'}
                 pinned={pinned}
                 scale={scale}
-                onTogglePin={togglePin}
-                onScaleChange={updateScale}
+                onTogglePin={handleTogglePin}
+                onScaleChange={handleScaleChange}
               />
             </Box>
           );

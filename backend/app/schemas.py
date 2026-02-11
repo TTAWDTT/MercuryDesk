@@ -174,6 +174,8 @@ class AgentCardLayoutItem(BaseModel):
     pinned: bool = False
     scale: float = Field(default=1.0, ge=0.8, le=1.5)
     order: int = Field(default=0, ge=0)
+    x: float = Field(default=0, ge=0)
+    y: float = Field(default=0, ge=0)
 
 
 class AgentCardLayoutUpdate(BaseModel):

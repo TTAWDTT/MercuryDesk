@@ -175,6 +175,16 @@ class AgentMemoryService:
             except Exception:
                 order = 0
             order = max(0, order)
+            try:
+                x = float(item.get("x") or 0)
+            except Exception:
+                x = 0.0
+            try:
+                y = float(item.get("y") or 0)
+            except Exception:
+                y = 0.0
+            x = max(0.0, x)
+            y = max(0.0, y)
             cleaned_cards.append(
                 {
                     "contact_id": contact_id,
@@ -182,15 +192,17 @@ class AgentMemoryService:
                     "pinned": pinned,
                     "scale": round(scale, 2),
                     "order": order,
+                    "x": round(x, 1),
+                    "y": round(y, 1),
                 }
             )
             if len(cleaned_cards) >= 60:
                 break
 
-        cleaned_cards.sort(key=lambda x: (0 if bool(x["pinned"]) else 1, int(x["order"]), str(x["display_name"])))
+        cleaned_cards.sort(key=lambda x: (float(x["y"]), float(x["x"]), int(x["order"]), str(x["display_name"])))
         pinned_names = [str(c["display_name"]) for c in cleaned_cards if bool(c["pinned"])][:8]
         scaled_names = [f"{c['display_name']}({c['scale']})" for c in cleaned_cards if abs(float(c["scale"]) - 1.0) > 0.01][:8]
-        order_preview = [str(c["display_name"]) for c in cleaned_cards[:12]]
+        order_preview = [f"{c['display_name']}@({c['x']},{c['y']})" for c in cleaned_cards[:12]]
 
         summary_lines = [
             "卡片布局偏好:",

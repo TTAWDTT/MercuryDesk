@@ -122,9 +122,31 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           position: 'relative',
           overflow: 'hidden',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          border: '1px solid',
-          borderColor: 'divider',
+          border: '2px solid',
+          borderColor: pinned ? 'primary.main' : 'divider',
           opacity: disabled ? 0.65 : 1,
+          boxShadow: pinned
+            ? `7px 7px 0 0 ${alpha(theme.palette.primary.main, 0.45)}`
+            : undefined,
+          '&::before': pinned
+            ? {
+                content: '"置顶"',
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                px: 1,
+                py: 0.25,
+                fontSize: '0.7rem',
+                fontWeight: 900,
+                letterSpacing: '0.08em',
+                bgcolor: 'primary.main',
+                color: theme.palette.mode === 'light' ? '#fff' : '#000',
+                zIndex: 4,
+                borderRight: '2px solid',
+                borderBottom: '2px solid',
+                borderColor: 'text.primary',
+              }
+            : undefined,
           '&:hover': {
             ...(disabled
               ? {}
@@ -151,6 +173,9 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.25)}`,
             }}
             onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            onPointerDown={(event) => event.stopPropagation()}
+            data-card-control="1"
           >
             <IconButton
               size="small"
@@ -237,12 +262,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({
         <CardContent
           sx={{
             p: isFeature
-              ? { xs: 3.5 * safeScale, md: 4 * safeScale }
-              : { xs: 3 * safeScale, md: 3.5 * safeScale },
+              ? { xs: 3.5, md: 4 }
+              : { xs: 3, md: 3.5 },
             '&:last-child': {
               pb: isFeature
-                ? { xs: 3.5 * safeScale, md: 4 * safeScale }
-                : { xs: 3 * safeScale, md: 3.5 * safeScale }
+                ? { xs: 3.5, md: 4 }
+                : { xs: 3, md: 3.5 }
             }
           }}
         >
@@ -253,8 +278,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               sx={{ 
                   bgcolor: alpha(theme.palette.primary.main, 0.1),
                   color: theme.palette.primary.main,
-                  width: (isFeature ? 72 : 60) * safeScale,
-                  height: (isFeature ? 72 : 60) * safeScale,
+                  width: isFeature ? 72 : 60,
+                  height: isFeature ? 72 : 60,
                   fontWeight: 600,
                   borderRadius: 0,
                   border: '2px solid',
@@ -270,8 +295,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 noWrap
                 sx={{
                   fontSize: isFeature
-                    ? { xs: `${1.25 * safeScale}rem`, md: `${1.4 * safeScale}rem` }
-                    : { xs: `${1.1 * safeScale}rem`, md: `${1.18 * safeScale}rem` },
+                    ? { xs: '1.25rem', md: '1.4rem' }
+                    : { xs: '1.1rem', md: '1.18rem' },
                   fontWeight: 700,
                 }}
               >
@@ -281,7 +306,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 variant="body2"
                 color="textSecondary"
                 noWrap
-                sx={{ fontSize: isFeature ? { xs: `${0.9 * safeScale}rem`, md: `${0.95 * safeScale}rem` } : `${0.85 * safeScale}rem` }}
+                sx={{ fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem' }}
               >
                 {contact.handle}
               </Typography>
@@ -294,8 +319,8 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 border: '1px dashed',
                 borderColor: alpha(theme.palette.text.primary, 0.2),
                 borderRadius: 0,
-                p: isFeature ? { xs: 2.25 * safeScale, md: 2.75 * safeScale } : 2 * safeScale,
-                mb: (isFeature ? 2.5 : 2) * safeScale,
+                p: isFeature ? { xs: 2.25, md: 2.75 } : 2,
+                mb: isFeature ? 2.5 : 2,
             }}
           >
             {previewImageUrl && !previewImageLoadFailed && (
@@ -337,7 +362,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 lineHeight: 1.25,
-                fontSize: isFeature ? `${1.06 * safeScale}rem` : `${0.92 * safeScale}rem`,
+                fontSize: isFeature ? '1.06rem' : '0.92rem',
               }}
             >
               {previewTitle}
@@ -348,7 +373,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              fontSize: isFeature ? { xs: `${0.9 * safeScale}rem`, md: `${0.95 * safeScale}rem` } : `${0.85 * safeScale}rem`,
+              fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
               lineHeight: 1.7
             }}>
               {previewText}
