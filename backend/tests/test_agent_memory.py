@@ -112,6 +112,7 @@ def test_agent_memory_endpoints():
     layout = client.post(
         "/api/v1/agent/memory/layout",
         json={
+            "workspace": "work",
             "cards": [
                 {
                     "contact_id": 1,
@@ -139,6 +140,43 @@ def test_agent_memory_endpoints():
     )
     assert layout.status_code == 200, layout.text
     assert layout.json()["ok"] is True
+
+    pin_rec = client.get("/api/v1/agent/pin-recommendations?limit=3", headers=headers)
+    assert pin_rec.status_code == 200, pin_rec.text
+    assert isinstance(pin_rec.json().get("items"), list)
+
+    todo = client.post(
+        "/api/v1/agent/todos",
+        json={"title": "跟进 MercuryDesk 编辑台", "priority": "high", "contact_id": 1},
+        headers=headers,
+    )
+    assert todo.status_code == 200, todo.text
+    todo_id = int(todo.json()["id"])
+
+    todo_list = client.get("/api/v1/agent/todos?include_done=false", headers=headers)
+    assert todo_list.status_code == 200, todo_list.text
+    assert any(int(item["id"]) == todo_id for item in todo_list.json())
+
+    todo_done = client.patch(f"/api/v1/agent/todos/{todo_id}", json={"done": True}, headers=headers)
+    assert todo_done.status_code == 200, todo_done.text
+    assert bool(todo_done.json()["done"]) is True
+
+    brief = client.get("/api/v1/agent/daily-brief", headers=headers)
+    assert brief.status_code == 200, brief.text
+    assert isinstance(brief.json().get("summary"), str)
+    assert isinstance(brief.json().get("actions"), list)
+
+    adv = client.post(
+        "/api/v1/agent/search/advanced",
+        json={"query": "MercuryDesk", "days": 120, "limit": 5},
+        headers=headers,
+    )
+    assert adv.status_code == 200, adv.text
+    assert "items" in adv.json()
+
+    todo_deleted = client.delete(f"/api/v1/agent/todos/{todo_id}", headers=headers)
+    assert todo_deleted.status_code == 200, todo_deleted.text
+    assert bool(todo_deleted.json()["deleted"]) is True
 
     deleted = client.delete(f"/api/v1/agent/memory/notes/{note['id']}", headers=headers)
     assert deleted.status_code == 200, deleted.text

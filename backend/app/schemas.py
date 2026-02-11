@@ -181,6 +181,92 @@ class AgentCardLayoutItem(BaseModel):
 
 class AgentCardLayoutUpdate(BaseModel):
     cards: list[AgentCardLayoutItem] = Field(default_factory=list)
+    workspace: str = Field(default="default", min_length=1, max_length=64)
+
+
+class AgentPinRecommendationItem(BaseModel):
+    contact_id: int
+    display_name: str
+    score: float
+    reasons: list[str] = Field(default_factory=list)
+    unread_count: int = 0
+    last_message_at: Optional[datetime] = None
+
+
+class AgentPinRecommendationResponse(BaseModel):
+    generated_at: datetime
+    items: list[AgentPinRecommendationItem] = Field(default_factory=list)
+
+
+class AgentTodoCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    detail: str = Field(default="", max_length=2000)
+    due_at: Optional[str] = None
+    priority: str = Field(default="normal", min_length=1, max_length=16)
+    contact_id: Optional[int] = None
+    message_id: Optional[int] = None
+
+
+class AgentTodoUpdate(BaseModel):
+    done: Optional[bool] = None
+    title: Optional[str] = Field(None, min_length=1, max_length=240)
+    detail: Optional[str] = Field(None, max_length=2000)
+    due_at: Optional[str] = None
+    priority: Optional[str] = Field(None, min_length=1, max_length=16)
+
+
+class AgentTodoOut(BaseModel):
+    id: int
+    title: str
+    detail: str = ""
+    done: bool = False
+    due_at: Optional[str] = None
+    priority: str = "normal"
+    contact_id: Optional[int] = None
+    message_id: Optional[int] = None
+    updated_at: str
+
+
+class AgentDailyBriefAction(BaseModel):
+    kind: str
+    title: str
+    detail: str = ""
+    contact_id: Optional[int] = None
+    message_id: Optional[int] = None
+    priority: str = "normal"
+
+
+class AgentDailyBriefResponse(BaseModel):
+    generated_at: datetime
+    summary: str
+    top_updates: list[AgentFocusItemOut] = Field(default_factory=list)
+    actions: list[AgentDailyBriefAction] = Field(default_factory=list)
+
+
+class AgentAdvancedSearchRequest(BaseModel):
+    query: str = Field(default="", max_length=200)
+    source: Optional[str] = Field(default=None, max_length=50)
+    unread_only: bool = False
+    days: int = Field(default=30, ge=1, le=365)
+    limit: int = Field(default=20, ge=1, le=100)
+
+
+class AgentAdvancedSearchItem(BaseModel):
+    message_id: int
+    contact_id: int
+    sender: str
+    subject: str
+    source: str
+    received_at: str
+    preview: str
+    is_read: bool
+    score: float
+    reason: str = ""
+
+
+class AgentAdvancedSearchResponse(BaseModel):
+    total: int
+    items: list[AgentAdvancedSearchItem] = Field(default_factory=list)
 
 
 class AgentSummarizeRequest(BaseModel):
