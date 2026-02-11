@@ -41,7 +41,22 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
-export const ContactCard: React.FC<ContactCardProps> = ({
+function areEqualContactCardProps(prev: ContactCardProps, next: ContactCardProps): boolean {
+  return (
+    prev.contact === next.contact &&
+    prev.index === next.index &&
+    prev.variant === next.variant &&
+    prev.disabled === next.disabled &&
+    prev.tag === next.tag &&
+    prev.pinned === next.pinned &&
+    prev.cardWidth === next.cardWidth &&
+    prev.cardHeight === next.cardHeight &&
+    prev.onClick === next.onClick &&
+    prev.onTogglePin === next.onTogglePin
+  );
+}
+
+const ContactCardView: React.FC<ContactCardProps> = ({
   contact,
   onClick,
   index,
@@ -444,3 +459,5 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     </motion.div>
   );
 };
+
+export const ContactCard = React.memo(ContactCardView, areEqualContactCardProps);
