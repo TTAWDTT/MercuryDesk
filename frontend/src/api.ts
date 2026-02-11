@@ -120,6 +120,66 @@ export type AgentCardLayoutItem = {
   height: number;
 };
 
+export type AgentPinRecommendationItem = {
+  contact_id: number;
+  display_name: string;
+  score: number;
+  reasons: string[];
+  unread_count: number;
+  last_message_at?: string | null;
+};
+
+export type AgentPinRecommendationResponse = {
+  generated_at: string;
+  items: AgentPinRecommendationItem[];
+};
+
+export type AgentTodoItem = {
+  id: number;
+  title: string;
+  detail: string;
+  done: boolean;
+  due_at?: string | null;
+  priority: string;
+  contact_id?: number | null;
+  message_id?: number | null;
+  updated_at: string;
+};
+
+export type AgentDailyBriefAction = {
+  kind: string;
+  title: string;
+  detail: string;
+  contact_id?: number | null;
+  message_id?: number | null;
+  priority: string;
+};
+
+export type AgentDailyBrief = {
+  generated_at: string;
+  summary: string;
+  top_updates: AgentFocusItem[];
+  actions: AgentDailyBriefAction[];
+};
+
+export type AgentAdvancedSearchItem = {
+  message_id: number;
+  contact_id: number;
+  sender: string;
+  subject: string;
+  source: string;
+  received_at: string;
+  preview: string;
+  is_read: boolean;
+  score: number;
+  reason: string;
+};
+
+export type AgentAdvancedSearchResponse = {
+  total: number;
+  items: AgentAdvancedSearchItem[];
+};
+
 export type AccountOAuthStart = {
   provider: string;
   auth_url: string;
@@ -495,11 +555,73 @@ export async function deleteAgentMemoryNote(noteId: number): Promise<{ deleted: 
   });
 }
 
-export async function syncAgentCardLayout(cards: AgentCardLayoutItem[]): Promise<{ ok: boolean; note_id: number; count: number }> {
+export async function syncAgentCardLayout(
+  cards: AgentCardLayoutItem[],
+  workspace = "default"
+): Promise<{ ok: boolean; note_id: number; count: number }> {
   return await fetchJson<{ ok: boolean; note_id: number; count: number }>("/api/v1/agent/memory/layout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cards }),
+    body: JSON.stringify({ cards, workspace }),
+  });
+}
+
+export async function getPinRecommendations(limit = 6): Promise<AgentPinRecommendationResponse> {
+  return await fetchJson<AgentPinRecommendationResponse>(`/api/v1/agent/pin-recommendations?limit=${Math.max(1, Math.min(20, limit))}`);
+}
+
+export async function getDailyBrief(): Promise<AgentDailyBrief> {
+  return await fetchJson<AgentDailyBrief>("/api/v1/agent/daily-brief");
+}
+
+export async function listAgentTodos(includeDone = true): Promise<AgentTodoItem[]> {
+  const qs = includeDone ? "" : "?include_done=false";
+  return await fetchJson<AgentTodoItem[]>(`/api/v1/agent/todos${qs}`);
+}
+
+export async function createAgentTodo(payload: {
+  title: string;
+  detail?: string;
+  due_at?: string;
+  priority?: string;
+  contact_id?: number;
+  message_id?: number;
+}): Promise<AgentTodoItem> {
+  return await fetchJson<AgentTodoItem>("/api/v1/agent/todos", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAgentTodo(
+  todoId: number,
+  payload: { done?: boolean; title?: string; detail?: string; due_at?: string; priority?: string }
+): Promise<AgentTodoItem> {
+  return await fetchJson<AgentTodoItem>(`/api/v1/agent/todos/${todoId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteAgentTodo(todoId: number): Promise<{ deleted: boolean; todo_id: number }> {
+  return await fetchJson<{ deleted: boolean; todo_id: number }>(`/api/v1/agent/todos/${todoId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function advancedSearch(payload: {
+  query?: string;
+  source?: string;
+  unread_only?: boolean;
+  days?: number;
+  limit?: number;
+}): Promise<AgentAdvancedSearchResponse> {
+  return await fetchJson<AgentAdvancedSearchResponse>("/api/v1/agent/search/advanced", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

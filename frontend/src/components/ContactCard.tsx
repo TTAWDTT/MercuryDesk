@@ -6,12 +6,20 @@ import Avatar from '@mui/material/Avatar';
 import Box from '@mui/material/Box';
 import Chip from '@mui/material/Chip';
 import IconButton from '@mui/material/IconButton';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import ListItemIcon from '@mui/material/ListItemIcon';
+import ListItemText from '@mui/material/ListItemText';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import EmailIcon from '@mui/icons-material/Email';
 import PersonIcon from '@mui/icons-material/Person';
 import RssFeedIcon from '@mui/icons-material/RssFeed';
 import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
 import PushPinIcon from '@mui/icons-material/PushPin';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import SummarizeIcon from '@mui/icons-material/Summarize';
+import ReplyIcon from '@mui/icons-material/Reply';
+import PlaylistAddCheckIcon from '@mui/icons-material/PlaylistAddCheck';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
@@ -34,6 +42,7 @@ interface ContactCardProps {
   cardWidth?: number;
   cardHeight?: number;
   onTogglePin?: (contact: Contact) => void;
+  onQuickAction?: (contact: Contact, action: 'summarize' | 'draft' | 'todo') => void;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -52,7 +61,8 @@ function areEqualContactCardProps(prev: ContactCardProps, next: ContactCardProps
     prev.cardWidth === next.cardWidth &&
     prev.cardHeight === next.cardHeight &&
     prev.onClick === next.onClick &&
-    prev.onTogglePin === next.onTogglePin
+    prev.onTogglePin === next.onTogglePin &&
+    prev.onQuickAction === next.onQuickAction
   );
 }
 
@@ -67,11 +77,13 @@ const ContactCardView: React.FC<ContactCardProps> = ({
   cardWidth,
   cardHeight,
   onTogglePin,
+  onQuickAction,
 }) => {
   const theme = useTheme();
   const isFeature = variant === 'feature';
   const isLight = theme.palette.mode === 'light';
   const [previewImageLoadFailed, setPreviewImageLoadFailed] = React.useState(false);
+  const [actionAnchor, setActionAnchor] = React.useState<null | HTMLElement>(null);
 
   const safeWidth = Math.max(160, Math.round(cardWidth ?? (isFeature ? 340 : 312)));
   const safeHeight = Math.max(140, Math.round(cardHeight ?? (isFeature ? 340 : 316)));
@@ -213,6 +225,23 @@ const ContactCardView: React.FC<ContactCardProps> = ({
           >
             <IconButton
               size="small"
+              onClick={(event) => setActionAnchor(event.currentTarget)}
+              sx={{
+                borderRadius: 0,
+                border: '1px solid',
+                borderColor: isLight ? '#000' : 'divider',
+                color: 'text.secondary',
+                bgcolor: isLight ? '#fff' : alpha(theme.palette.background.default, 0.5),
+                '&:hover': {
+                  bgcolor: isLight ? '#f2f2f2' : alpha(theme.palette.background.default, 0.8),
+                },
+              }}
+              aria-label="卡片动作"
+            >
+              <AutoAwesomeIcon fontSize="inherit" />
+            </IconButton>
+            <IconButton
+              size="small"
               onClick={() => onTogglePin?.(contact)}
               sx={{
                 borderRadius: 0,
@@ -232,6 +261,47 @@ const ContactCardView: React.FC<ContactCardProps> = ({
             </IconButton>
           </Box>
         )}
+        <Menu
+          anchorEl={actionAnchor}
+          open={Boolean(actionAnchor)}
+          onClose={() => setActionAnchor(null)}
+          onClick={(event) => event.stopPropagation()}
+          slotProps={{ paper: { sx: { borderRadius: 0, border: '2px solid', borderColor: 'text.primary' } } }}
+        >
+          <MenuItem
+            onClick={() => {
+              setActionAnchor(null);
+              onQuickAction?.(contact, 'summarize');
+            }}
+          >
+            <ListItemIcon>
+              <SummarizeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>快速总结</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setActionAnchor(null);
+              onQuickAction?.(contact, 'draft');
+            }}
+          >
+            <ListItemIcon>
+              <ReplyIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>生成回复草稿</ListItemText>
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              setActionAnchor(null);
+              onQuickAction?.(contact, 'todo');
+            }}
+          >
+            <ListItemIcon>
+              <PlaylistAddCheckIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>加入待办跟进</ListItemText>
+          </MenuItem>
+        </Menu>
 
         {tag && (
           <Box

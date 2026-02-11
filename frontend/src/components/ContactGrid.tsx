@@ -1,9 +1,11 @@
 import React from 'react';
-import { AgentCardLayoutItem, Contact } from '../api';
+import { AgentCardLayoutItem, AgentPinRecommendationItem, Contact } from '../api';
 import { ContactCard } from './ContactCard';
 import { ContactSkeleton } from './ContactSkeleton';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
+import Chip from '@mui/material/Chip';
 import { motion } from 'framer-motion';
 import { alpha, useTheme } from '@mui/material/styles';
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -13,6 +15,9 @@ interface ContactGridProps {
   onContactClick: (contact: Contact) => void;
   onCardLayoutChange?: (cards: AgentCardLayoutItem[]) => void;
   loading?: boolean;
+  workspace?: string;
+  pinRecommendations?: AgentPinRecommendationItem[];
+  onCardAction?: (contact: Contact, action: 'summarize' | 'draft' | 'todo') => void;
 }
 
 type CardLayoutState = {
@@ -46,10 +51,18 @@ type PointerSnapshot = {
   clientY: number;
 };
 
-const STORAGE_KEY = 'mercurydesk:contact-card-layout:v3';
+const STORAGE_KEY_PREFIX = 'mercurydesk:contact-card-layout:v4';
 const DRAG_THRESHOLD_PX = 5;
 const DRAG_CLICK_SUPPRESS_MS = 240;
 const NOOP_CONTACT_CLICK = (_contact: Contact) => {};
+const CARD_TOP_GUTTER = 2;
+const UNPINNED_MIN_OFFSET = 8;
+const LARGE_MODE_THRESHOLD = 200;
+
+function buildStorageKey(workspace: string): string {
+  const clean = (workspace || 'default').trim() || 'default';
+  return `${STORAGE_KEY_PREFIX}:${clean}`;
+}
 
 function clampNumber(value: number, min: number, max: number, fallback: number): number {
   const n = Number(value);
@@ -58,6 +71,7 @@ function clampNumber(value: number, min: number, max: number, fallback: number):
 }
 
 function readStoredLayout(
+  storageKey: string,
   baseWidth: number,
   baseHeight: number,
   minWidth: number,
@@ -66,7 +80,7 @@ function readStoredLayout(
   maxHeight: number,
 ): Record<number, CardLayoutState> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
@@ -97,9 +111,9 @@ function readStoredLayout(
   }
 }
 
-function writeStoredLayout(layout: Record<number, CardLayoutState>) {
+function writeStoredLayout(storageKey: string, layout: Record<number, CardLayoutState>) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
+    localStorage.setItem(storageKey, JSON.stringify(layout));
   } catch {
     // Ignore storage failures.
   }
@@ -143,7 +157,15 @@ function getHandleSx(direction: ResizeDirection) {
 
 const RESIZE_DIRECTIONS: ResizeDirection[] = ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'];
 
-export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactClick, onCardLayoutChange, loading }) => {
+export const ContactGrid: React.FC<ContactGridProps> = ({
+  contacts,
+  onContactClick,
+  onCardLayoutChange,
+  loading,
+  workspace = 'default',
+  pinRecommendations,
+  onCardAction,
+}) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
@@ -157,21 +179,102 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
   const gap = isMobile ? 14 : 18;
   const columns = isMobile ? 1 : 3;
 
+  const storageKey = React.useMemo(() => buildStorageKey(workspace), [workspace]);
   const [layoutMap, setLayoutMap] = React.useState<Record<number, CardLayoutState>>(() =>
-    readStoredLayout(baseCardWidth, baseCardHeight, minCardWidth, minCardHeight, maxCardWidth, maxCardHeight)
+    readStoredLayout(storageKey, baseCardWidth, baseCardHeight, minCardWidth, minCardHeight, maxCardWidth, maxCardHeight)
   );
   const [activeCardId, setActiveCardId] = React.useState<number | null>(null);
   const [interactionMode, setInteractionMode] = React.useState<'drag' | 'resize' | null>(null);
+  const [viewportRange, setViewportRange] = React.useState<{ top: number; bottom: number }>({ top: -999999, bottom: 999999 });
   const interactionRef = React.useRef<InteractionState | null>(null);
   const layoutMapRef = React.useRef<Record<number, CardLayoutState>>(layoutMap);
   const suppressClickUntilRef = React.useRef<Record<number, number>>({});
   const pendingPointerRef = React.useRef<PointerSnapshot | null>(null);
   const pointerRafRef = React.useRef<number | null>(null);
+  const canvasRef = React.useRef<HTMLDivElement | null>(null);
+  const canvasWidthRef = React.useRef<number>(0);
   const zRef = React.useRef<number>(500);
+  const pinnedZoneMaxY = Math.max(0, pinnedZoneHeight - CARD_TOP_GUTTER);
+  const unpinnedMinY = pinnedZoneHeight + UNPINNED_MIN_OFFSET;
+
+  const clampXWithinCanvas = React.useCallback((value: number): number => {
+    const maxX = canvasWidthRef.current > 0
+      ? Math.max(0, canvasWidthRef.current - 12)
+      : Number.POSITIVE_INFINITY;
+    return Math.max(0, Math.min(maxX, value));
+  }, []);
+
+  const clampYByPinState = React.useCallback((value: number, pinned: boolean): number => {
+    if (pinned) return clampNumber(value, 0, pinnedZoneMaxY, 0);
+    return Math.max(unpinnedMinY, value);
+  }, [pinnedZoneMaxY, unpinnedMinY]);
 
   React.useEffect(() => {
     layoutMapRef.current = layoutMap;
   }, [layoutMap]);
+
+  React.useEffect(() => {
+    const next = readStoredLayout(
+      storageKey,
+      baseCardWidth,
+      baseCardHeight,
+      minCardWidth,
+      minCardHeight,
+      maxCardWidth,
+      maxCardHeight
+    );
+    setLayoutMap(next);
+  }, [baseCardHeight, baseCardWidth, maxCardHeight, maxCardWidth, minCardHeight, minCardWidth, storageKey]);
+
+  React.useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      canvasWidthRef.current = element.clientWidth;
+    };
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  React.useEffect(() => {
+    if (!contacts || contacts.length <= LARGE_MODE_THRESHOLD) {
+      setViewportRange({ top: -999999, bottom: 999999 });
+      return;
+    }
+    let raf = 0;
+    const update = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const canvasTopGlobal = rect.top + window.scrollY;
+      const viewportTopGlobal = window.scrollY;
+      const viewportBottomGlobal = viewportTopGlobal + window.innerHeight;
+      const buffer = 900;
+      setViewportRange({
+        top: viewportTopGlobal - canvasTopGlobal - buffer,
+        bottom: viewportBottomGlobal - canvasTopGlobal + buffer,
+      });
+    };
+    const onScrollLike = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        update();
+      });
+    };
+    update();
+    window.addEventListener('scroll', onScrollLike, { passive: true });
+    window.addEventListener('resize', onScrollLike);
+    return () => {
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', onScrollLike);
+      window.removeEventListener('resize', onScrollLike);
+    };
+  }, [contacts]);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
@@ -180,12 +283,15 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
       contacts.forEach((contact, index) => {
         const old = prev[contact.id];
         if (old) {
+          const nextPinned = Boolean(old.pinned);
+          const nextX = clampXWithinCanvas(Math.max(0, Number(old.x) || 0));
+          const nextY = clampYByPinState(Math.max(0, Number(old.y) || 0), nextPinned);
           next[contact.id] = {
-            x: Math.max(0, Number(old.x) || 0),
-            y: Math.max(0, Number(old.y) || 0),
+            x: nextX,
+            y: nextY,
             width: clampNumber(old.width, minCardWidth, maxCardWidth, baseCardWidth),
             height: clampNumber(old.height, minCardHeight, maxCardHeight, baseCardHeight),
-            pinned: Boolean(old.pinned),
+            pinned: nextPinned,
             z: Math.max(1, Number(old.z) || 1),
           };
           return;
@@ -194,8 +300,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         const col = index % columns;
         const row = Math.floor(index / columns);
         next[contact.id] = {
-          x: 20 + col * (baseCardWidth + gap),
-          y: pinnedZoneHeight + 24 + row * (baseCardHeight + gap),
+          x: clampXWithinCanvas(20 + col * (baseCardWidth + gap)),
+          y: Math.max(unpinnedMinY, pinnedZoneHeight + 24 + row * (baseCardHeight + gap)),
           width: baseCardWidth,
           height: baseCardHeight,
           pinned: false,
@@ -215,13 +321,16 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     minCardHeight,
     minCardWidth,
     pinnedZoneHeight,
+    clampXWithinCanvas,
+    clampYByPinState,
+    unpinnedMinY,
   ]);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
     if (interactionMode !== null) return;
-    writeStoredLayout(layoutMap);
-  }, [contacts, interactionMode, layoutMap]);
+    writeStoredLayout(storageKey, layoutMap);
+  }, [contacts, interactionMode, layoutMap, storageKey]);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0 || !onCardLayoutChange) return;
@@ -264,12 +373,46 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     onCardLayoutChange,
   ]);
 
+  const recommendedMap = React.useMemo(() => {
+    const map = new Map<number, AgentPinRecommendationItem>();
+    for (const item of pinRecommendations ?? []) {
+      map.set(item.contact_id, item);
+    }
+    return map;
+  }, [pinRecommendations]);
+
+  const applyPinRecommendations = React.useCallback(() => {
+    if (!pinRecommendations?.length) return;
+    const top = pinRecommendations.slice(0, isMobile ? 2 : 4).map((x) => x.contact_id);
+    setLayoutMap((prev) => {
+      const next = { ...prev };
+      let pinnedCount = 0;
+      for (const cid of top) {
+        const current = next[cid];
+        if (!current) continue;
+        const pinnedCol = pinnedCount % columns;
+        const pinnedRow = Math.floor(pinnedCount / columns);
+        const pinnedStepX = isMobile ? 190 : 260;
+        const pinnedStepY = isMobile ? 92 : 98;
+        next[cid] = {
+          ...current,
+          pinned: true,
+          x: clampXWithinCanvas(14 + pinnedCol * pinnedStepX),
+          y: clampYByPinState(10 + pinnedRow * pinnedStepY, true),
+          z: ++zRef.current,
+        };
+        pinnedCount += 1;
+      }
+      return next;
+    });
+  }, [clampXWithinCanvas, clampYByPinState, columns, isMobile, pinRecommendations]);
+
   const handleTogglePin = React.useCallback(
     (contact: Contact) => {
       setLayoutMap((prev) => {
         const current = prev[contact.id] ?? {
-          x: 20,
-          y: pinnedZoneHeight + 24,
+          x: clampXWithinCanvas(20),
+          y: Math.max(unpinnedMinY, pinnedZoneHeight + 24),
           width: baseCardWidth,
           height: baseCardHeight,
           pinned: false,
@@ -283,7 +426,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
             [contact.id]: {
               ...current,
               pinned: false,
-              y: current.y < pinnedZoneHeight ? pinnedZoneHeight + 24 : current.y,
+              x: clampXWithinCanvas(current.x),
+              y: clampYByPinState(current.y, false),
               z: ++zRef.current,
             },
           };
@@ -300,14 +444,14 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           [contact.id]: {
             ...current,
             pinned: true,
-            x: 14 + pinnedCol * pinnedStepX,
-            y: 10 + pinnedRow * pinnedStepY,
+            x: clampXWithinCanvas(14 + pinnedCol * pinnedStepX),
+            y: clampYByPinState(10 + pinnedRow * pinnedStepY, true),
             z: ++zRef.current,
           },
         };
       });
     },
-    [baseCardHeight, baseCardWidth, columns, isMobile, pinnedZoneHeight]
+    [baseCardHeight, baseCardWidth, columns, isMobile, pinnedZoneHeight, clampXWithinCanvas, clampYByPinState, unpinnedMinY]
   );
 
   const startDrag = React.useCallback(
@@ -396,8 +540,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
             ...prev,
             [interaction.id]: {
               ...current,
-              x: Math.max(0, interaction.originX + dx),
-              y: Math.max(0, interaction.originY + dy),
+              x: clampXWithinCanvas(interaction.originX + dx),
+              y: clampYByPinState(interaction.originY + dy, current.pinned),
             },
           };
         }
@@ -412,6 +556,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         let nextY = interaction.originY;
         let nextWidth = interaction.originWidth;
         let nextHeight = interaction.originHeight;
+        const originalBottom = nextY + nextHeight;
+        const originalRight = nextX + nextWidth;
 
         if (east) {
           nextWidth = clampNumber(interaction.originWidth + dx, minCardWidth, maxCardWidth, interaction.originWidth);
@@ -445,6 +591,18 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           }
         }
 
+        const clampedX = clampXWithinCanvas(nextX);
+        if (west && clampedX !== nextX) {
+          nextWidth = clampNumber(originalRight - clampedX, minCardWidth, maxCardWidth, nextWidth);
+        }
+        nextX = clampedX;
+
+        const clampedY = clampYByPinState(nextY, current.pinned);
+        if (north && clampedY !== nextY) {
+          nextHeight = clampNumber(originalBottom - clampedY, minCardHeight, maxCardHeight, nextHeight);
+        }
+        nextY = clampedY;
+
         return {
           ...prev,
           [interaction.id]: {
@@ -457,7 +615,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         };
       });
     },
-    [maxCardHeight, maxCardWidth, minCardHeight, minCardWidth]
+    [maxCardHeight, maxCardWidth, minCardHeight, minCardWidth, clampXWithinCanvas, clampYByPinState]
   );
 
   const schedulePointerFrame = React.useCallback(() => {
@@ -554,6 +712,18 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     return Math.max(580, Math.ceil(maxBottom + 90));
   }, [contacts, layoutMap, pinnedZoneHeight]);
 
+  const renderContacts = React.useMemo(() => {
+    if (!contacts) return [];
+    if (contacts.length <= LARGE_MODE_THRESHOLD) return contacts;
+    return contacts.filter((contact) => {
+      if (activeCardId === contact.id) return true;
+      const layout = layoutMap[contact.id];
+      if (!layout) return false;
+      const bottom = layout.y + layout.height;
+      return bottom >= viewportRange.top && layout.y <= viewportRange.bottom;
+    });
+  }, [activeCardId, contacts, layoutMap, viewportRange.bottom, viewportRange.top]);
+
   if (loading || !contacts) {
     return (
       <Box p={{ xs: 2, md: 5 }}>
@@ -599,13 +769,22 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
       transition={{ duration: 0.45 }}
       p={{ xs: 2, md: 5 }}
     >
-      <Box sx={{ mb: 1.5 }}>
+      <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Typography variant="caption" color="text.secondary">
-          画板模式: 自由拖放卡片，直接拖拽边框调整矩形尺寸，左上角坐标决定序数。置顶卡片会吸附到顶部置顶带。
+          画板模式: 自由拖放卡片，直接拖拽边框调整矩形尺寸，左上角坐标决定序数。只有置顶卡片可进入置顶带，且其左上角会被限制在置顶带内。
         </Typography>
+        {!!pinRecommendations?.length && (
+          <Button size="small" variant="outlined" onClick={applyPinRecommendations}>
+            应用 AI 置顶推荐
+          </Button>
+        )}
+        {contacts.length > LARGE_MODE_THRESHOLD && (
+          <Chip size="small" color="primary" label="流畅模式已启用" />
+        )}
       </Box>
 
       <Box
+        ref={canvasRef}
         sx={{
           position: 'relative',
           minHeight: canvasHeight,
@@ -641,7 +820,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           </Typography>
         </Box>
 
-        {contacts.map((contact) => {
+        {renderContacts.map((contact) => {
           const layout = layoutMap[contact.id];
           if (!layout) return null;
 
@@ -649,6 +828,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           const active = activeCardId === contact.id;
           const dragging = active && interactionMode === 'drag';
           const resizing = active && interactionMode === 'resize';
+          const recommendation = recommendedMap.get(contact.id);
+          const tag = recommendation ? `AI推荐 ${Math.round(recommendation.score)}` : undefined;
 
           return (
             <Box
@@ -683,9 +864,11 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
                 index={0}
                 variant={pinned ? 'feature' : 'standard'}
                 pinned={pinned}
+                tag={tag}
                 cardWidth={layout.width}
                 cardHeight={layout.height}
                 onTogglePin={handleTogglePin}
+                onQuickAction={onCardAction}
               />
 
               {RESIZE_DIRECTIONS.map((direction) => (
