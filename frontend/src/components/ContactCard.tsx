@@ -60,17 +60,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({
 
   const safeWidth = Math.max(160, Math.round(cardWidth ?? (isFeature ? 340 : 312)));
   const safeHeight = Math.max(140, Math.round(cardHeight ?? (isFeature ? 340 : 316)));
-  const aspectRatio = safeWidth / Math.max(1, safeHeight);
   const isTiny = safeWidth < 210 || safeHeight < 190;
   const isCompact = safeWidth < 260 || safeHeight < 250;
-  const isWideAndFlat = aspectRatio > 1.45 && safeHeight < 280;
   const avatarSize = clamp(Math.min(safeWidth * 0.22, safeHeight * 0.24), isTiny ? 34 : 44, isFeature ? 76 : 66);
-  const titleClamp = isTiny ? 1 : isCompact ? 2 : isFeature ? 2 : 1;
-  const previewClamp = isTiny ? 1 : isCompact ? 2 : isWideAndFlat ? 2 : isFeature ? 4 : 3;
   const showHandle = safeWidth >= 225;
   const showSourceAndTime = safeHeight >= 185;
-  const showPreviewBlock = safeHeight >= 160;
-  const showPreviewImage = Boolean(!isTiny && safeHeight >= 240 && !isWideAndFlat);
+  const showPreviewBlock = safeHeight >= 140;
   const contentPadding = isTiny ? 1.3 : isCompact ? 1.8 : isFeature ? 2.8 : 2.25;
 
   const getSourceIcon = (source?: string | null) => {
@@ -121,6 +116,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     [contact.latest_preview, contact.latest_subject]
   );
   const previewUrl = parsedPreview?.url || null;
+  const showPreviewImage = Boolean(previewImageUrl && !previewImageLoadFailed);
 
   React.useEffect(() => {
     setPreviewImageLoadFailed(false);
@@ -268,12 +264,16 @@ export const ContactCard: React.FC<ContactCardProps> = ({
         <CardContent
           sx={{
             p: contentPadding,
+            height: '100%',
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
             '&:last-child': {
               pb: contentPadding,
             },
           }}
         >
-          <Box display="flex" alignItems="center" mb={isTiny ? 1 : 1.8}>
+          <Box display="flex" alignItems="center" mb={isTiny ? 1 : 1.8} sx={{ flex: '0 0 auto' }}>
             <Avatar
               src={contact.avatar_url || undefined}
               imgProps={{ referrerPolicy: 'no-referrer' }}
@@ -331,95 +331,94 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 p: isTiny ? 1 : isCompact ? 1.35 : isFeature ? 2.4 : 1.8,
                 mb: showSourceAndTime ? 1.8 : 0,
                 minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                flex: 1,
               }}
             >
-              {showPreviewImage && previewImageUrl && !previewImageLoadFailed && (
-                <Box
-                  sx={{
-                    borderRadius: 0,
-                    overflow: 'hidden',
-                    mb: isFeature ? 1.8 : 1.3,
-                    border: '2px solid',
-                    borderColor: 'divider',
-                    bgcolor: 'background.paper',
-                    aspectRatio: isWideAndFlat ? '16 / 7.8' : isFeature ? '16 / 8.8' : '16 / 9',
-                  }}
-                >
+              <Box sx={{ minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
+                {showPreviewImage && previewImageUrl && (
                   <Box
-                    component="img"
-                    src={previewImageUrl}
-                    alt={contact.latest_subject || `${contact.display_name} 预览图`}
-                    loading="lazy"
-                    referrerPolicy="no-referrer"
-                    onError={() => setPreviewImageLoadFailed(true)}
                     sx={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'cover',
-                      display: 'block',
+                      borderRadius: 0,
+                      mb: isFeature ? 1.8 : 1.3,
+                      border: '2px solid',
+                      borderColor: 'divider',
+                      bgcolor: alpha(theme.palette.text.primary, 0.06),
+                      flexShrink: 0,
                     }}
-                  />
-                </Box>
-              )}
+                  >
+                    <Box
+                      component="img"
+                      src={previewImageUrl}
+                      alt={contact.latest_subject || `${contact.display_name} 预览图`}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={() => setPreviewImageLoadFailed(true)}
+                      sx={{
+                        width: '100%',
+                        height: 'auto',
+                        display: 'block',
+                        bgcolor: 'background.paper',
+                      }}
+                    />
+                  </Box>
+                )}
 
-              <Typography
-                variant={isFeature ? 'h6' : 'subtitle2'}
-                fontWeight={700}
-                gutterBottom
-                sx={{
-                  display: '-webkit-box',
-                  WebkitLineClamp: titleClamp,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  lineHeight: 1.25,
-                  fontSize: isTiny ? '0.86rem' : isFeature ? '1.04rem' : '0.92rem',
-                }}
-              >
-                {previewTitle}
-              </Typography>
-
-              <Typography
-                variant="body2"
-                color="textSecondary"
-                sx={{
-                  display: '-webkit-box',
-                  WebkitLineClamp: previewClamp,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  fontSize: isTiny ? '0.76rem' : isFeature ? { xs: '0.87rem', md: '0.92rem' } : '0.84rem',
-                  lineHeight: 1.6,
-                }}
-              >
-                {previewText}
-              </Typography>
-
-              {previewUrl && !isTiny && (
                 <Typography
-                  component="a"
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  variant="caption"
-                  color="primary.main"
-                  onClick={(event) => event.stopPropagation()}
+                  variant={isFeature ? 'h6' : 'subtitle2'}
+                  fontWeight={700}
+                  gutterBottom
                   sx={{
-                    mt: 0.8,
-                    display: 'inline-flex',
-                    textDecoration: 'none',
-                    fontWeight: 700,
-                    '&:hover': { textDecoration: 'underline' },
+                    lineHeight: 1.25,
+                    fontSize: isTiny ? '0.86rem' : isFeature ? '1.04rem' : '0.92rem',
+                    whiteSpace: 'normal',
+                    overflowWrap: 'anywhere',
                   }}
                 >
-                  查看原文
+                  {previewTitle}
                 </Typography>
-              )}
+
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  sx={{
+                    fontSize: isTiny ? '0.76rem' : isFeature ? { xs: '0.87rem', md: '0.92rem' } : '0.84rem',
+                    lineHeight: 1.6,
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                  }}
+                >
+                  {previewText}
+                </Typography>
+
+                {previewUrl && !isTiny && (
+                  <Typography
+                    component="a"
+                    href={previewUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    variant="caption"
+                    color="primary.main"
+                    onClick={(event) => event.stopPropagation()}
+                    sx={{
+                      mt: 0.8,
+                      display: 'inline-flex',
+                      textDecoration: 'none',
+                      fontWeight: 700,
+                      flex: '0 0 auto',
+                      '&:hover': { textDecoration: 'underline' },
+                    }}
+                  >
+                    查看原文
+                  </Typography>
+                )}
+              </Box>
             </Box>
           )}
 
           {showSourceAndTime && (
-            <Box display="flex" justifyContent="space-between" alignItems="center" gap={1.4}>
+            <Box display="flex" justifyContent="space-between" alignItems="center" gap={1.4} sx={{ flex: '0 0 auto' }}>
               <Chip
                 icon={getSourceIcon(contact.latest_source)}
                 label={sourceLabel}
