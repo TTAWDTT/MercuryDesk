@@ -1,4 +1,4 @@
-/* Global reset — typography handled by MUI CssBaseline + theme.tsx */
+/* Global reset and font stack are controlled by theme.tsx */
 body {
   margin: 0;
   padding: 0;
@@ -6,29 +6,25 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* KOMA: Style native <option> elements for manga look */
 option {
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   font-weight: 500;
-  padding: 6px 12px;
+  padding: 6px 10px;
   background-color: var(--md-select-bg, #ffffff);
-  color: var(--md-select-fg, #1a1a1a);
+  color: var(--md-select-fg, #111418);
 }
 
 select,
 optgroup {
   background-color: var(--md-select-bg, #ffffff);
-  color: var(--md-select-fg, #1a1a1a);
+  color: var(--md-select-fg, #111418);
 }
 
-/* KOMA: Remove default focus outlines, use border-based focus instead */
 *:focus-visible {
   outline: 2px solid currentColor;
-  outline-offset: -2px;
-  border-radius: 0;
+  outline-offset: 2px;
 }
 
-/* KOMA: Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -39,10 +35,10 @@ optgroup {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 128, 0.4);
-  border: 1px solid rgba(128, 128, 128, 0.2);
+  background: rgba(128, 128, 128, 0.35);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 128, 0.6);
+  background: rgba(128, 128, 128, 0.55);
 }

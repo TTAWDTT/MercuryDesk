@@ -18,15 +18,15 @@ import { useNavigate } from 'react-router-dom';
 
 const Search = styled('div')(({ theme }) => ({
   position: 'relative',
-  borderRadius: 0,
-  border: `2px solid ${theme.palette.divider}`,
+  borderRadius: 10,
+  border: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.background.default,
   '&:hover': {
-    borderColor: theme.palette.text.primary,
+    borderColor: theme.palette.text.secondary,
   },
   '&:focus-within': {
-    borderColor: theme.palette.text.primary,
-    boxShadow: `2px 2px 0 0 ${theme.palette.text.primary}`,
+    borderColor: theme.palette.primary.main,
+    boxShadow: `0 0 0 2px ${theme.palette.primary.main}22`,
   },
   marginRight: theme.spacing(2),
   marginLeft: 0,
@@ -91,7 +91,18 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
   };
 
   return (
-    <AppBar position="sticky" elevation={0} sx={{ top: 0, zIndex: 1100, borderBottom: '3px solid', borderColor: 'text.primary', bgcolor: 'background.paper', backgroundImage: 'none', color: 'text.primary' }}>
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        top: 0,
+        zIndex: 1100,
+        borderBottom: '1px solid',
+        borderColor: 'divider',
+        bgcolor: 'background.paper',
+        color: 'text.primary',
+      }}
+    >
       <Toolbar sx={{ height: 56, minHeight: 56 }}>
         <Box
           onClick={() => navigate('/')}
@@ -118,11 +129,11 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             onClick={() => navigate('/')}
             sx={{
                 display: { xs: 'none', sm: 'block' },
-                fontWeight: 900,
+                fontWeight: 700,
                 color: 'text.primary',
-                letterSpacing: '-0.03em',
+                letterSpacing: '-0.015em',
                 cursor: 'pointer',
-                fontSize: '1.1rem'
+                fontSize: '1.06rem'
             }}
         >
           MercuryDesk
@@ -142,10 +153,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             />
             {searchValue && (
               <IconButton
-                size="small"
-                onClick={handleClearSearch}
-                sx={{ color: 'text.secondary', mr: 0.5, '&:hover': { color: 'text.primary' } }}
-              >
+              size="small"
+              onClick={handleClearSearch}
+              sx={{ color: 'text.secondary', mr: 0.5, '&:hover': { color: 'text.primary', bgcolor: 'transparent' } }}
+            >
                 <CloseIcon fontSize="small" />
               </IconButton>
             )}
@@ -163,7 +174,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
               sx={{ 
                   mr: 1, 
                   color: 'text.primary',
-                  '&:hover': { bgcolor: 'action.hover' } 
+                  '&:hover': { bgcolor: 'action.hover' },
               }}
             >
               {loading ? <CircularProgress size={24} color="inherit" /> : <RefreshIcon />}
@@ -175,10 +186,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
           <IconButton
             size="large"
             onClick={() => navigate('/settings')}
-            sx={{ 
+              sx={{ 
                 mr: 1, 
                 color: 'text.primary',
-                '&:hover': { bgcolor: 'action.hover' } 
+                '&:hover': { bgcolor: 'action.hover' },
             }}
           >
             <SettingsIcon />
@@ -191,7 +202,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             onClick={logout}
             sx={{ 
                 color: 'text.primary',
-                '&:hover': { color: '#ef4444', bgcolor: 'rgba(239,68,68,0.08)' } 
+                '&:hover': { color: '#ef4444', bgcolor: 'rgba(239,68,68,0.08)' },
             }}
           >
             <LogoutIcon />

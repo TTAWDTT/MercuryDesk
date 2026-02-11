@@ -17,7 +17,7 @@ export function AppearanceSection({ mode, onToggleMode }: AppearanceSectionProps
         <Box>
           <Typography variant="h6">外观</Typography>
           <Typography variant="body2" color="textSecondary">
-            浅色：暖白页纸 + 墨色边框；深色：纯黑底 + 灰白线条
+            提供高对比工作流与低刺激夜间阅读两种体验。
           </Typography>
         </Box>
         <Box display="flex" alignItems="center" gap={1}>
@@ -33,4 +33,3 @@ export function AppearanceSection({ mode, onToggleMode }: AppearanceSectionProps
     </Grid>
   );
 }
-

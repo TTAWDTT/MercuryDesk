@@ -79,7 +79,7 @@ export function AgentSection({
 
         <Box mt={2} mb={2}>
           <Alert severity="info" sx={{ borderRadius: 0 }}>
-            ✨ <b>即将推出：MercuryDesk Agent</b> —— 这里的配置将用于驱动未来的智能体功能（自动分类消息、生成回复草稿、每日智能简报等）。目前仅用于简单的摘要测试。
+            这里的配置将用于 MercuryDesk Agent 的对话、摘要、草稿、记忆和工具能力。建议优先使用 OpenAI-Compatible 接口并固定模型版本。
           </Alert>
         </Box>
 
@@ -207,4 +207,3 @@ export function AgentSection({
     </Grid>
   );
 }
-
