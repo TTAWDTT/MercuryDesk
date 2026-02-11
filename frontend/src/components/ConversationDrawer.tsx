@@ -12,15 +12,12 @@ import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
-import Chip from '@mui/material/Chip';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import EditIcon from '@mui/icons-material/Edit';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import {
   Contact,
   Message,
-  MessageDetail,
   listMessages,
   markContactRead,
   agentSummarizeStream,
@@ -156,19 +153,25 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
       <Paper
         elevation={0}
         sx={{
-            p: { xs: 3, md: 3.5 },
-            borderRadius: 0,
-            border: '2px solid',
+            p: { xs: 1.5, md: 1.8 },
+            borderRadius: 3,
+            border: '1px solid',
             borderColor: 'divider',
             bgcolor: 'background.paper',
             backgroundImage: 'none',
-            transition: 'all 0.15s',
+            transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
             position: 'relative',
             overflow: 'hidden',
-            boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`,
+            boxShadow:
+              theme.palette.mode === 'light'
+                ? '0 6px 16px rgba(20,20,19,0.08)'
+                : '0 10px 22px rgba(0,0,0,0.3)',
             '&:hover': {
-                boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
-                transform: 'translate(-1px, -1px)'
+                boxShadow:
+                  theme.palette.mode === 'light'
+                    ? '0 10px 24px rgba(20,20,19,0.12)'
+                    : '0 14px 28px rgba(0,0,0,0.34)',
+                borderColor: alpha(theme.palette.primary.main, 0.34),
             }
         }}
       >
@@ -182,27 +185,27 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                 bgcolor: msg.is_read ? 'transparent' : 'primary.main'
             }}
         />
-        <Box display="flex" justifyContent="space-between" mb={1.5} alignItems="flex-start">
-            <Typography variant="subtitle2" fontWeight="900" color="textPrimary">
+        <Box display="flex" justifyContent="space-between" mb={0.8} alignItems="flex-start">
+            <Typography variant="subtitle2" fontWeight="800" color="textPrimary" sx={{ lineHeight: 1.2 }}>
                 {msg.sender}
             </Typography>
-            <Typography variant="caption" color="textSecondary" fontWeight="600" sx={{ whiteSpace: 'nowrap', ml: 1 }}>
+            <Typography variant="caption" color="textSecondary" fontWeight="600" sx={{ whiteSpace: 'nowrap', ml: 1, fontSize: '0.74rem' }}>
                 {format(new Date(msg.received_at), 'M月d日 HH:mm', { locale: zhCN })}
             </Typography>
         </Box>
 
-        <Typography variant="h6" gutterBottom fontSize="1.1rem" fontWeight="900" sx={{ letterSpacing: '0.02em' }}>
+        <Typography variant="h6" fontSize="0.99rem" fontWeight="800" sx={{ letterSpacing: '0.01em', lineHeight: 1.35, mb: 0.9 }}>
           {displayTitle}
         </Typography>
 
         {(previewImageUrl || previewUrl) && (
           <Box
             sx={{
-              border: '2px solid',
+              border: '1px solid',
               borderColor: 'divider',
-              borderRadius: 0,
-              p: 1.5,
-              mb: 2,
+              borderRadius: 2,
+              p: 0.85,
+              mb: 1.2,
               bgcolor: 'transparent',
               boxShadow: 'none'
             }}
@@ -217,11 +220,11 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                 sx={{
                   width: '100%',
                   display: 'block',
-                  borderRadius: 0,
+                  borderRadius: 1.5,
                   objectFit: 'cover',
-                  mb: previewUrl ? 1 : 0,
-                  maxHeight: { xs: 220, md: 280 },
-                  border: '2px solid',
+                  mb: previewUrl ? 0.7 : 0,
+                  maxHeight: { xs: 190, md: 230 },
+                  border: '1px solid',
                   borderColor: 'divider'
                 }}
               />
@@ -234,7 +237,7 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                 underline="hover"
                 sx={{
                   display: 'inline-flex',
-                  fontSize: '0.82rem',
+                  fontSize: '0.78rem',
                   fontWeight: 600,
                   wordBreak: 'break-all',
                 }}
@@ -248,19 +251,24 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
         <Typography
           variant="body2"
           color="textSecondary"
-          sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, wordBreak: 'break-word' }}
+          sx={{ whiteSpace: 'pre-wrap', lineHeight: 1.52, wordBreak: 'break-word', fontSize: '0.82rem' }}
         >
           {renderTextWithLinks(displayText)}
         </Typography>
 
         {/* Action Buttons */}
-        <Stack direction="row" spacing={1} mt={2}>
+        <Stack direction="row" spacing={0.8} mt={1.2}>
            {!summary && !isSummarizing && (
              <Button
                 size="small"
                 startIcon={<AutoAwesomeIcon />}
                 onClick={handleSummarize}
-                sx={{ color: theme.palette.secondary.main }}
+                sx={{
+                  minHeight: 28,
+                  px: 1,
+                  fontSize: '0.75rem',
+                  color: theme.palette.secondary.main
+                }}
              >
                AI 摘要
              </Button>
@@ -269,7 +277,12 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
               size="small"
               startIcon={<EditIcon />}
               onClick={(e) => setDraftAnchorEl(e.currentTarget)}
-              sx={{ color: theme.palette.text.secondary }}
+              sx={{
+                minHeight: 28,
+                px: 1,
+                fontSize: '0.75rem',
+                color: theme.palette.text.secondary
+              }}
            >
              草拟回复
            </Button>
@@ -287,24 +300,22 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
         {/* Summary Section */}
         {(summary || isSummarizing) && (
           <Box
-            mt={2.5}
-            p={2.5}
-            bgcolor="background.paper"
-            borderRadius={0}
+            mt={1.2}
+            p={1.35}
+            bgcolor={alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.07 : 0.13)}
+            borderRadius={2}
             display="flex"
-            gap={2}
-            position="relative"
+            gap={1.1}
             sx={{
-                border: '2px solid',
-                borderColor: 'divider',
-                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+                border: '1px solid',
+                borderColor: alpha(theme.palette.primary.main, 0.3),
             }}
           >
-             <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 22, mt: 0.2 }} />
+             <AutoAwesomeIcon sx={{ color: 'primary.main', fontSize: 16, mt: 0.1 }} />
              <Box flexGrow={1}>
                  <Typography
                     variant="caption"
-                    fontWeight="600"
+                    fontWeight="700"
                     color="primary.main"
                     gutterBottom
                     display="block"
@@ -317,7 +328,8 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                     color="text.primary"
                     sx={{
                         whiteSpace: 'pre-wrap',
-                        lineHeight: 1.7,
+                        lineHeight: 1.5,
+                        fontSize: '0.8rem',
                         fontFamily: theme.typography.body1.fontFamily
                     }}
                  >
@@ -330,25 +342,24 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
         {/* Draft Section */}
         {(draft || isDrafting) && (
           <Box
-            mt={2.5}
-            p={2.5}
-            bgcolor="background.paper"
-            borderRadius={0}
+            mt={1.2}
+            p={1.35}
+            bgcolor={alpha(theme.palette.secondary.main, theme.palette.mode === 'light' ? 0.08 : 0.14)}
+            borderRadius={2}
             display="flex"
-            gap={2}
+            gap={1.1}
             sx={{
-                border: '2px solid',
-                borderColor: 'divider',
-                boxShadow: `3px 3px 0 0 ${theme.palette.text.primary}`
+                border: '1px solid',
+                borderColor: alpha(theme.palette.secondary.main, 0.28),
             }}
           >
-             <EditIcon sx={{ color: 'text.secondary', fontSize: 22, mt: 0.2 }} />
+             <EditIcon sx={{ color: 'secondary.main', fontSize: 16, mt: 0.1 }} />
              <Box flexGrow={1}>
-                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                 <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.6}>
                     <Typography
                         variant="caption"
-                        fontWeight="600"
-                        color="text.secondary"
+                        fontWeight="700"
+                        color="secondary.main"
                         sx={{ letterSpacing: '0.05em', textTransform: 'uppercase' }}
                     >
                         Draft Reply {isDrafting && <CircularProgress size={10} thickness={6} sx={{ ml: 1 }} />}
@@ -364,9 +375,9 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                     color="text.primary"
                     sx={{
                         whiteSpace: 'pre-wrap',
-                        fontFamily: 'monospace',
-                        fontSize: '0.9rem',
-                        lineHeight: 1.6
+                        fontFamily: theme.typography.body1.fontFamily,
+                        fontSize: '0.8rem',
+                        lineHeight: 1.5
                     }}
                  >
                      {draft}
@@ -420,19 +431,22 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
       PaperProps={{
         sx: {
             width: { xs: '100%', sm: 600, md: 700 },
-            m: { xs: 0, md: 2 },
+            m: { xs: 0, md: 1.5 },
             height: { xs: '100%', md: 'calc(100% - 32px)' },
-            borderRadius: 0,
-            boxShadow: `-4px 4px 0 0 ${theme.palette.text.primary}`,
+            borderRadius: { xs: 0, md: 4 },
+            boxShadow:
+              theme.palette.mode === 'light'
+                ? '0 18px 36px rgba(20,20,19,0.16)'
+                : '0 20px 40px rgba(0,0,0,0.42)',
             overflow: 'hidden',
-            border: '2px solid',
+            border: '1px solid',
             borderColor: 'divider',
             backgroundImage: 'none',
         },
       }}
     >
       <Box
-        p={2.5}
+        p={{ xs: 1.4, md: 1.7 }}
         display="flex"
         alignItems="center"
         justifyContent="space-between"
@@ -443,8 +457,8 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             zIndex: 10,
             borderBottom: '1px solid',
             borderColor: 'divider',
-            backdropFilter: 'blur(10px)',
-            background: alpha(theme.palette.background.paper, 0.8),
+            backdropFilter: 'blur(8px)',
+            background: alpha(theme.palette.background.paper, 0.88),
         }}
       >
         <Box display="flex" alignItems="center">
@@ -452,9 +466,9 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             src={contact.avatar_url || undefined}
             imgProps={{ referrerPolicy: 'no-referrer' }}
             sx={{
-                mr: 2,
-                width: 48,
-                height: 48,
+                mr: 1.2,
+                width: 40,
+                height: 40,
                 bgcolor: alpha(theme.palette.primary.main, 0.1),
                 color: theme.palette.primary.main
             }}
@@ -462,7 +476,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
             {contact.display_name?.[0]}
           </Avatar>
           <Box>
-             <Typography variant="h6" lineHeight={1.2}>{contact.display_name}</Typography>
+             <Typography variant="subtitle1" lineHeight={1.2} sx={{ fontWeight: 700 }}>{contact.display_name}</Typography>
              <Typography variant="caption" color="textSecondary">{contact.handle}</Typography>
           </Box>
         </Box>
@@ -472,9 +486,9 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
       </Box>
 
       <Box
-        p={3}
+        p={{ xs: 1.2, md: 1.6 }}
         flexGrow={1}
-        bgcolor="background.default"
+        bgcolor={alpha(theme.palette.background.default, 0.7)}
         sx={{ overflowY: 'auto' }}
       >
         {loading ? (
@@ -486,7 +500,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
               <Typography variant="body1" color="textSecondary">暂无消息</Typography>
           </Box>
         ) : (
-          <Box display="flex" flexDirection="column" gap={3}>
+          <Box display="flex" flexDirection="column" gap={1.5}>
             <AnimatePresence>
             {messages.map((msg, i) => (
               <MessageItem key={msg.id} msg={msg} index={i} />
@@ -498,4 +512,3 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
     </Drawer>
   );
 };
-

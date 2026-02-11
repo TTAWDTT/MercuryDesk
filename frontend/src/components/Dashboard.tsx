@@ -653,26 +653,24 @@ export default function Dashboard() {
     <Tabs
       value={activePanel}
       onChange={(_, value) => setActivePanel(value)}
-      variant="scrollable"
-      scrollButtons="auto"
+      variant="fullWidth"
       sx={{
-        px: 1.2,
-        pt: 1.2,
+        px: 0.6,
+        pt: 0.6,
+        minHeight: 34,
         '& .MuiTab-root': {
-          minHeight: 40,
-          borderRadius: 999,
+          minWidth: 0,
+          minHeight: 34,
+          px: 0.5,
+          py: 0.25,
+          fontSize: '0.77rem',
+          lineHeight: 1.15,
+          letterSpacing: 0,
           textTransform: 'none',
-          fontWeight: 700,
-          mr: 0.8,
-          px: 1.4,
-        },
-        '& .MuiTabs-indicator': {
-          height: 3,
-          borderRadius: 999,
         },
       }}
     >
-      <Tab value="brief" label={`简报${dailyBrief?.top_updates?.length ? ` (${Math.min(4, dailyBrief.top_updates.length)})` : ''}`} />
+      <Tab value="brief" label="简报" />
       <Tab value="todo" label={`待办${todos?.length ? ` (${Math.min(20, todos.length)})` : ''}`} />
       <Tab value="search" label={`搜索${advancedItems.length ? ` (${Math.min(99, advancedItems.length)})` : ''}`} />
       <Tab value="memory" label={`记忆${memorySnapshot?.notes?.length ? ` (${Math.min(99, memorySnapshot.notes.length)})` : ''}`} />
@@ -785,26 +783,21 @@ export default function Dashboard() {
             sx={{
               borderRadius: 4,
               bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
-              backdropFilter: 'blur(8px)',
+              backdropFilter: 'blur(4px)',
               minHeight: '70vh',
               border: '1px solid',
               borderColor: 'divider',
               overflow: 'hidden',
               boxShadow:
                 theme.palette.mode === 'light'
-                  ? '0 14px 36px rgba(17,20,24,0.10)'
-                  : '0 18px 46px rgba(0,0,0,0.36)',
-              backgroundImage:
-                theme.palette.mode === 'light'
-                  ? 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(249,251,252,0.92))'
-                  : 'linear-gradient(180deg, rgba(27,34,43,0.92), rgba(30,38,48,0.92))',
+                  ? '0 8px 18px rgba(20,20,19,0.06)'
+                  : '0 10px 22px rgba(0,0,0,0.24)',
             }}
           >
             <BoardWorkspaceHeader
               workspaces={WORKSPACES}
               activeWorkspace={activeWorkspace}
               onSelectWorkspace={setActiveWorkspace}
-              concurrency={DASHBOARD_SYNC_CONCURRENCY}
               onRefreshAgentPanels={refreshAgentPanels}
             />
 
@@ -858,26 +851,21 @@ export default function Dashboard() {
                   sx={{
                     borderRadius: 4,
                     bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
-                    backdropFilter: 'blur(8px)',
+                    backdropFilter: 'blur(4px)',
                     minHeight: '70vh',
                     border: '1px solid',
                     borderColor: 'divider',
                     overflow: 'hidden',
                     boxShadow:
                       theme.palette.mode === 'light'
-                        ? '0 14px 36px rgba(17,20,24,0.10)'
-                        : '0 18px 46px rgba(0,0,0,0.36)',
-                    backgroundImage:
-                      theme.palette.mode === 'light'
-                        ? 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(249,251,252,0.92))'
-                        : 'linear-gradient(180deg, rgba(27,34,43,0.92), rgba(30,38,48,0.92))',
+                        ? '0 8px 18px rgba(20,20,19,0.06)'
+                        : '0 10px 22px rgba(0,0,0,0.24)',
                   }}
                 >
                   <BoardWorkspaceHeader
                     workspaces={WORKSPACES}
                     activeWorkspace={activeWorkspace}
                     onSelectWorkspace={setActiveWorkspace}
-                    concurrency={DASHBOARD_SYNC_CONCURRENCY}
                     onRefreshAgentPanels={refreshAgentPanels}
                   />
 
@@ -923,10 +911,10 @@ export default function Dashboard() {
                   maxHeight: 'calc(100vh - 96px)',
                   overflowY: 'auto',
                   borderRadius: 3,
-                  backgroundImage:
+                  boxShadow:
                     theme.palette.mode === 'light'
-                      ? 'linear-gradient(180deg, rgba(255,255,255,0.94), rgba(249,251,252,0.94))'
-                      : 'linear-gradient(180deg, rgba(27,34,43,0.94), rgba(30,38,48,0.94))',
+                      ? '0 8px 18px rgba(20,20,19,0.08)'
+                      : '0 10px 22px rgba(0,0,0,0.24)',
                 }}
               >
                 {panelTabs}
@@ -963,11 +951,10 @@ export default function Dashboard() {
             height: 44,
             px: 0,
             borderRadius: 999,
-            boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
-            backdropFilter: 'blur(6px)',
+            boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
             transition: prefersReducedMotion ? 'none' : 'transform 200ms ease, box-shadow 200ms ease',
             '&:hover': {
-              transform: { xs: 'none', lg: 'translateY(-50%) translateX(-2px)' },
+              transform: { xs: 'none', lg: 'translateY(-50%) translateX(-1px)' },
             },
           }}
         >
