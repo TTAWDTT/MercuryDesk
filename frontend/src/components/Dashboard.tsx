@@ -18,7 +18,6 @@ import Tab from '@mui/material/Tab';
 import Drawer from '@mui/material/Drawer';
 import Tooltip from '@mui/material/Tooltip';
 import useMediaQuery from '@mui/material/useMediaQuery';
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion } from 'framer-motion';
@@ -260,14 +259,22 @@ export default function Dashboard() {
     const host = desktopHostRef.current;
     if (!host) return;
 
+    let frame = 0;
     const update = () => {
-      setDesktopHostWidth(host.clientWidth);
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const next = host.clientWidth;
+        setDesktopHostWidth((prev) => (prev === next ? prev : next));
+      });
     };
     update();
 
     const observer = new ResizeObserver(update);
     observer.observe(host);
-    return () => observer.disconnect();
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, [isMobile]);
 
   useEffect(() => {
@@ -275,15 +282,23 @@ export default function Dashboard() {
     const board = boardNaturalRef.current;
     if (!board) return;
 
+    let frame = 0;
     const update = () => {
-      setBoardNaturalHeight(board.scrollHeight || board.clientHeight || 860);
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const next = board.scrollHeight || board.clientHeight || 860;
+        setBoardNaturalHeight((prev) => (Math.abs(prev - next) < 2 ? prev : next));
+      });
     };
     update();
 
     const observer = new ResizeObserver(update);
     observer.observe(board);
-    return () => observer.disconnect();
-  }, [contacts, isMobile, syncProgress]);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [isMobile]);
 
   const syncSingleAccount = async (accountId: number, label: string) => {
     try {
@@ -705,9 +720,10 @@ export default function Dashboard() {
   const hasDesktopMeasure = desktopHostWidth > 0;
   const desktopSidebarWidth = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_WIDTH : 0;
   const desktopGap = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_GAP : 0;
+  const desktopReservedWidth = desktopSidebarWidth + desktopGap;
   const boardBaseWidth = hasDesktopMeasure ? desktopHostWidth : 1;
   const boardAvailableWidth = hasDesktopMeasure
-    ? Math.max(1, desktopHostWidth - desktopSidebarWidth - desktopGap)
+    ? Math.max(1, desktopHostWidth - desktopReservedWidth)
     : 1;
   const boardScale = !isMobile && desktopSidebarOpen && hasDesktopMeasure
     ? Math.max(0.62, Math.min(1, boardAvailableWidth / boardBaseWidth))
@@ -802,12 +818,17 @@ export default function Dashboard() {
             />
           </Paper>
         ) : (
-          <Box ref={desktopHostRef} sx={{ position: 'relative' }}>
+          <Box
+            ref={desktopHostRef}
+            sx={{
+              position: 'relative',
+              contain: 'layout paint',
+              minHeight: boardScaledHeight,
+            }}
+          >
             <Box
               sx={{
-                width: hasDesktopMeasure ? boardAvailableWidth : '100%',
                 height: boardScaledHeight,
-                transition: 'width 300ms cubic-bezier(0.2, 0.8, 0.2, 1), height 300ms cubic-bezier(0.2, 0.8, 0.2, 1)',
               }}
             >
               <Box
@@ -816,8 +837,9 @@ export default function Dashboard() {
                   width: hasDesktopMeasure ? boardBaseWidth : '100%',
                   transform: `scale(${boardScale})`,
                   transformOrigin: 'top left',
-                  transition: 'transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                  transition: 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1)',
                   willChange: 'transform',
+                  backfaceVisibility: 'hidden',
                 }}
               >
                 <Paper
@@ -896,11 +918,13 @@ export default function Dashboard() {
                 position: 'absolute',
                 right: 0,
                 top: 0,
-                width: desktopSidebarOpen ? DESKTOP_SIDEBAR_WIDTH : 0,
+                width: DESKTOP_SIDEBAR_WIDTH,
                 opacity: desktopSidebarOpen ? 1 : 0,
                 pointerEvents: desktopSidebarOpen ? 'auto' : 'none',
-                transition: 'width 300ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease',
-                overflow: 'hidden',
+                transform: desktopSidebarOpen ? 'translateX(0)' : 'translateX(calc(100% + 8px))',
+                transition: 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 180ms ease',
+                willChange: 'transform, opacity',
+                contain: 'layout paint',
               }}
             >
               <Paper sx={{ p: 0.5, maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}>
@@ -918,8 +942,7 @@ export default function Dashboard() {
         <Button
           size="small"
           variant={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? 'contained' : 'outlined'}
-          startIcon={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
-          endIcon={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? undefined : <ChevronLeftIcon />}
+          aria-label={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}
           onClick={() => {
             if (isMobile) {
               setMobilePanelOpen((prev) => !prev);
@@ -929,16 +952,22 @@ export default function Dashboard() {
           }}
           sx={{
             position: 'fixed',
-            right: 12,
-            top: '50%',
-            transform: 'translateY(-50%)',
+            right: 0,
+            top: { xs: 'auto', lg: '50%' },
+            bottom: { xs: 88, lg: 'auto' },
+            transform: { xs: 'none', lg: 'translateY(-50%)' },
             zIndex: 1320,
             minWidth: 0,
-            px: 1.2,
+            width: 44,
+            height: 96,
+            px: 0,
+            borderRadius: '12px 0 0 12px',
+            borderRight: 'none',
             boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
+            backdropFilter: 'blur(6px)',
           }}
         >
-          {isMobile ? (mobilePanelOpen ? '收起 AI' : 'AI 面板') : (desktopSidebarOpen ? '收起 AI' : 'AI 面板')}
+          {(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
         </Button>
       </Tooltip>
 
