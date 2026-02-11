@@ -98,6 +98,7 @@ const formatRunningAccounts = (labels: string[]) => {
 export default function Dashboard() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -731,6 +732,13 @@ export default function Dashboard() {
   const boardScaledHeight = hasDesktopMeasure
     ? Math.max(600, Math.round(boardNaturalHeight * boardScale))
     : 'auto';
+  const boardTransition = prefersReducedMotion
+    ? 'none'
+    : 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+  const sidebarTransition = prefersReducedMotion
+    ? 'none'
+    : 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 180ms ease';
+  const panelToggleOpen = isMobile ? mobilePanelOpen : desktopSidebarOpen;
 
   return (
     <Box
@@ -824,6 +832,7 @@ export default function Dashboard() {
               position: 'relative',
               contain: 'layout paint',
               minHeight: boardScaledHeight,
+              overflow: 'clip',
             }}
           >
             <Box
@@ -835,9 +844,9 @@ export default function Dashboard() {
                 ref={boardNaturalRef}
                 sx={{
                   width: hasDesktopMeasure ? boardBaseWidth : '100%',
-                  transform: `scale(${boardScale})`,
+                  transform: `translate3d(0, 0, 0) scale(${boardScale})`,
                   transformOrigin: 'top left',
-                  transition: 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+                  transition: boardTransition,
                   willChange: 'transform',
                   backfaceVisibility: 'hidden',
                 }}
@@ -921,8 +930,8 @@ export default function Dashboard() {
                 width: DESKTOP_SIDEBAR_WIDTH,
                 opacity: desktopSidebarOpen ? 1 : 0,
                 pointerEvents: desktopSidebarOpen ? 'auto' : 'none',
-                transform: desktopSidebarOpen ? 'translateX(0)' : 'translateX(calc(100% + 8px))',
-                transition: 'transform 240ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 180ms ease',
+                transform: desktopSidebarOpen ? 'translate3d(0, 0, 0)' : 'translate3d(calc(100% + 8px), 0, 0)',
+                transition: sidebarTransition,
                 willChange: 'transform, opacity',
                 contain: 'layout paint',
               }}
@@ -941,7 +950,7 @@ export default function Dashboard() {
       <Tooltip title={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}>
         <Button
           size="small"
-          variant={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? 'contained' : 'outlined'}
+          variant={panelToggleOpen ? 'contained' : 'outlined'}
           aria-label={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}
           onClick={() => {
             if (isMobile) {
@@ -952,22 +961,25 @@ export default function Dashboard() {
           }}
           sx={{
             position: 'fixed',
-            right: 0,
+            right: { xs: 10, lg: 12 },
             top: { xs: 'auto', lg: '50%' },
             bottom: { xs: 88, lg: 'auto' },
             transform: { xs: 'none', lg: 'translateY(-50%)' },
             zIndex: 1320,
             minWidth: 0,
             width: 44,
-            height: 96,
+            height: 44,
             px: 0,
-            borderRadius: '12px 0 0 12px',
-            borderRight: 'none',
+            borderRadius: 999,
             boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
             backdropFilter: 'blur(6px)',
+            transition: prefersReducedMotion ? 'none' : 'transform 200ms ease, box-shadow 200ms ease',
+            '&:hover': {
+              transform: { xs: 'none', lg: 'translateY(-50%) translateX(-2px)' },
+            },
           }}
         >
-          {(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
+          {panelToggleOpen ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
         </Button>
       </Tooltip>
 
