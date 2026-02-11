@@ -5,10 +5,8 @@ import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Paper from '@mui/material/Paper';
 import Divider from '@mui/material/Divider';
-import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
-import Chip from '@mui/material/Chip';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
@@ -30,6 +28,7 @@ import { AgentChatPanel } from './AgentChatPanel';
 import { GmailBindDialog } from './dashboard/GmailBindDialog';
 import { FirstRunGuideDialog } from './dashboard/FirstRunGuideDialog';
 import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
+import { BoardWorkspaceHeader } from './dashboard/BoardWorkspaceHeader';
 import { AgentBriefPanel } from './dashboard/AgentBriefPanel';
 import { AgentTodoPanel } from './dashboard/AgentTodoPanel';
 import { AgentSearchPanel } from './dashboard/AgentSearchPanel';
@@ -656,7 +655,22 @@ export default function Dashboard() {
       onChange={(_, value) => setActivePanel(value)}
       variant="scrollable"
       scrollButtons="auto"
-      sx={{ px: 1.2, pt: 1.2 }}
+      sx={{
+        px: 1.2,
+        pt: 1.2,
+        '& .MuiTab-root': {
+          minHeight: 40,
+          borderRadius: 999,
+          textTransform: 'none',
+          fontWeight: 700,
+          mr: 0.8,
+          px: 1.4,
+        },
+        '& .MuiTabs-indicator': {
+          height: 3,
+          borderRadius: 999,
+        },
+      }}
     >
       <Tab value="brief" label={`简报${dailyBrief?.top_updates?.length ? ` (${Math.min(4, dailyBrief.top_updates.length)})` : ''}`} />
       <Tab value="todo" label={`待办${todos?.length ? ` (${Math.min(20, todos.length)})` : ''}`} />
@@ -666,7 +680,16 @@ export default function Dashboard() {
   );
 
   const panelBody = (
-    <Box sx={{ px: 1.8, pb: 1.8 }}>
+    <Box
+      sx={{
+        px: 1.8,
+        pb: 1.8,
+        '& > *': {
+          contentVisibility: 'auto',
+          containIntrinsicSize: '380px 520px',
+        },
+      }}
+    >
       {activePanel === 'brief' && (
         <AgentBriefPanel
           dailyBrief={dailyBrief}
@@ -755,56 +778,35 @@ export default function Dashboard() {
         loading={syncing}
       />
 
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
+      <Container maxWidth="xl" sx={{ mt: { xs: 2.2, md: 3.2 } }}>
         {isMobile ? (
           <Paper
             elevation={0}
             sx={{
-              borderRadius: 3,
+              borderRadius: 4,
               bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
-              backdropFilter: 'blur(4px)',
+              backdropFilter: 'blur(8px)',
               minHeight: '70vh',
               border: '1px solid',
               borderColor: 'divider',
               overflow: 'hidden',
-              boxShadow: 'none',
+              boxShadow:
+                theme.palette.mode === 'light'
+                  ? '0 14px 36px rgba(17,20,24,0.10)'
+                  : '0 18px 46px rgba(0,0,0,0.36)',
+              backgroundImage:
+                theme.palette.mode === 'light'
+                  ? 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(249,251,252,0.92))'
+                  : 'linear-gradient(180deg, rgba(27,34,43,0.92), rgba(30,38,48,0.92))',
             }}
           >
-            <Box
-              p={{ xs: 1.6, md: 2.2 }}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 1.2,
-                flexWrap: 'wrap',
-              }}
-            >
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.4 }}>
-                  工作区:
-                </Typography>
-                {WORKSPACES.map((item) => (
-                  <Chip
-                    key={item.key}
-                    size="small"
-                    clickable
-                    onClick={() => setActiveWorkspace(item.key)}
-                    color={item.key === activeWorkspace ? 'primary' : 'default'}
-                    variant={item.key === activeWorkspace ? 'filled' : 'outlined'}
-                    label={item.label}
-                  />
-                ))}
-              </Stack>
-
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Chip size="small" variant="outlined" label={`同步并发 ${DASHBOARD_SYNC_CONCURRENCY}`} />
-                <Button size="small" variant="outlined" onClick={() => refreshAgentPanels()}>
-                  刷新 AI 面板
-                </Button>
-              </Stack>
-            </Box>
-            <Divider />
+            <BoardWorkspaceHeader
+              workspaces={WORKSPACES}
+              activeWorkspace={activeWorkspace}
+              onSelectWorkspace={setActiveWorkspace}
+              concurrency={DASHBOARD_SYNC_CONCURRENCY}
+              onRefreshAgentPanels={refreshAgentPanels}
+            />
 
             {syncProgress && (
               <>
@@ -854,51 +856,30 @@ export default function Dashboard() {
                 <Paper
                   elevation={0}
                   sx={{
-                    borderRadius: 3,
+                    borderRadius: 4,
                     bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
-                    backdropFilter: 'blur(4px)',
+                    backdropFilter: 'blur(8px)',
                     minHeight: '70vh',
                     border: '1px solid',
                     borderColor: 'divider',
                     overflow: 'hidden',
-                    boxShadow: 'none',
+                    boxShadow:
+                      theme.palette.mode === 'light'
+                        ? '0 14px 36px rgba(17,20,24,0.10)'
+                        : '0 18px 46px rgba(0,0,0,0.36)',
+                    backgroundImage:
+                      theme.palette.mode === 'light'
+                        ? 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(249,251,252,0.92))'
+                        : 'linear-gradient(180deg, rgba(27,34,43,0.92), rgba(30,38,48,0.92))',
                   }}
                 >
-                  <Box
-                    p={{ xs: 1.6, md: 2.2 }}
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1.2,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.4 }}>
-                        工作区:
-                      </Typography>
-                      {WORKSPACES.map((item) => (
-                        <Chip
-                          key={item.key}
-                          size="small"
-                          clickable
-                          onClick={() => setActiveWorkspace(item.key)}
-                          color={item.key === activeWorkspace ? 'primary' : 'default'}
-                          variant={item.key === activeWorkspace ? 'filled' : 'outlined'}
-                          label={item.label}
-                        />
-                      ))}
-                    </Stack>
-
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                      <Chip size="small" variant="outlined" label={`同步并发 ${DASHBOARD_SYNC_CONCURRENCY}`} />
-                      <Button size="small" variant="outlined" onClick={() => refreshAgentPanels()}>
-                        刷新 AI 面板
-                      </Button>
-                    </Stack>
-                  </Box>
-                  <Divider />
+                  <BoardWorkspaceHeader
+                    workspaces={WORKSPACES}
+                    activeWorkspace={activeWorkspace}
+                    onSelectWorkspace={setActiveWorkspace}
+                    concurrency={DASHBOARD_SYNC_CONCURRENCY}
+                    onRefreshAgentPanels={refreshAgentPanels}
+                  />
 
                   {syncProgress && (
                     <>
@@ -936,7 +917,18 @@ export default function Dashboard() {
                 contain: 'layout paint',
               }}
             >
-              <Paper sx={{ p: 0.5, maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}>
+              <Paper
+                sx={{
+                  p: 0.5,
+                  maxHeight: 'calc(100vh - 96px)',
+                  overflowY: 'auto',
+                  borderRadius: 3,
+                  backgroundImage:
+                    theme.palette.mode === 'light'
+                      ? 'linear-gradient(180deg, rgba(255,255,255,0.94), rgba(249,251,252,0.94))'
+                      : 'linear-gradient(180deg, rgba(27,34,43,0.94), rgba(30,38,48,0.94))',
+                }}
+              >
                 {panelTabs}
                 <Divider sx={{ my: 1 }} />
                 {panelBody}
