@@ -3,6 +3,10 @@ import Box from '@mui/material/Box';
 import Container from '@mui/material/Container';
 import Grid from '@mui/material/Grid';
 import IconButton from '@mui/material/IconButton';
+import List from '@mui/material/List';
+import ListItemButton from '@mui/material/ListItemButton';
+import ListItemText from '@mui/material/ListItemText';
+import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import useSWR from 'swr';
@@ -25,6 +29,8 @@ import { AccountsSection } from './settings/sections/AccountsSection';
 import { AgentSection } from './settings/sections/AgentSection';
 import { AppearanceSection } from './settings/sections/AppearanceSection';
 import { ProfileSection } from './settings/sections/ProfileSection';
+
+type SettingsSectionKey = 'profile' | 'appearance' | 'accounts' | 'agent';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -51,6 +57,7 @@ export default function Settings() {
   const [agentApiKey, setAgentApiKey] = useState('');
   const [savingAgent, setSavingAgent] = useState(false);
   const [testingAgent, setTestingAgent] = useState(false);
+  const [activeSection, setActiveSection] = useState<SettingsSectionKey>('profile');
 
   const selectedModelProvider = useMemo(
     () => modelCatalog?.providers.find((provider) => provider.id === agentProvider) ?? null,
@@ -172,7 +179,7 @@ export default function Settings() {
     >
       <TopBar onRefresh={() => {}} onSearch={() => {}} loading={false} hideSearch hideSync />
 
-      <Container maxWidth="md" sx={{ py: 6 }}>
+      <Container maxWidth="xl" sx={{ py: 4 }}>
         <Box mb={4} display="flex" alignItems="center">
           <IconButton onClick={() => navigate('/')} sx={{ mr: 2 }}>
             <ArrowBackIcon />
@@ -182,45 +189,80 @@ export default function Settings() {
           </Typography>
         </Box>
 
-        <Grid container spacing={4}>
-          <ProfileSection
-            user={user}
-            avatarFile={avatarFile}
-            avatarPreview={avatarPreview}
-            updatingProfile={updatingProfile}
-            onAvatarFileChange={setAvatarFile}
-            onUploadAvatar={handleUploadAvatar}
-          />
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '220px minmax(0, 1fr)' },
+            gap: 3,
+            alignItems: 'start',
+          }}
+        >
+          <Paper sx={{ p: 1.2, position: { md: 'sticky' }, top: { md: 86 } }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, px: 1.5, py: 1 }}>
+              设置分类
+            </Typography>
+            <List dense sx={{ p: 0 }}>
+              <ListItemButton selected={activeSection === 'profile'} onClick={() => setActiveSection('profile')}>
+                <ListItemText primary="个人资料" secondary="头像与账号信息" />
+              </ListItemButton>
+              <ListItemButton selected={activeSection === 'appearance'} onClick={() => setActiveSection('appearance')}>
+                <ListItemText primary="外观主题" secondary="浅色 / 深色" />
+              </ListItemButton>
+              <ListItemButton selected={activeSection === 'accounts'} onClick={() => setActiveSection('accounts')}>
+                <ListItemText primary="账号连接" secondary="邮箱与社媒来源" />
+              </ListItemButton>
+              <ListItemButton selected={activeSection === 'agent'} onClick={() => setActiveSection('agent')}>
+                <ListItemText primary="AI 助手" secondary="模型与 API 配置" />
+              </ListItemButton>
+            </List>
+          </Paper>
 
-          <AppearanceSection mode={mode} onToggleMode={toggleColorMode} />
+          <Grid container spacing={3}>
+            {activeSection === 'profile' && (
+              <ProfileSection
+                user={user}
+                avatarFile={avatarFile}
+                avatarPreview={avatarPreview}
+                updatingProfile={updatingProfile}
+                onAvatarFileChange={setAvatarFile}
+                onUploadAvatar={handleUploadAvatar}
+              />
+            )}
 
-          <AccountsSection />
+            {activeSection === 'appearance' && (
+              <AppearanceSection mode={mode} onToggleMode={toggleColorMode} />
+            )}
 
-          <AgentSection
-            modelCatalog={modelCatalog}
-            selectedModelProvider={selectedModelProvider}
-            agentConfig={agentConfig}
-            agentProvider={agentProvider}
-            agentBaseUrl={agentBaseUrl}
-            agentModel={agentModel}
-            agentTemperature={agentTemperature}
-            agentApiKey={agentApiKey}
-            refreshingCatalog={refreshingCatalog}
-            savingAgent={savingAgent}
-            testingAgent={testingAgent}
-            onRefreshCatalog={handleRefreshCatalog}
-            onProviderChange={(provider) => {
-              setAgentProvider(provider);
-              setAgentBaseUrl(getDefaultBaseUrlForProvider(provider));
-            }}
-            onModelChange={setAgentModel}
-            onBaseUrlChange={setAgentBaseUrl}
-            onTemperatureChange={setAgentTemperature}
-            onApiKeyChange={setAgentApiKey}
-            onTestAgent={handleTestAgent}
-            onSaveAgent={handleSaveAgent}
-          />
-        </Grid>
+            {activeSection === 'accounts' && <AccountsSection />}
+
+            {activeSection === 'agent' && (
+              <AgentSection
+                modelCatalog={modelCatalog}
+                selectedModelProvider={selectedModelProvider}
+                agentConfig={agentConfig}
+                agentProvider={agentProvider}
+                agentBaseUrl={agentBaseUrl}
+                agentModel={agentModel}
+                agentTemperature={agentTemperature}
+                agentApiKey={agentApiKey}
+                refreshingCatalog={refreshingCatalog}
+                savingAgent={savingAgent}
+                testingAgent={testingAgent}
+                onRefreshCatalog={handleRefreshCatalog}
+                onProviderChange={(provider) => {
+                  setAgentProvider(provider);
+                  setAgentBaseUrl(getDefaultBaseUrlForProvider(provider));
+                }}
+                onModelChange={setAgentModel}
+                onBaseUrlChange={setAgentBaseUrl}
+                onTemperatureChange={setAgentTemperature}
+                onApiKeyChange={setAgentApiKey}
+                onTestAgent={handleTestAgent}
+                onSaveAgent={handleSaveAgent}
+              />
+            )}
+          </Grid>
+        </Box>
       </Container>
     </Box>
   );

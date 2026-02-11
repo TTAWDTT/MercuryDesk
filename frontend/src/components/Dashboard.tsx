@@ -9,18 +9,18 @@ import Stack from '@mui/material/Stack';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
 import Chip from '@mui/material/Chip';
-import TextField from '@mui/material/TextField';
-import MenuItem from '@mui/material/MenuItem';
-import Checkbox from '@mui/material/Checkbox';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogActions from '@mui/material/DialogActions';
-import IconButton from '@mui/material/IconButton';
-import LinearProgress from '@mui/material/LinearProgress';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Drawer from '@mui/material/Drawer';
+import Tooltip from '@mui/material/Tooltip';
+import useMediaQuery from '@mui/material/useMediaQuery';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '@mui/material/styles';
@@ -31,6 +31,10 @@ import { AgentChatPanel } from './AgentChatPanel';
 import { GmailBindDialog } from './dashboard/GmailBindDialog';
 import { FirstRunGuideDialog } from './dashboard/FirstRunGuideDialog';
 import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
+import { AgentBriefPanel } from './dashboard/AgentBriefPanel';
+import { AgentTodoPanel } from './dashboard/AgentTodoPanel';
+import { AgentSearchPanel } from './dashboard/AgentSearchPanel';
+import { AgentMemoryPanel } from './dashboard/AgentMemoryPanel';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import {
   AgentAdvancedSearchItem,
@@ -73,12 +77,15 @@ const DASHBOARD_SYNC_CONCURRENCY = (() => {
 
 const FIRST_RUN_GUIDE_KEY = 'mercurydesk:dashboard:first-run-guide:v1';
 const WORKSPACE_KEY = 'mercurydesk:dashboard:workspace:v1';
+const SIDEBAR_OPEN_KEY = 'mercurydesk:dashboard:ai-sidebar-open:v1';
 const WORKSPACES = [
   { key: 'default', label: '主工作区' },
   { key: 'work', label: '工作' },
   { key: 'life', label: '生活' },
   { key: 'monitor', label: '监控' },
 ];
+const DESKTOP_SIDEBAR_WIDTH = 372;
+const DESKTOP_SIDEBAR_GAP = 16;
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -91,6 +98,7 @@ const formatRunningAccounts = (labels: string[]) => {
 
 export default function Dashboard() {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -126,8 +134,24 @@ export default function Dashboard() {
   const [advancedBusy, setAdvancedBusy] = useState(false);
   const [advancedItems, setAdvancedItems] = useState<AgentAdvancedSearchItem[]>([]);
   const [actionBusy, setActionBusy] = useState(false);
+  const [activePanel, setActivePanel] = useState<'brief' | 'todo' | 'search' | 'memory'>('brief');
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(SIDEBAR_OPEN_KEY);
+      if (raw === '0') return false;
+      if (raw === '1') return true;
+    } catch {
+      // ignore
+    }
+    return true;
+  });
+  const [desktopHostWidth, setDesktopHostWidth] = useState(0);
+  const [boardNaturalHeight, setBoardNaturalHeight] = useState(860);
 
   const layoutSyncTimerRef = useRef<number | null>(null);
+  const desktopHostRef = useRef<HTMLDivElement | null>(null);
+  const boardNaturalRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (selectedContact) setDrawerContact(selectedContact);
@@ -208,6 +232,18 @@ export default function Dashboard() {
   }, [activeWorkspace]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_OPEN_KEY, desktopSidebarOpen ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [desktopSidebarOpen]);
+
+  useEffect(() => {
+    if (!isMobile) setMobilePanelOpen(false);
+  }, [isMobile]);
+
+  useEffect(() => {
     loadMemorySnapshot('');
   }, [loadMemorySnapshot]);
 
@@ -218,6 +254,36 @@ export default function Dashboard() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
+    const host = desktopHostRef.current;
+    if (!host) return;
+
+    const update = () => {
+      setDesktopHostWidth(host.clientWidth);
+    };
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (isMobile) return;
+    const board = boardNaturalRef.current;
+    if (!board) return;
+
+    const update = () => {
+      setBoardNaturalHeight(board.scrollHeight || board.clientHeight || 860);
+    };
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, [contacts, isMobile, syncProgress]);
 
   const syncSingleAccount = async (accountId: number, label: string) => {
     try {
@@ -568,6 +634,88 @@ export default function Dashboard() {
     }
   }, [loadMemorySnapshot, showToast]);
 
+  const panelTabs = (
+    <Tabs
+      value={activePanel}
+      onChange={(_, value) => setActivePanel(value)}
+      variant="scrollable"
+      scrollButtons="auto"
+      sx={{ px: 1.2, pt: 1.2 }}
+    >
+      <Tab value="brief" label={`简报${dailyBrief?.top_updates?.length ? ` (${Math.min(4, dailyBrief.top_updates.length)})` : ''}`} />
+      <Tab value="todo" label={`待办${todos?.length ? ` (${Math.min(20, todos.length)})` : ''}`} />
+      <Tab value="search" label={`搜索${advancedItems.length ? ` (${Math.min(99, advancedItems.length)})` : ''}`} />
+      <Tab value="memory" label={`记忆${memorySnapshot?.notes?.length ? ` (${Math.min(99, memorySnapshot.notes.length)})` : ''}`} />
+    </Tabs>
+  );
+
+  const panelBody = (
+    <Box sx={{ px: 1.8, pb: 1.8 }}>
+      {activePanel === 'brief' && (
+        <AgentBriefPanel
+          dailyBrief={dailyBrief}
+          actionBusy={actionBusy}
+          onApplyAction={handleApplyBriefAction}
+        />
+      )}
+      {activePanel === 'todo' && (
+        <AgentTodoPanel
+          todos={todos ?? []}
+          todoInput={todoInput}
+          todoBusy={todoBusy}
+          onTodoInputChange={setTodoInput}
+          onCreateTodo={handleCreateManualTodo}
+          onToggleTodoDone={handleToggleTodoDone}
+          onDeleteTodo={handleDeleteTodo}
+          onOpenContact={openContactById}
+        />
+      )}
+      {activePanel === 'search' && (
+        <AgentSearchPanel
+          query={advancedQuery}
+          source={advancedSource}
+          unreadOnly={advancedUnreadOnly}
+          days={advancedDays}
+          limit={advancedLimit}
+          busy={advancedBusy}
+          items={advancedItems}
+          onQueryChange={setAdvancedQuery}
+          onSourceChange={setAdvancedSource}
+          onUnreadOnlyChange={setAdvancedUnreadOnly}
+          onDaysChange={setAdvancedDays}
+          onLimitChange={setAdvancedLimit}
+          onSearch={runAdvancedSearch}
+          onOpenContact={openContactById}
+        />
+      )}
+      {activePanel === 'memory' && (
+        <AgentMemoryPanel
+          memorySnapshot={memorySnapshot}
+          memoryBusy={memoryBusy}
+          memoryCorrection={memoryCorrection}
+          onMemoryCorrectionChange={setMemoryCorrection}
+          onRefresh={() => loadMemorySnapshot('')}
+          onSaveCorrection={handleSaveMemoryCorrection}
+          onDeleteNote={handleDeleteMemoryNote}
+        />
+      )}
+    </Box>
+  );
+
+  const hasDesktopMeasure = desktopHostWidth > 0;
+  const desktopSidebarWidth = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_WIDTH : 0;
+  const desktopGap = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_GAP : 0;
+  const boardBaseWidth = hasDesktopMeasure ? desktopHostWidth : 1;
+  const boardAvailableWidth = hasDesktopMeasure
+    ? Math.max(1, desktopHostWidth - desktopSidebarWidth - desktopGap)
+    : 1;
+  const boardScale = !isMobile && desktopSidebarOpen && hasDesktopMeasure
+    ? Math.max(0.62, Math.min(1, boardAvailableWidth / boardBaseWidth))
+    : 1;
+  const boardScaledHeight = hasDesktopMeasure
+    ? Math.max(600, Math.round(boardNaturalHeight * boardScale))
+    : 'auto';
+
   return (
     <Box
       component={motion.div}
@@ -584,18 +732,18 @@ export default function Dashboard() {
       />
 
       <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Stack spacing={2.2}>
+        {isMobile ? (
           <Paper
             elevation={0}
             sx={{
-              borderRadius: 0,
+              borderRadius: 3,
               bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
               backdropFilter: 'blur(4px)',
               minHeight: '70vh',
-              border: '3px solid',
-              borderColor: 'text.primary',
+              border: '1px solid',
+              borderColor: 'divider',
               overflow: 'hidden',
-              boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
+              boxShadow: 'none',
             }}
           >
             <Box
@@ -609,7 +757,7 @@ export default function Dashboard() {
               }}
             >
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Typography variant="subtitle2" sx={{ fontWeight: 900, mr: 0.4 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.4 }}>
                   工作区:
                 </Typography>
                 {WORKSPACES.map((item) => (
@@ -653,353 +801,157 @@ export default function Dashboard() {
               onCardAction={handleCardAction}
             />
           </Paper>
-
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) minmax(0,1fr)' },
-              gap: 2,
-            }}
-          >
-            <Stack spacing={2}>
-              <Paper sx={{ borderRadius: 0, border: '2px solid', borderColor: 'text.primary', p: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                  每日简报与行动
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
-                  {dailyBrief?.summary || '正在生成每日简报…'}
-                </Typography>
-                {!dailyBrief && <LinearProgress sx={{ mt: 1.4 }} />}
-
-                {!!dailyBrief?.top_updates?.length && (
-                  <Box sx={{ mt: 1.6, display: 'grid', gap: 1 }}>
-                    {dailyBrief.top_updates.slice(0, 4).map((item) => (
-                      <Paper
-                        key={`${item.message_id}-${item.source}`}
-                        variant="outlined"
-                        sx={{ borderRadius: 0, p: 1, borderStyle: 'dashed' }}
-                      >
-                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                          <Chip size="small" label={item.source_label} />
-                          <Chip size="small" variant="outlined" label={`分数 ${Math.round(item.score)}`} />
-                        </Stack>
-                        <Typography variant="body2" sx={{ mt: 0.8, fontWeight: 700 }}>
-                          {item.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {item.sender} · {item.received_at}
-                        </Typography>
-                      </Paper>
-                    ))}
-                  </Box>
-                )}
-
-                {!!dailyBrief?.actions?.length && (
-                  <Box sx={{ mt: 1.6, display: 'grid', gap: 0.8 }}>
-                    {dailyBrief.actions.slice(0, 6).map((action, idx) => (
-                      <Box
-                        key={`${action.kind}-${action.title}-${idx}`}
-                        sx={{
-                          border: '1px dashed',
-                          borderColor: 'divider',
-                          p: 1,
-                          borderRadius: 0,
-                          display: 'flex',
-                          alignItems: 'flex-start',
-                          justifyContent: 'space-between',
-                          gap: 1,
-                        }}
-                      >
-                        <Box>
-                          <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                            {action.title}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            {action.detail || '无补充信息'}
-                          </Typography>
-                        </Box>
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          disabled={actionBusy}
-                          onClick={() => handleApplyBriefAction(action)}
-                        >
-                          执行
-                        </Button>
-                      </Box>
-                    ))}
-                  </Box>
-                )}
-              </Paper>
-
-              <Paper sx={{ borderRadius: 0, border: '2px solid', borderColor: 'text.primary', p: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                  待办与跟进
-                </Typography>
-                <Stack direction="row" spacing={1} sx={{ mt: 1.2 }}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    placeholder="新增待办（例如：周五前回复小红书合作）"
-                    value={todoInput}
-                    onChange={(event) => setTodoInput(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault();
-                        handleCreateManualTodo();
-                      }
+        ) : (
+          <Box ref={desktopHostRef} sx={{ position: 'relative' }}>
+            <Box
+              sx={{
+                width: hasDesktopMeasure ? boardAvailableWidth : '100%',
+                height: boardScaledHeight,
+                transition: 'width 300ms cubic-bezier(0.2, 0.8, 0.2, 1), height 300ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+              }}
+            >
+              <Box
+                ref={boardNaturalRef}
+                sx={{
+                  width: hasDesktopMeasure ? boardBaseWidth : '100%',
+                  transform: `scale(${boardScale})`,
+                  transformOrigin: 'top left',
+                  transition: 'transform 320ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                  willChange: 'transform',
+                }}
+              >
+                <Paper
+                  elevation={0}
+                  sx={{
+                    borderRadius: 3,
+                    bgcolor: theme.palette.mode === 'light' ? boardLight : boardDark,
+                    backdropFilter: 'blur(4px)',
+                    minHeight: '70vh',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    overflow: 'hidden',
+                    boxShadow: 'none',
+                  }}
+                >
+                  <Box
+                    p={{ xs: 1.6, md: 2.2 }}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1.2,
+                      flexWrap: 'wrap',
                     }}
-                  />
-                  <Button variant="contained" disabled={todoBusy} onClick={handleCreateManualTodo}>
-                    添加
-                  </Button>
-                </Stack>
-
-                <Box sx={{ mt: 1.4, display: 'grid', gap: 0.7 }}>
-                  {(todos ?? []).slice(0, 16).map((todo) => (
-                    <Paper
-                      key={todo.id}
-                      variant="outlined"
-                      sx={{
-                        borderRadius: 0,
-                        p: 0.9,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                      }}
-                    >
-                      <Checkbox
-                        size="small"
-                        checked={todo.done}
-                        onChange={(event) => handleToggleTodoDone(todo, event.target.checked)}
-                      />
-                      <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 700,
-                            textDecoration: todo.done ? 'line-through' : 'none',
-                          }}
-                        >
-                          {todo.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" noWrap>
-                          {(todo.detail || '无详情').replace(/\s+/g, ' ').trim()}
-                        </Typography>
-                      </Box>
-                      <Chip
-                        size="small"
-                        label={todo.priority || 'normal'}
-                        color={todo.priority === 'high' ? 'warning' : 'default'}
-                      />
-                      {todo.contact_id ? (
-                        <IconButton size="small" onClick={() => openContactById(todo.contact_id)} title="打开联系人">
-                          <OpenInNewIcon fontSize="inherit" />
-                        </IconButton>
-                      ) : null}
-                      <IconButton size="small" onClick={() => handleDeleteTodo(todo.id)} title="删除待办">
-                        <DeleteOutlineIcon fontSize="inherit" />
-                      </IconButton>
-                    </Paper>
-                  ))}
-                  {!(todos && todos.length) && (
-                    <Typography variant="body2" color="text.secondary">
-                      目前没有待办项。
-                    </Typography>
-                  )}
-                </Box>
-              </Paper>
-            </Stack>
-
-            <Stack spacing={2}>
-              <Paper sx={{ borderRadius: 0, border: '2px solid', borderColor: 'text.primary', p: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                  高级检索
-                </Typography>
-                <Stack spacing={1.1} sx={{ mt: 1.2 }}>
-                  <TextField
-                    size="small"
-                    label="查询词"
-                    value={advancedQuery}
-                    onChange={(event) => setAdvancedQuery(event.target.value)}
-                    placeholder="如：合作报价 / campaign / 风险"
-                  />
-                  <Stack direction="row" spacing={1}>
-                    <TextField
-                      size="small"
-                      select
-                      label="来源"
-                      value={advancedSource}
-                      onChange={(event) => setAdvancedSource(event.target.value)}
-                      sx={{ minWidth: 140 }}
-                    >
-                      <MenuItem value="">全部</MenuItem>
-                      <MenuItem value="imap">邮件</MenuItem>
-                      <MenuItem value="github">GitHub</MenuItem>
-                      <MenuItem value="rss">RSS</MenuItem>
-                      <MenuItem value="x">X</MenuItem>
-                      <MenuItem value="bilibili">Bilibili</MenuItem>
-                      <MenuItem value="douyin">抖音</MenuItem>
-                      <MenuItem value="xiaohongshu">小红书</MenuItem>
-                    </TextField>
-                    <TextField
-                      size="small"
-                      type="number"
-                      label="近几天"
-                      inputProps={{ min: 1, max: 365 }}
-                      value={advancedDays}
-                      onChange={(event) => setAdvancedDays(Math.max(1, Math.min(365, Number(event.target.value) || 30)))}
-                    />
-                    <TextField
-                      size="small"
-                      type="number"
-                      label="条数"
-                      inputProps={{ min: 1, max: 100 }}
-                      value={advancedLimit}
-                      onChange={(event) => setAdvancedLimit(Math.max(1, Math.min(100, Number(event.target.value) || 20)))}
-                    />
-                  </Stack>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={advancedUnreadOnly}
-                        onChange={(event) => setAdvancedUnreadOnly(event.target.checked)}
-                      />
-                    }
-                    label="仅看未读"
-                  />
-                  <Button variant="contained" onClick={runAdvancedSearch} disabled={advancedBusy}>
-                    {advancedBusy ? '检索中…' : '开始检索'}
-                  </Button>
-                </Stack>
-
-                <Box sx={{ mt: 1.4, display: 'grid', gap: 0.8 }}>
-                  {advancedItems.map((item) => (
-                    <Paper
-                      key={`${item.message_id}-${item.score}`}
-                      variant="outlined"
-                      sx={{ borderRadius: 0, p: 1, borderStyle: 'dashed' }}
-                    >
-                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                        <Chip size="small" label={item.source} />
-                        <Chip size="small" variant="outlined" label={`score ${item.score}`} />
-                        {!item.is_read && <Chip size="small" color="warning" label="未读" />}
-                      </Stack>
-                      <Typography variant="body2" sx={{ mt: 0.7, fontWeight: 700 }}>
-                        {item.subject || '(无主题)'}
+                  >
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.4 }}>
+                        工作区:
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.4 }}>
-                        {item.sender} · {item.received_at} · {item.reason}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.4 }}>
-                        {item.preview}
-                      </Typography>
-                      <Button size="small" sx={{ mt: 0.8 }} onClick={() => openContactById(item.contact_id)}>
-                        打开联系人
+                      {WORKSPACES.map((item) => (
+                        <Chip
+                          key={item.key}
+                          size="small"
+                          clickable
+                          onClick={() => setActiveWorkspace(item.key)}
+                          color={item.key === activeWorkspace ? 'primary' : 'default'}
+                          variant={item.key === activeWorkspace ? 'filled' : 'outlined'}
+                          label={item.label}
+                        />
+                      ))}
+                    </Stack>
+
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                      <Chip size="small" variant="outlined" label={`同步并发 ${DASHBOARD_SYNC_CONCURRENCY}`} />
+                      <Button size="small" variant="outlined" onClick={() => refreshAgentPanels()}>
+                        刷新 AI 面板
                       </Button>
-                    </Paper>
-                  ))}
-                  {!advancedBusy && advancedItems.length === 0 && (
-                    <Typography variant="body2" color="text.secondary">
-                      还没有检索结果。
-                    </Typography>
+                    </Stack>
+                  </Box>
+                  <Divider />
+
+                  {syncProgress && (
+                    <>
+                      <Box p={{ xs: 2, md: 2.5 }}>
+                        <SyncProgressPanel progress={syncProgress} />
+                      </Box>
+                      <Divider />
+                    </>
                   )}
-                </Box>
-              </Paper>
 
-              <Paper sx={{ borderRadius: 0, border: '2px solid', borderColor: 'text.primary', p: 2 }}>
-                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                    记忆解释面板
-                  </Typography>
-                  <Button size="small" variant="outlined" onClick={() => loadMemorySnapshot('')}>
-                    刷新
-                  </Button>
-                </Stack>
-
-                {memoryBusy && <LinearProgress sx={{ mt: 1.2 }} />}
-                {!memorySnapshot && !memoryBusy && (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.2 }}>
-                    记忆尚未生成。
-                  </Typography>
-                )}
-
-                {!!memorySnapshot && (
-                  <>
-                    <Typography variant="body2" sx={{ mt: 1.1 }}>
-                      {(memorySnapshot.summary || '暂无摘要').trim() || '暂无摘要'}
-                    </Typography>
-
-                    <Divider sx={{ my: 1.2 }} />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                      最近关注的信息/帖子
-                    </Typography>
-                    <Box sx={{ mt: 0.9, display: 'grid', gap: 0.7 }}>
-                      {memorySnapshot.focus_items.slice(0, 6).map((item) => (
-                        <Paper
-                          key={`${item.message_id}-${item.source}`}
-                          variant="outlined"
-                          sx={{ borderRadius: 0, p: 0.9, borderStyle: 'dashed' }}
-                        >
-                          <Typography variant="caption">
-                            [{item.source_label}] {item.title}
-                          </Typography>
-                        </Paper>
-                      ))}
-                    </Box>
-
-                    <Divider sx={{ my: 1.2 }} />
-                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                      可编辑记忆
-                    </Typography>
-                    <Box sx={{ mt: 0.9, display: 'grid', gap: 0.7 }}>
-                      {memorySnapshot.notes.slice(0, 12).map((note) => (
-                        <Paper
-                          key={note.id}
-                          variant="outlined"
-                          sx={{
-                            borderRadius: 0,
-                            p: 0.8,
-                            borderStyle: 'dashed',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1,
-                          }}
-                        >
-                          <Box sx={{ minWidth: 0, flex: 1 }}>
-                            <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                              {note.kind}
-                            </Typography>
-                            <Typography variant="body2" sx={{ mt: 0.2 }}>
-                              {note.content}
-                            </Typography>
-                          </Box>
-                          <IconButton size="small" onClick={() => handleDeleteMemoryNote(note.id)}>
-                            <DeleteOutlineIcon fontSize="inherit" />
-                          </IconButton>
-                        </Paper>
-                      ))}
-                    </Box>
-                  </>
-                )}
-
-                <Stack direction="row" spacing={1} sx={{ mt: 1.2 }}>
-                  <TextField
-                    size="small"
-                    fullWidth
-                    value={memoryCorrection}
-                    onChange={(event) => setMemoryCorrection(event.target.value)}
-                    placeholder="补充一条偏好或事实，例如：我最近优先关注抖音商业合作私信"
+                  <ContactGrid
+                    contacts={contacts}
+                    loading={!contacts}
+                    onContactClick={setSelectedContact}
+                    onCardLayoutChange={handleCardLayoutChange}
+                    workspace={activeWorkspace}
+                    pinRecommendations={pinRecommendations?.items ?? []}
+                    onCardAction={handleCardAction}
                   />
-                  <Button variant="contained" onClick={handleSaveMemoryCorrection} disabled={memoryBusy}>
-                    保存
-                  </Button>
-                </Stack>
+                </Paper>
+              </Box>
+            </Box>
+
+            <Box
+              sx={{
+                position: 'absolute',
+                right: 0,
+                top: 0,
+                width: desktopSidebarOpen ? DESKTOP_SIDEBAR_WIDTH : 0,
+                opacity: desktopSidebarOpen ? 1 : 0,
+                pointerEvents: desktopSidebarOpen ? 'auto' : 'none',
+                transition: 'width 300ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 220ms ease',
+                overflow: 'hidden',
+              }}
+            >
+              <Paper sx={{ p: 0.5, maxHeight: 'calc(100vh - 96px)', overflowY: 'auto' }}>
+                {panelTabs}
+                <Divider sx={{ my: 1 }} />
+                {panelBody}
               </Paper>
-            </Stack>
+            </Box>
+
           </Box>
-        </Stack>
+        )}
       </Container>
+
+      <Tooltip title={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}>
+        <Button
+          size="small"
+          variant={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? 'contained' : 'outlined'}
+          startIcon={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
+          endIcon={(isMobile ? mobilePanelOpen : desktopSidebarOpen) ? undefined : <ChevronLeftIcon />}
+          onClick={() => {
+            if (isMobile) {
+              setMobilePanelOpen((prev) => !prev);
+              return;
+            }
+            setDesktopSidebarOpen((prev) => !prev);
+          }}
+          sx={{
+            position: 'fixed',
+            right: 12,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            zIndex: 1320,
+            minWidth: 0,
+            px: 1.2,
+            boxShadow: '0 10px 24px rgba(0,0,0,0.14)',
+          }}
+        >
+          {isMobile ? (mobilePanelOpen ? '收起 AI' : 'AI 面板') : (desktopSidebarOpen ? '收起 AI' : 'AI 面板')}
+        </Button>
+      </Tooltip>
+
+      <Drawer
+        anchor="right"
+        open={mobilePanelOpen}
+        onClose={() => setMobilePanelOpen(false)}
+        PaperProps={{ sx: { width: 'min(94vw, 420px)', p: 0.4 } }}
+      >
+        {panelTabs}
+        <Divider sx={{ my: 1 }} />
+        {panelBody}
+      </Drawer>
 
       <ConversationDrawer
         open={!!selectedContact}

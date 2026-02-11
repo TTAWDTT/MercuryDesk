@@ -164,13 +164,13 @@ const ContactCardView: React.FC<ContactCardProps> = ({
           position: 'relative',
           overflow: 'hidden',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          border: '2px solid',
+          border: '1px solid',
           borderColor: pinned ? (isLight ? '#000' : 'primary.main') : 'divider',
           opacity: disabled ? 0.65 : 1,
           boxShadow: pinned
             ? isLight
-              ? '8px 8px 0 0 #000'
-              : `8px 8px 0 0 ${alpha(theme.palette.primary.main, 0.55)}`
+              ? '0 10px 24px rgba(17,20,24,0.18)'
+              : `0 12px 28px ${alpha(theme.palette.primary.main, 0.35)}`
             : undefined,
           '&::before': pinned
             ? {
@@ -186,19 +186,15 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 bgcolor: isLight ? '#000' : 'primary.main',
                 color: isLight ? '#fff' : theme.palette.getContrastText(theme.palette.primary.main),
                 zIndex: 4,
-                borderRight: '2px solid',
-                borderBottom: '2px solid',
-                borderColor: isLight ? '#fff' : 'text.primary',
+                borderBottomRightRadius: 8,
               }
             : undefined,
           '&:hover': {
             ...(disabled
               ? {}
               : {
-                  transform: 'translate(-2px, -2px)',
-                  boxShadow: pinned && isLight
-                    ? '8px 8px 0 0 #000'
-                    : `6px 6px 0 0 ${theme.palette.text.primary}`,
+                  transform: 'translateY(-2px)',
+                  boxShadow: `0 10px 24px ${alpha(theme.palette.text.primary, 0.18)}`,
                 }),
           },
         }}
@@ -216,7 +212,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.94),
               border: '1px solid',
               borderColor: pinned && isLight ? '#000' : 'divider',
-              boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.25)}`,
+              boxShadow: `0 2px 10px ${alpha(theme.palette.text.primary, 0.15)}`,
             }}
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
@@ -317,13 +313,13 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               size="small"
               variant="outlined"
               sx={{
-                borderRadius: 0,
+                borderRadius: 999,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
                 bgcolor: 'background.paper',
-                border: '2px solid',
+                border: '1px solid',
                 borderColor: 'divider',
-                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`,
+                boxShadow: 'none',
               }}
             />
           </Box>
@@ -338,9 +334,9 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               width: 12,
               height: 12,
               bgcolor: 'text.primary',
-              border: '2px solid',
-              borderColor: 'background.paper',
-              borderRadius: '50%',
+                border: '2px solid',
+                borderColor: 'background.paper',
+                borderRadius: '50%',
               zIndex: 1,
             }}
           />
@@ -371,7 +367,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 borderRadius: 0,
                 border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`,
+                boxShadow: 'none',
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
@@ -412,7 +408,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 bgcolor: theme.palette.background.default,
                 border: '1px dashed',
                 borderColor: alpha(theme.palette.text.primary, 0.2),
-                borderRadius: 0,
+                borderRadius: 1.5,
                 p: isTiny ? 1 : isCompact ? 1.35 : isFeature ? 2.4 : 1.8,
                 mb: showSourceAndTime ? 1.8 : 0,
                 minHeight: 0,
@@ -427,7 +423,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                     sx={{
                       borderRadius: 0,
                       mb: isFeature ? 1.8 : 1.3,
-                      border: '2px solid',
+                      border: '1px solid',
                       borderColor: 'divider',
                       bgcolor: alpha(theme.palette.text.primary, 0.06),
                       flexShrink: 0,

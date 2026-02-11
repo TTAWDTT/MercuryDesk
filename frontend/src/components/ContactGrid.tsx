@@ -771,7 +771,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
     >
       <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Typography variant="caption" color="text.secondary">
-          画板模式: 自由拖放卡片，直接拖拽边框调整矩形尺寸，左上角坐标决定序数。只有置顶卡片可进入置顶带，且其左上角会被限制在置顶带内。
+          画板模式：拖放排序、边框缩放、置顶带约束。
         </Typography>
         {!!pinRecommendations?.length && (
           <Button size="small" variant="outlined" onClick={applyPinRecommendations}>
@@ -788,16 +788,17 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
         sx={{
           position: 'relative',
           minHeight: canvasHeight,
-          border: '2px solid',
+          border: '1px solid',
           borderColor: 'divider',
-          boxShadow: `4px 4px 0 0 ${theme.palette.text.primary}`,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.08)',
           backgroundColor: alpha(theme.palette.background.paper, 0.86),
           backgroundImage: `
-            linear-gradient(${alpha(theme.palette.text.primary, 0.06)} 1px, transparent 1px),
-            linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.06)} 1px, transparent 1px)
+            linear-gradient(${alpha(theme.palette.text.primary, 0.035)} 1px, transparent 1px),
+            linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.035)} 1px, transparent 1px)
           `,
           backgroundSize: `${isMobile ? 18 : 24}px ${isMobile ? 18 : 24}px`,
           overflow: 'hidden',
+          borderRadius: 2,
         }}
       >
         <Box
@@ -809,9 +810,9 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
             height: pinnedZoneHeight,
             px: 2,
             py: 1,
-            borderBottom: '2px dashed',
-            borderColor: alpha(theme.palette.primary.main, 0.5),
-            bgcolor: alpha(theme.palette.primary.main, 0.08),
+            borderBottom: '1px dashed',
+            borderColor: alpha(theme.palette.primary.main, 0.4),
+            bgcolor: alpha(theme.palette.primary.main, 0.06),
             pointerEvents: 'none',
           }}
         >
@@ -845,7 +846,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
                 transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
                 transform: dragging ? 'scale(1.01)' : 'scale(1)',
                 boxShadow: active
-                  ? `0 0 0 2px ${theme.palette.primary.main}, 0 10px 26px ${alpha(theme.palette.text.primary, 0.35)}`
+                  ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.4)}, 0 10px 24px ${alpha(theme.palette.text.primary, 0.22)}`
                   : undefined,
                 willChange: active ? 'transform, left, top, width, height' : 'auto',
                 touchAction: 'none',
@@ -879,9 +880,9 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
                   sx={{
                     ...getHandleSx(direction),
                     cursor: handleCursor(direction),
-                    bgcolor: resizing ? alpha(theme.palette.primary.main, 0.22) : 'transparent',
+                    bgcolor: resizing ? alpha(theme.palette.primary.main, 0.14) : 'transparent',
                     '&:hover': {
-                      bgcolor: alpha(theme.palette.primary.main, 0.25),
+                      bgcolor: alpha(theme.palette.primary.main, 0.16),
                     },
                   }}
                 />
