@@ -12,8 +12,6 @@ import PersonIcon from '@mui/icons-material/Person';
 import RssFeedIcon from '@mui/icons-material/RssFeed';
 import AlternateEmailIcon from '@mui/icons-material/AlternateEmail';
 import PushPinIcon from '@mui/icons-material/PushPin';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import { formatDistanceToNow } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { Contact } from '../api';
@@ -33,9 +31,14 @@ interface ContactCardProps {
   disabled?: boolean;
   tag?: string;
   pinned?: boolean;
-  scale?: number;
+  cardWidth?: number;
+  cardHeight?: number;
   onTogglePin?: (contact: Contact) => void;
-  onScaleChange?: (contact: Contact, nextScale: number) => void;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 }
 
 export const ContactCard: React.FC<ContactCardProps> = ({
@@ -46,14 +49,29 @@ export const ContactCard: React.FC<ContactCardProps> = ({
   disabled = false,
   tag,
   pinned = false,
-  scale = 1,
+  cardWidth,
+  cardHeight,
   onTogglePin,
-  onScaleChange,
 }) => {
   const theme = useTheme();
   const isFeature = variant === 'feature';
+  const isLight = theme.palette.mode === 'light';
   const [previewImageLoadFailed, setPreviewImageLoadFailed] = React.useState(false);
-  const safeScale = Math.max(0.8, Math.min(1.5, Number.isFinite(scale) ? scale : 1));
+
+  const safeWidth = Math.max(160, Math.round(cardWidth ?? (isFeature ? 340 : 312)));
+  const safeHeight = Math.max(140, Math.round(cardHeight ?? (isFeature ? 340 : 316)));
+  const aspectRatio = safeWidth / Math.max(1, safeHeight);
+  const isTiny = safeWidth < 210 || safeHeight < 190;
+  const isCompact = safeWidth < 260 || safeHeight < 250;
+  const isWideAndFlat = aspectRatio > 1.45 && safeHeight < 280;
+  const avatarSize = clamp(Math.min(safeWidth * 0.22, safeHeight * 0.24), isTiny ? 34 : 44, isFeature ? 76 : 66);
+  const titleClamp = isTiny ? 1 : isCompact ? 2 : isFeature ? 2 : 1;
+  const previewClamp = isTiny ? 1 : isCompact ? 2 : isWideAndFlat ? 2 : isFeature ? 4 : 3;
+  const showHandle = safeWidth >= 225;
+  const showSourceAndTime = safeHeight >= 185;
+  const showPreviewBlock = safeHeight >= 160;
+  const showPreviewImage = Boolean(!isTiny && safeHeight >= 240 && !isWideAndFlat);
+  const contentPadding = isTiny ? 1.3 : isCompact ? 1.8 : isFeature ? 2.8 : 2.25;
 
   const getSourceIcon = (source?: string | null) => {
     if (!source) return <EmailIcon fontSize="small" />;
@@ -92,6 +110,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
     if (isGenericSubject && parsedTitle) return parsedTitle;
     return subject || parsedTitle || '暂无消息';
   }, [contact.latest_subject, parsedPreview?.title]);
+
   const previewText = React.useMemo(
     () => getPreviewDisplayText(contact.latest_preview, '...'),
     [contact.latest_preview]
@@ -114,19 +133,21 @@ export const ContactCard: React.FC<ContactCardProps> = ({
       transition={{ delay: index * 0.05, duration: 0.4 }}
       style={{ height: '100%' }}
     >
-      <Card 
+      <Card
         onClick={disabled ? undefined : () => onClick(contact)}
-        sx={{ 
-          cursor: disabled ? 'default' : 'pointer', 
+        sx={{
+          cursor: disabled ? 'default' : 'pointer',
           height: '100%',
           position: 'relative',
           overflow: 'hidden',
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           border: '2px solid',
-          borderColor: pinned ? 'primary.main' : 'divider',
+          borderColor: pinned ? (isLight ? '#000' : 'primary.main') : 'divider',
           opacity: disabled ? 0.65 : 1,
           boxShadow: pinned
-            ? `7px 7px 0 0 ${alpha(theme.palette.primary.main, 0.45)}`
+            ? isLight
+              ? '8px 8px 0 0 #000'
+              : `8px 8px 0 0 ${alpha(theme.palette.primary.main, 0.55)}`
             : undefined,
           '&::before': pinned
             ? {
@@ -139,12 +160,12 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 fontSize: '0.7rem',
                 fontWeight: 900,
                 letterSpacing: '0.08em',
-                bgcolor: 'primary.main',
-                color: theme.palette.mode === 'light' ? '#fff' : '#000',
+                bgcolor: isLight ? '#000' : 'primary.main',
+                color: isLight ? '#fff' : theme.palette.getContrastText(theme.palette.primary.main),
                 zIndex: 4,
                 borderRight: '2px solid',
                 borderBottom: '2px solid',
-                borderColor: 'text.primary',
+                borderColor: isLight ? '#fff' : 'text.primary',
               }
             : undefined,
           '&:hover': {
@@ -152,9 +173,11 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               ? {}
               : {
                   transform: 'translate(-2px, -2px)',
-                  boxShadow: `6px 6px 0 0 ${theme.palette.text.primary}`,
+                  boxShadow: pinned && isLight
+                    ? '8px 8px 0 0 #000'
+                    : `6px 6px 0 0 ${theme.palette.text.primary}`,
                 }),
-          }
+          },
         }}
       >
         {!disabled && (
@@ -169,7 +192,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
               gap: 0.5,
               bgcolor: alpha(theme.palette.background.paper, 0.94),
               border: '1px solid',
-              borderColor: 'divider',
+              borderColor: pinned && isLight ? '#000' : 'divider',
               boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.25)}`,
             }}
             onClick={(event) => event.stopPropagation()}
@@ -179,37 +202,18 @@ export const ContactCard: React.FC<ContactCardProps> = ({
           >
             <IconButton
               size="small"
-              onClick={() => onScaleChange?.(contact, Math.max(0.8, safeScale - 0.1))}
-              sx={{ borderRadius: 0 }}
-              aria-label="缩小卡片"
-            >
-              <ZoomOutIcon fontSize="inherit" />
-            </IconButton>
-            <Typography
-              variant="caption"
-              sx={{
-                width: 30,
-                textAlign: 'center',
-                fontWeight: 700,
-                lineHeight: 1,
-              }}
-            >
-              {Math.round(safeScale * 100)}%
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => onScaleChange?.(contact, Math.min(1.5, safeScale + 0.1))}
-              sx={{ borderRadius: 0 }}
-              aria-label="放大卡片"
-            >
-              <ZoomInIcon fontSize="inherit" />
-            </IconButton>
-            <IconButton
-              size="small"
               onClick={() => onTogglePin?.(contact)}
               sx={{
                 borderRadius: 0,
-                color: pinned ? 'primary.main' : 'text.secondary',
+                border: '1px solid',
+                borderColor: pinned ? (isLight ? '#000' : 'primary.main') : (isLight ? '#000' : 'divider'),
+                color: pinned ? (isLight ? '#fff' : 'primary.main') : 'text.secondary',
+                bgcolor: pinned ? (isLight ? '#000' : alpha(theme.palette.primary.main, 0.12)) : (isLight ? '#fff' : alpha(theme.palette.background.default, 0.5)),
+                '&:hover': {
+                  bgcolor: pinned
+                    ? (isLight ? '#111' : alpha(theme.palette.primary.main, 0.2))
+                    : (isLight ? '#f2f2f2' : alpha(theme.palette.background.default, 0.8)),
+                },
               }}
               aria-label={pinned ? '取消置顶' : '置顶卡片'}
             >
@@ -217,6 +221,7 @@ export const ContactCard: React.FC<ContactCardProps> = ({
             </IconButton>
           </Box>
         )}
+
         {tag && (
           <Box
             sx={{
@@ -237,184 +242,204 @@ export const ContactCard: React.FC<ContactCardProps> = ({
                 bgcolor: 'background.paper',
                 border: '2px solid',
                 borderColor: 'divider',
-                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
+                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`,
               }}
             />
           </Box>
         )}
+
         {contact.unread_count > 0 && (
-            <Box 
-                sx={{
-                    position: 'absolute',
-                    top: 8,
-                    right: disabled ? 8 : 136,
-                    width: 12,
-                    height: 12,
-                    bgcolor: 'text.primary',
-                    border: '2px solid',
-                    borderColor: 'background.paper',
-                    borderRadius: '50%',
-                    zIndex: 1
-                }}
-            />
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 52,
+              width: 12,
+              height: 12,
+              bgcolor: 'text.primary',
+              border: '2px solid',
+              borderColor: 'background.paper',
+              borderRadius: '50%',
+              zIndex: 1,
+            }}
+          />
         )}
 
         <CardContent
           sx={{
-            p: isFeature
-              ? { xs: 3.5, md: 4 }
-              : { xs: 3, md: 3.5 },
+            p: contentPadding,
             '&:last-child': {
-              pb: isFeature
-                ? { xs: 3.5, md: 4 }
-                : { xs: 3, md: 3.5 }
-            }
+              pb: contentPadding,
+            },
           }}
         >
-          <Box display="flex" alignItems="center" mb={2}>
-            <Avatar 
-              src={contact.avatar_url || undefined} 
+          <Box display="flex" alignItems="center" mb={isTiny ? 1 : 1.8}>
+            <Avatar
+              src={contact.avatar_url || undefined}
               imgProps={{ referrerPolicy: 'no-referrer' }}
-              sx={{ 
-                  bgcolor: alpha(theme.palette.primary.main, 0.1),
-                  color: theme.palette.primary.main,
-                  width: isFeature ? 72 : 60,
-                  height: isFeature ? 72 : 60,
-                  fontWeight: 600,
-                  borderRadius: 0,
-                  border: '2px solid',
-                  borderColor: 'divider',
-                  boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`
+              sx={{
+                bgcolor: alpha(theme.palette.primary.main, 0.1),
+                color: theme.palette.primary.main,
+                width: avatarSize,
+                height: avatarSize,
+                fontWeight: 600,
+                borderRadius: 0,
+                border: '2px solid',
+                borderColor: 'divider',
+                boxShadow: `2px 2px 0 0 ${alpha(theme.palette.text.primary, 0.3)}`,
               }}
             >
               {!contact.avatar_url && (contact.display_name?.[0] || <PersonIcon />)}
             </Avatar>
-            <Box ml={2} overflow="hidden">
+            <Box ml={1.3} overflow="hidden">
               <Typography
-                variant={isFeature ? 'h5' : 'h6'}
+                variant={isFeature && !isCompact ? 'h5' : 'h6'}
                 noWrap
                 sx={{
-                  fontSize: isFeature
-                    ? { xs: '1.25rem', md: '1.4rem' }
-                    : { xs: '1.1rem', md: '1.18rem' },
+                  fontSize: isTiny
+                    ? '0.92rem'
+                    : isCompact
+                    ? '1.02rem'
+                    : isFeature
+                    ? { xs: '1.22rem', md: '1.36rem' }
+                    : { xs: '1.08rem', md: '1.16rem' },
                   fontWeight: 700,
                 }}
               >
                 {contact.display_name}
               </Typography>
-              <Typography
-                variant="body2"
-                color="textSecondary"
-                noWrap
-                sx={{ fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem' }}
-              >
-                {contact.handle}
-              </Typography>
+              {showHandle && (
+                <Typography
+                  variant="body2"
+                  color="textSecondary"
+                  noWrap
+                  sx={{ fontSize: isTiny ? '0.72rem' : isFeature ? { xs: '0.84rem', md: '0.9rem' } : '0.82rem' }}
+                >
+                  {contact.handle}
+                </Typography>
+              )}
             </Box>
           </Box>
 
-          <Box
-            sx={{
+          {showPreviewBlock && (
+            <Box
+              sx={{
                 bgcolor: theme.palette.background.default,
                 border: '1px dashed',
                 borderColor: alpha(theme.palette.text.primary, 0.2),
                 borderRadius: 0,
-                p: isFeature ? { xs: 2.25, md: 2.75 } : 2,
-                mb: isFeature ? 2.5 : 2,
-            }}
-          >
-            {previewImageUrl && !previewImageLoadFailed && (
-              <Box
-                sx={{
-                  borderRadius: 0,
-                  overflow: 'hidden',
-                  mb: isFeature ? 2 : 1.5,
-                  border: '2px solid',
-                  borderColor: 'divider',
-                  bgcolor: 'background.paper',
-                  aspectRatio: isFeature ? '16 / 8.8' : '16 / 9',
-                }}
-              >
-                <Box
-                  component="img"
-                  src={previewImageUrl}
-                  alt={contact.latest_subject || `${contact.display_name} 预览图`}
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
-                  onError={() => setPreviewImageLoadFailed(true)}
-                  sx={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
-                    display: 'block',
-                  }}
-                />
-              </Box>
-            )}
-            <Typography
-              variant={isFeature ? 'h6' : 'subtitle2'}
-              fontWeight={700}
-              gutterBottom
-              sx={{
-                display: '-webkit-box',
-                WebkitLineClamp: isFeature ? 2 : 1,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                lineHeight: 1.25,
-                fontSize: isFeature ? '1.06rem' : '0.92rem',
+                p: isTiny ? 1 : isCompact ? 1.35 : isFeature ? 2.4 : 1.8,
+                mb: showSourceAndTime ? 1.8 : 0,
+                minHeight: 0,
               }}
             >
-              {previewTitle}
-            </Typography>
-            <Typography variant="body2" color="textSecondary" sx={{
-              display: '-webkit-box',
-              WebkitLineClamp: isFeature ? 3 : 2,
-              WebkitBoxOrient: 'vertical',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              fontSize: isFeature ? { xs: '0.9rem', md: '0.95rem' } : '0.85rem',
-              lineHeight: 1.7
-            }}>
-              {previewText}
-            </Typography>
-            {previewUrl && (
+              {showPreviewImage && previewImageUrl && !previewImageLoadFailed && (
+                <Box
+                  sx={{
+                    borderRadius: 0,
+                    overflow: 'hidden',
+                    mb: isFeature ? 1.8 : 1.3,
+                    border: '2px solid',
+                    borderColor: 'divider',
+                    bgcolor: 'background.paper',
+                    aspectRatio: isWideAndFlat ? '16 / 7.8' : isFeature ? '16 / 8.8' : '16 / 9',
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={previewImageUrl}
+                    alt={contact.latest_subject || `${contact.display_name} 预览图`}
+                    loading="lazy"
+                    referrerPolicy="no-referrer"
+                    onError={() => setPreviewImageLoadFailed(true)}
+                    sx={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      display: 'block',
+                    }}
+                  />
+                </Box>
+              )}
+
               <Typography
-                component="a"
-                href={previewUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                variant="caption"
-                color="primary.main"
-                onClick={(event) => event.stopPropagation()}
+                variant={isFeature ? 'h6' : 'subtitle2'}
+                fontWeight={700}
+                gutterBottom
                 sx={{
-                  mt: 1,
-                  display: 'inline-flex',
-                  textDecoration: 'none',
-                  fontWeight: 700,
-                  '&:hover': { textDecoration: 'underline' },
+                  display: '-webkit-box',
+                  WebkitLineClamp: titleClamp,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  lineHeight: 1.25,
+                  fontSize: isTiny ? '0.86rem' : isFeature ? '1.04rem' : '0.92rem',
                 }}
               >
-                查看原文
+                {previewTitle}
               </Typography>
-            )}
-          </Box>
 
-          <Box display="flex" justifyContent="space-between" alignItems="center" gap={2}>
-            <Chip
-              icon={getSourceIcon(contact.latest_source)}
-              label={sourceLabel}
-              size="small"
-              sx={{
+              <Typography
+                variant="body2"
+                color="textSecondary"
+                sx={{
+                  display: '-webkit-box',
+                  WebkitLineClamp: previewClamp,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  fontSize: isTiny ? '0.76rem' : isFeature ? { xs: '0.87rem', md: '0.92rem' } : '0.84rem',
+                  lineHeight: 1.6,
+                }}
+              >
+                {previewText}
+              </Typography>
+
+              {previewUrl && !isTiny && (
+                <Typography
+                  component="a"
+                  href={previewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  variant="caption"
+                  color="primary.main"
+                  onClick={(event) => event.stopPropagation()}
+                  sx={{
+                    mt: 0.8,
+                    display: 'inline-flex',
+                    textDecoration: 'none',
+                    fontWeight: 700,
+                    '&:hover': { textDecoration: 'underline' },
+                  }}
+                >
+                  查看原文
+                </Typography>
+              )}
+            </Box>
+          )}
+
+          {showSourceAndTime && (
+            <Box display="flex" justifyContent="space-between" alignItems="center" gap={1.4}>
+              <Chip
+                icon={getSourceIcon(contact.latest_source)}
+                label={sourceLabel}
+                size="small"
+                sx={{
                   borderRadius: 0,
                   fontWeight: 700,
-                  '& .MuiChip-icon': { color: 'inherit' }
-              }}
-            />
-            <Typography variant="caption" color="textSecondary">
-              {formattedDate}
-            </Typography>
-          </Box>
+                  maxWidth: Math.max(110, safeWidth - 165),
+                  '& .MuiChip-label': {
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  },
+                  '& .MuiChip-icon': { color: 'inherit' },
+                }}
+              />
+              <Typography variant="caption" color="textSecondary" noWrap>
+                {formattedDate}
+              </Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
     </motion.div>

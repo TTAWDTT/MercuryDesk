@@ -18,50 +18,69 @@ interface ContactGridProps {
 type CardLayoutState = {
   x: number;
   y: number;
-  scale: number;
+  width: number;
+  height: number;
   pinned: boolean;
   z: number;
 };
 
-type DraggingState = {
+type ResizeDirection = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
+
+type InteractionState = {
+  mode: 'drag' | 'resize';
   id: number;
   pointerId: number;
   startX: number;
   startY: number;
   originX: number;
   originY: number;
+  originWidth: number;
+  originHeight: number;
+  direction?: ResizeDirection;
 };
 
-const STORAGE_KEY = 'mercurydesk:contact-card-layout:v2';
+const STORAGE_KEY = 'mercurydesk:contact-card-layout:v3';
 
-function clampScale(value: number): number {
-  if (!Number.isFinite(value)) return 1;
-  return Math.max(0.8, Math.min(1.5, Number(value)));
+function clampNumber(value: number, min: number, max: number, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
 }
 
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-function readStoredLayout(): Record<number, CardLayoutState> {
+function readStoredLayout(
+  baseWidth: number,
+  baseHeight: number,
+  minWidth: number,
+  minHeight: number,
+  maxWidth: number,
+  maxHeight: number,
+): Record<number, CardLayoutState> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed !== 'object') return {};
     const out: Record<number, CardLayoutState> = {};
+
     for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
       const id = Number(key);
       if (!Number.isInteger(id) || id <= 0) continue;
-      const row = value as Partial<CardLayoutState> | undefined;
+      const row = value as Partial<CardLayoutState & { scale?: number }> | undefined;
+
+      const legacyScale = clampNumber(Number(row?.scale ?? 1), 0.6, 2.6, 1);
+      const width = clampNumber(Number(row?.width ?? baseWidth * legacyScale), minWidth, maxWidth, baseWidth);
+      const height = clampNumber(Number(row?.height ?? baseHeight * legacyScale), minHeight, maxHeight, baseHeight);
+
       out[id] = {
         x: Math.max(0, Number(row?.x ?? 0) || 0),
         y: Math.max(0, Number(row?.y ?? 0) || 0),
-        scale: clampScale(Number(row?.scale ?? 1)),
+        width,
+        height,
         pinned: Boolean(row?.pinned),
         z: Math.max(1, Number(row?.z ?? 1) || 1),
       };
     }
+
     return out;
   } catch {
     return {};
@@ -76,19 +95,65 @@ function writeStoredLayout(layout: Record<number, CardLayoutState>) {
   }
 }
 
+function handleCursor(direction: ResizeDirection): string {
+  if (direction === 'n' || direction === 's') return 'ns-resize';
+  if (direction === 'e' || direction === 'w') return 'ew-resize';
+  if (direction === 'ne' || direction === 'sw') return 'nesw-resize';
+  return 'nwse-resize';
+}
+
+function getHandleSx(direction: ResizeDirection) {
+  const common = {
+    position: 'absolute' as const,
+    zIndex: 6,
+    borderRadius: 0,
+  };
+
+  switch (direction) {
+    case 'n':
+      return { ...common, top: -5, left: 10, right: 10, height: 10 };
+    case 's':
+      return { ...common, bottom: -5, left: 10, right: 10, height: 10 };
+    case 'e':
+      return { ...common, top: 10, bottom: 10, right: -5, width: 10 };
+    case 'w':
+      return { ...common, top: 10, bottom: 10, left: -5, width: 10 };
+    case 'nw':
+      return { ...common, top: -6, left: -6, width: 14, height: 14 };
+    case 'ne':
+      return { ...common, top: -6, right: -6, width: 14, height: 14 };
+    case 'sw':
+      return { ...common, bottom: -6, left: -6, width: 14, height: 14 };
+    case 'se':
+      return { ...common, bottom: -6, right: -6, width: 14, height: 14 };
+    default:
+      return common;
+  }
+}
+
+const RESIZE_DIRECTIONS: ResizeDirection[] = ['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'];
+
 export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactClick, onCardLayoutChange, loading }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+
   const pinnedZoneHeight = isMobile ? 96 : 118;
   const baseCardWidth = isMobile ? 260 : 312;
   const baseCardHeight = isMobile ? 272 : 316;
+  const minCardWidth = isMobile ? 170 : 210;
+  const minCardHeight = isMobile ? 170 : 210;
+  const maxCardWidth = isMobile ? 480 : 860;
+  const maxCardHeight = isMobile ? 620 : 920;
   const gap = isMobile ? 14 : 18;
   const columns = isMobile ? 1 : 3;
 
-  const [layoutMap, setLayoutMap] = React.useState<Record<number, CardLayoutState>>(() => readStoredLayout());
-  const [draggingId, setDraggingId] = React.useState<number | null>(null);
-  const draggingRef = React.useRef<DraggingState | null>(null);
-  const zRef = React.useRef<number>(400);
+  const [layoutMap, setLayoutMap] = React.useState<Record<number, CardLayoutState>>(() =>
+    readStoredLayout(baseCardWidth, baseCardHeight, minCardWidth, minCardHeight, maxCardWidth, maxCardHeight)
+  );
+  const [activeCardId, setActiveCardId] = React.useState<number | null>(null);
+  const [interactionMode, setInteractionMode] = React.useState<'drag' | 'resize' | null>(null);
+  const interactionRef = React.useRef<InteractionState | null>(null);
+  const zRef = React.useRef<number>(500);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
@@ -100,7 +165,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           next[contact.id] = {
             x: Math.max(0, Number(old.x) || 0),
             y: Math.max(0, Number(old.y) || 0),
-            scale: clampScale(old.scale),
+            width: clampNumber(old.width, minCardWidth, maxCardWidth, baseCardWidth),
+            height: clampNumber(old.height, minCardHeight, maxCardHeight, baseCardHeight),
             pinned: Boolean(old.pinned),
             z: Math.max(1, Number(old.z) || 1),
           };
@@ -112,14 +178,26 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         next[contact.id] = {
           x: 20 + col * (baseCardWidth + gap),
           y: pinnedZoneHeight + 24 + row * (baseCardHeight + gap),
-          scale: 1,
+          width: baseCardWidth,
+          height: baseCardHeight,
           pinned: false,
           z: ++zRef.current,
         };
       });
       return next;
     });
-  }, [baseCardHeight, baseCardWidth, columns, contacts, gap, pinnedZoneHeight]);
+  }, [
+    baseCardHeight,
+    baseCardWidth,
+    columns,
+    contacts,
+    gap,
+    maxCardHeight,
+    maxCardWidth,
+    minCardHeight,
+    minCardWidth,
+    pinnedZoneHeight,
+  ]);
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0) return;
@@ -132,7 +210,6 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
       const la = layoutMap[a.id];
       const lb = layoutMap[b.id];
       if (!la || !lb) return a.id - b.id;
-      // 序数按左上角位置确定。
       if (la.y !== lb.y) return la.y - lb.y;
       if (la.x !== lb.x) return la.x - lb.x;
       return a.id - b.id;
@@ -141,93 +218,104 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
 
   React.useEffect(() => {
     if (!contacts || contacts.length === 0 || !onCardLayoutChange) return;
+
     const payload: AgentCardLayoutItem[] = sortedForMemory.map((contact, index) => {
       const layout = layoutMap[contact.id];
       return {
         contact_id: contact.id,
         display_name: contact.display_name || contact.handle || `contact-${contact.id}`,
         pinned: Boolean(layout?.pinned),
-        scale: clampScale(layout?.scale ?? 1),
         order: index,
         x: Math.max(0, Math.round(layout?.x ?? 0)),
         y: Math.max(0, Math.round(layout?.y ?? 0)),
+        width: Math.round(clampNumber(layout?.width ?? baseCardWidth, minCardWidth, maxCardWidth, baseCardWidth)),
+        height: Math.round(clampNumber(layout?.height ?? baseCardHeight, minCardHeight, maxCardHeight, baseCardHeight)),
       };
     });
-    onCardLayoutChange(payload);
-  }, [contacts, layoutMap, onCardLayoutChange, sortedForMemory]);
 
-  const handleTogglePin = React.useCallback((contact: Contact) => {
-    setLayoutMap((prev) => {
-      const current = prev[contact.id] ?? {
-        x: 20,
-        y: pinnedZoneHeight + 24,
-        scale: 1,
-        pinned: false,
-        z: ++zRef.current,
-      };
-      const toPinned = !current.pinned;
-      if (!toPinned) {
+    onCardLayoutChange(payload);
+  }, [
+    baseCardHeight,
+    baseCardWidth,
+    contacts,
+    layoutMap,
+    maxCardHeight,
+    maxCardWidth,
+    minCardHeight,
+    minCardWidth,
+    onCardLayoutChange,
+    sortedForMemory,
+  ]);
+
+  const handleTogglePin = React.useCallback(
+    (contact: Contact) => {
+      setLayoutMap((prev) => {
+        const current = prev[contact.id] ?? {
+          x: 20,
+          y: pinnedZoneHeight + 24,
+          width: baseCardWidth,
+          height: baseCardHeight,
+          pinned: false,
+          z: ++zRef.current,
+        };
+
+        const toPinned = !current.pinned;
+        if (!toPinned) {
+          return {
+            ...prev,
+            [contact.id]: {
+              ...current,
+              pinned: false,
+              y: current.y < pinnedZoneHeight ? pinnedZoneHeight + 24 : current.y,
+              z: ++zRef.current,
+            },
+          };
+        }
+
+        const pinnedCount = Object.values(prev).filter((x) => x.pinned && x !== current).length;
+        const pinnedStepX = isMobile ? 190 : 260;
+        const pinnedStepY = isMobile ? 92 : 98;
+        const pinnedCol = pinnedCount % columns;
+        const pinnedRow = Math.floor(pinnedCount / columns);
+
         return {
           ...prev,
           [contact.id]: {
             ...current,
-            pinned: false,
-            y: current.y < pinnedZoneHeight ? pinnedZoneHeight + 24 : current.y,
+            pinned: true,
+            x: 14 + pinnedCol * pinnedStepX,
+            y: 10 + pinnedRow * pinnedStepY,
             z: ++zRef.current,
           },
         };
-      }
+      });
+    },
+    [baseCardHeight, baseCardWidth, columns, isMobile, pinnedZoneHeight]
+  );
 
-      const pinnedCount = Object.values(prev).filter((x) => x.pinned && x !== current).length;
-      const pinnedCol = pinnedCount % columns;
-      const pinnedRow = Math.floor(pinnedCount / columns);
-      return {
-        ...prev,
-        [contact.id]: {
-          ...current,
-          pinned: true,
-          x: 16 + pinnedCol * (baseCardWidth * 0.86),
-          y: 12 + pinnedRow * Math.max(74, baseCardHeight * 0.32),
-          z: ++zRef.current,
-        },
-      };
-    });
-  }, [baseCardHeight, baseCardWidth, columns, pinnedZoneHeight]);
-
-  const handleScaleChange = React.useCallback((contact: Contact, nextScale: number) => {
-    setLayoutMap((prev) => {
-      const current = prev[contact.id];
-      if (!current) return prev;
-      return {
-        ...prev,
-        [contact.id]: {
-          ...current,
-          scale: round2(clampScale(nextScale)),
-          z: ++zRef.current,
-        },
-      };
-    });
-  }, []);
-
-  const handlePointerDown = React.useCallback(
+  const startDrag = React.useCallback(
     (contactId: number, event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return;
       const state = layoutMap[contactId];
       if (!state) return;
-
       if ((event.target as HTMLElement)?.closest('[data-card-control="1"]')) return;
 
       event.preventDefault();
-      (event.currentTarget as HTMLDivElement).setPointerCapture(event.pointerId);
-      draggingRef.current = {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      interactionRef.current = {
+        mode: 'drag',
         id: contactId,
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         originX: state.x,
         originY: state.y,
+        originWidth: state.width,
+        originHeight: state.height,
       };
-      setDraggingId(contactId);
+
+      setActiveCardId(contactId);
+      setInteractionMode('drag');
       setLayoutMap((prev) => ({
         ...prev,
         [contactId]: {
@@ -236,32 +324,133 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         },
       }));
     },
-    [layoutMap],
+    [layoutMap]
   );
 
-  const handlePointerMove = React.useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    const drag = draggingRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const dx = event.clientX - drag.startX;
-    const dy = event.clientY - drag.startY;
-    setLayoutMap((prev) => {
-      const current = prev[drag.id];
-      if (!current) return prev;
-      return {
-        ...prev,
-        [drag.id]: {
-          ...current,
-          x: Math.max(0, drag.originX + dx),
-          y: Math.max(0, drag.originY + dy),
-        },
-      };
-    });
-  }, []);
+  const startResize = React.useCallback(
+    (contactId: number, direction: ResizeDirection, event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return;
+      const state = layoutMap[contactId];
+      if (!state) return;
 
-  const finishDrag = React.useCallback((pointerId: number | null = null) => {
-    if (pointerId !== null && draggingRef.current && draggingRef.current.pointerId !== pointerId) return;
-    draggingRef.current = null;
-    setDraggingId(null);
+      event.preventDefault();
+      event.stopPropagation();
+
+      const card = (event.currentTarget.closest('[data-card-id]') as HTMLDivElement | null) || null;
+      card?.setPointerCapture(event.pointerId);
+
+      interactionRef.current = {
+        mode: 'resize',
+        id: contactId,
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        originX: state.x,
+        originY: state.y,
+        originWidth: state.width,
+        originHeight: state.height,
+        direction,
+      };
+
+      setActiveCardId(contactId);
+      setInteractionMode('resize');
+      setLayoutMap((prev) => ({
+        ...prev,
+        [contactId]: {
+          ...prev[contactId],
+          z: ++zRef.current,
+        },
+      }));
+    },
+    [layoutMap]
+  );
+
+  const handlePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const interaction = interactionRef.current;
+      if (!interaction || interaction.pointerId !== event.pointerId) return;
+
+      const dx = event.clientX - interaction.startX;
+      const dy = event.clientY - interaction.startY;
+
+      setLayoutMap((prev) => {
+        const current = prev[interaction.id];
+        if (!current) return prev;
+
+        if (interaction.mode === 'drag') {
+          return {
+            ...prev,
+            [interaction.id]: {
+              ...current,
+              x: Math.max(0, interaction.originX + dx),
+              y: Math.max(0, interaction.originY + dy),
+            },
+          };
+        }
+
+        const direction = interaction.direction || 'se';
+        const east = direction.includes('e');
+        const west = direction.includes('w');
+        const north = direction.includes('n');
+        const south = direction.includes('s');
+
+        let nextX = interaction.originX;
+        let nextY = interaction.originY;
+        let nextWidth = interaction.originWidth;
+        let nextHeight = interaction.originHeight;
+
+        if (east) {
+          nextWidth = clampNumber(interaction.originWidth + dx, minCardWidth, maxCardWidth, interaction.originWidth);
+        }
+        if (south) {
+          nextHeight = clampNumber(interaction.originHeight + dy, minCardHeight, maxCardHeight, interaction.originHeight);
+        }
+        if (west) {
+          const widthFromLeft = clampNumber(interaction.originWidth - dx, minCardWidth, maxCardWidth, interaction.originWidth);
+          nextX = interaction.originX + (interaction.originWidth - widthFromLeft);
+          nextWidth = widthFromLeft;
+        }
+        if (north) {
+          const heightFromTop = clampNumber(interaction.originHeight - dy, minCardHeight, maxCardHeight, interaction.originHeight);
+          nextY = interaction.originY + (interaction.originHeight - heightFromTop);
+          nextHeight = heightFromTop;
+        }
+
+        if (nextX < 0) {
+          const overshoot = -nextX;
+          nextX = 0;
+          if (west) {
+            nextWidth = clampNumber(nextWidth - overshoot, minCardWidth, maxCardWidth, nextWidth);
+          }
+        }
+        if (nextY < 0) {
+          const overshoot = -nextY;
+          nextY = 0;
+          if (north) {
+            nextHeight = clampNumber(nextHeight - overshoot, minCardHeight, maxCardHeight, nextHeight);
+          }
+        }
+
+        return {
+          ...prev,
+          [interaction.id]: {
+            ...current,
+            x: nextX,
+            y: nextY,
+            width: nextWidth,
+            height: nextHeight,
+          },
+        };
+      });
+    },
+    [maxCardHeight, maxCardWidth, minCardHeight, minCardWidth]
+  );
+
+  const finishInteraction = React.useCallback((pointerId: number | null = null) => {
+    if (pointerId !== null && interactionRef.current && interactionRef.current.pointerId !== pointerId) return;
+    interactionRef.current = null;
+    setActiveCardId(null);
+    setInteractionMode(null);
   }, []);
 
   const canvasHeight = React.useMemo(() => {
@@ -270,12 +459,11 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     contacts.forEach((contact) => {
       const layout = layoutMap[contact.id];
       if (!layout) return;
-      const h = baseCardHeight * clampScale(layout.scale);
-      const bottom = layout.y + h;
+      const bottom = layout.y + layout.height;
       if (bottom > maxBottom) maxBottom = bottom;
     });
     return Math.max(580, Math.ceil(maxBottom + 90));
-  }, [baseCardHeight, contacts, layoutMap, pinnedZoneHeight]);
+  }, [contacts, layoutMap, pinnedZoneHeight]);
 
   if (loading || !contacts) {
     return (
@@ -307,7 +495,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
           你的收件箱还没有内容。
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          连接账号后，这里会变成可拖放与缩放的卡片画板。
+          连接账号后，这里会变成可拖放与边框缩放的卡片画板。
         </Typography>
       </Box>
     );
@@ -324,7 +512,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     >
       <Box sx={{ mb: 1.5 }}>
         <Typography variant="caption" color="text.secondary">
-          画板模式: 拖动卡片到任意位置，左上角坐标决定序数。置顶卡片会吸附到顶部置顶带。
+          画板模式: 自由拖放卡片，直接拖拽边框调整矩形尺寸，左上角坐标决定序数。置顶卡片会吸附到顶部置顶带。
         </Typography>
       </Box>
 
@@ -367,32 +555,35 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
         {contacts.map((contact) => {
           const layout = layoutMap[contact.id];
           if (!layout) return null;
-          const scale = clampScale(layout.scale);
-          const width = baseCardWidth * scale;
-          const height = baseCardHeight * scale;
+
           const pinned = Boolean(layout.pinned);
-          const dragging = draggingId === contact.id;
+          const active = activeCardId === contact.id;
+          const dragging = active && interactionMode === 'drag';
+          const resizing = active && interactionMode === 'resize';
 
           return (
             <Box
               key={contact.id}
+              data-card-id={contact.id}
               sx={{
                 position: 'absolute',
                 left: layout.x,
                 top: layout.y,
-                width,
-                height,
-                zIndex: dragging ? 9999 : layout.z,
-                transition: dragging ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
-                transform: dragging ? 'scale(1.015)' : 'scale(1)',
-                boxShadow: dragging
+                width: layout.width,
+                height: layout.height,
+                zIndex: active ? 9999 : layout.z,
+                transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
+                transform: dragging ? 'scale(1.01)' : 'scale(1)',
+                boxShadow: active
                   ? `0 0 0 2px ${theme.palette.primary.main}, 0 10px 26px ${alpha(theme.palette.text.primary, 0.35)}`
                   : undefined,
+                touchAction: 'none',
+                userSelect: 'none',
               }}
-              onPointerDown={(event) => handlePointerDown(contact.id, event)}
+              onPointerDown={(event) => startDrag(contact.id, event)}
               onPointerMove={handlePointerMove}
-              onPointerUp={(event) => finishDrag(event.pointerId)}
-              onPointerCancel={(event) => finishDrag(event.pointerId)}
+              onPointerUp={(event) => finishInteraction(event.pointerId)}
+              onPointerCancel={(event) => finishInteraction(event.pointerId)}
             >
               <ContactCard
                 contact={contact}
@@ -400,10 +591,26 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
                 index={0}
                 variant={pinned ? 'feature' : 'standard'}
                 pinned={pinned}
-                scale={scale}
+                cardWidth={layout.width}
+                cardHeight={layout.height}
                 onTogglePin={handleTogglePin}
-                onScaleChange={handleScaleChange}
               />
+
+              {RESIZE_DIRECTIONS.map((direction) => (
+                <Box
+                  key={direction}
+                  data-card-control="1"
+                  onPointerDown={(event: React.PointerEvent<HTMLDivElement>) => startResize(contact.id, direction, event)}
+                  sx={{
+                    ...getHandleSx(direction),
+                    cursor: handleCursor(direction),
+                    bgcolor: resizing ? alpha(theme.palette.primary.main, 0.22) : 'transparent',
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.25),
+                    },
+                  }}
+                />
+              ))}
             </Box>
           );
         })}
@@ -411,4 +618,3 @@ export const ContactGrid: React.FC<ContactGridProps> = ({ contacts, onContactCli
     </Box>
   );
 };
-

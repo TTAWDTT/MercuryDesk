@@ -172,10 +172,11 @@ class AgentCardLayoutItem(BaseModel):
     contact_id: int
     display_name: str = Field(min_length=1, max_length=255)
     pinned: bool = False
-    scale: float = Field(default=1.0, ge=0.8, le=1.5)
     order: int = Field(default=0, ge=0)
     x: float = Field(default=0, ge=0)
     y: float = Field(default=0, ge=0)
+    width: float = Field(default=312, ge=120, le=2400)
+    height: float = Field(default=316, ge=120, le=2400)
 
 
 class AgentCardLayoutUpdate(BaseModel):

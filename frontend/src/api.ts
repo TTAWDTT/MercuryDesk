@@ -113,10 +113,11 @@ export type AgentCardLayoutItem = {
   contact_id: number;
   display_name: string;
   pinned: boolean;
-  scale: number;
   order: number;
-  x?: number;
-  y?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 };
 
 export type AccountOAuthStart = {

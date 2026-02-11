@@ -166,11 +166,6 @@ class AgentMemoryService:
             display_name = _truncate(_clean_text(str(item.get("display_name") or "")), 60) or f"contact-{contact_id}"
             pinned = bool(item.get("pinned"))
             try:
-                scale = float(item.get("scale") or 1.0)
-            except Exception:
-                scale = 1.0
-            scale = max(0.8, min(1.5, scale))
-            try:
                 order = int(item.get("order") or 0)
             except Exception:
                 order = 0
@@ -185,15 +180,26 @@ class AgentMemoryService:
                 y = 0.0
             x = max(0.0, x)
             y = max(0.0, y)
+            try:
+                width = float(item.get("width") or 312.0)
+            except Exception:
+                width = 312.0
+            try:
+                height = float(item.get("height") or 316.0)
+            except Exception:
+                height = 316.0
+            width = max(120.0, min(2400.0, width))
+            height = max(120.0, min(2400.0, height))
             cleaned_cards.append(
                 {
                     "contact_id": contact_id,
                     "display_name": display_name,
                     "pinned": pinned,
-                    "scale": round(scale, 2),
                     "order": order,
                     "x": round(x, 1),
                     "y": round(y, 1),
+                    "width": round(width, 1),
+                    "height": round(height, 1),
                 }
             )
             if len(cleaned_cards) >= 60:
@@ -201,13 +207,20 @@ class AgentMemoryService:
 
         cleaned_cards.sort(key=lambda x: (float(x["y"]), float(x["x"]), int(x["order"]), str(x["display_name"])))
         pinned_names = [str(c["display_name"]) for c in cleaned_cards if bool(c["pinned"])][:8]
-        scaled_names = [f"{c['display_name']}({c['scale']})" for c in cleaned_cards if abs(float(c["scale"]) - 1.0) > 0.01][:8]
-        order_preview = [f"{c['display_name']}@({c['x']},{c['y']})" for c in cleaned_cards[:12]]
+        resized_names = [
+            f"{c['display_name']}({int(float(c['width']))}x{int(float(c['height']))})"
+            for c in cleaned_cards
+            if abs(float(c["width"]) - 312.0) > 0.01 or abs(float(c["height"]) - 316.0) > 0.01
+        ][:8]
+        order_preview = [
+            f"{c['display_name']}@({c['x']},{c['y']})[{int(float(c['width']))}x{int(float(c['height']))}]"
+            for c in cleaned_cards[:12]
+        ]
 
         summary_lines = [
             "卡片布局偏好:",
             f"- 置顶: {', '.join(pinned_names) if pinned_names else '无'}",
-            f"- 缩放: {', '.join(scaled_names) if scaled_names else '默认'}",
+            f"- 尺寸: {', '.join(resized_names) if resized_names else '默认'}",
             f"- 顺序预览: {' > '.join(order_preview) if order_preview else '无'}",
         ]
         payload = json.dumps(cleaned_cards, ensure_ascii=False, separators=(",", ":"))
