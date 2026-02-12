@@ -32,35 +32,35 @@ const ColorModeContext = createContext<ColorModeContextType>({
 export const useColorMode = () => useContext(ColorModeContext);
 
 const lightTokens: ColorTokens = {
-  bg: '#f6f7f8',
-  bgElevated: '#eef2f5',
-  panel: '#ffffff',
-  panelAlt: '#f9fbfc',
-  text: '#111418',
-  textMuted: '#5b6470',
-  border: '#d7dde3',
-  borderStrong: '#c3ccd5',
-  accent: '#0f766e',
-  accentSoft: '#d6f3ef',
-  danger: '#b45309',
+  bg: '#faf9f5',
+  bgElevated: '#f3f1e8',
+  panel: '#fffdf8',
+  panelAlt: '#f5f3ea',
+  text: '#141413',
+  textMuted: '#7a786f',
+  border: '#e8e6dc',
+  borderStrong: '#d7d4c8',
+  accent: '#d97757',
+  accentSoft: '#f4e3dc',
+  danger: '#c45b3a',
 };
 
 const darkTokens: ColorTokens = {
-  bg: '#0f1317',
-  bgElevated: '#151b22',
-  panel: '#1b222b',
-  panelAlt: '#222b35',
-  text: '#ecf1f6',
-  textMuted: '#9eadbb',
-  border: '#354251',
-  borderStrong: '#445567',
-  accent: '#3bc6ba',
-  accentSoft: '#1f4b48',
-  danger: '#f5a75f',
+  bg: '#141413',
+  bgElevated: '#1b1b19',
+  panel: '#1d1d1b',
+  panelAlt: '#252521',
+  text: '#faf9f5',
+  textMuted: '#b0aea5',
+  border: '#34332f',
+  borderStrong: '#4a4943',
+  accent: '#d97757',
+  accentSoft: '#3a2a24',
+  danger: '#e18f74',
 };
 
-export const boardLight = '#ffffff';
-export const boardDark = '#1b222b';
+export const boardLight = '#fffdf8';
+export const boardDark = '#1d1d1b';
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [mode, setMode] = useState<ColorMode>(() => {
@@ -77,9 +77,9 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const t = mode === 'light' ? lightTokens : darkTokens;
-  const fontHeading = '"IBM Plex Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
-  const fontBody = '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
-  const fontMono = '"IBM Plex Mono", "JetBrains Mono", monospace';
+  const fontHeading = '"Poppins", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif';
+  const fontBody = '"Lora", "Noto Serif SC", "Songti SC", "STSong", serif';
+  const fontMono = '"JetBrains Mono", "IBM Plex Mono", monospace';
 
   const theme = useMemo(
     () =>
@@ -88,10 +88,13 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           mode,
           primary: {
             main: t.accent,
-            contrastText: mode === 'light' ? '#ffffff' : '#062a28',
+            contrastText: '#faf9f5',
           },
           secondary: {
-            main: mode === 'light' ? '#3b4756' : '#c6d2de',
+            main: '#6a9bcc',
+          },
+          success: {
+            main: '#788c5d',
           },
           error: {
             main: t.danger,
@@ -137,8 +140,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 color: t.text,
                 backgroundImage:
                   mode === 'light'
-                    ? 'radial-gradient(circle at 15% -20%, rgba(15,118,110,0.08), transparent 28%), radial-gradient(circle at 110% 0%, rgba(58,125,199,0.08), transparent 32%)'
-                    : 'radial-gradient(circle at 12% -18%, rgba(59,198,186,0.16), transparent 30%), radial-gradient(circle at 112% 0%, rgba(105,147,255,0.14), transparent 35%)',
+                    ? 'radial-gradient(circle at -10% -20%, rgba(217,119,87,0.12), transparent 32%)'
+                    : 'radial-gradient(circle at -10% -20%, rgba(217,119,87,0.2), transparent 34%)',
                 backgroundAttachment: 'fixed',
               },
               'select, option, optgroup': {
@@ -155,8 +158,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 border: `1px solid ${t.border}`,
                 boxShadow:
                   mode === 'light'
-                    ? '0 8px 24px rgba(17,20,24,0.08)'
-                    : '0 10px 28px rgba(0,0,0,0.32)',
+                    ? '0 6px 18px rgba(20,20,19,0.06)'
+                    : '0 8px 20px rgba(0,0,0,0.24)',
                 borderRadius: 12,
               },
               elevation0: {
@@ -173,8 +176,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 borderRadius: 12,
                 boxShadow:
                   mode === 'light'
-                    ? '0 6px 18px rgba(17,20,24,0.08)'
-                    : '0 8px 24px rgba(0,0,0,0.34)',
+                    ? '0 4px 14px rgba(20,20,19,0.06)'
+                    : '0 6px 18px rgba(0,0,0,0.26)',
               },
             },
           },
@@ -184,7 +187,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 backgroundImage: 'none',
                 borderBottom: `1px solid ${t.border}`,
                 boxShadow: 'none',
-                backdropFilter: 'blur(10px)',
+                backdropFilter: 'blur(6px)',
               },
             },
           },
@@ -195,6 +198,7 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 borderWidth: 1,
                 minHeight: 34,
                 paddingInline: 14,
+                fontFamily: fontHeading,
               },
               outlined: {
                 borderColor: t.borderStrong,

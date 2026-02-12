@@ -472,3 +472,17 @@ export default function Dashboard() {
 前端组件负责渲染联系人卡片和会话面板，通过 API 与后端通信。当用户点击某个联系人卡片时，可以调用 `/contacts/{contact_id}/messages` 获取详细信息并渲染在 `ConversationPane` 组件中。对于消息回复，可调用 `/contacts/{contact_id}/reply` 接口发送邮件。利用全局状态管理（如 Redux）跟踪未读数和通知。
 
 以上详细实现和目录结构为 Codex 等工具提供了明确的蓝图，帮助其自动生成对应的代码文件和模块。在实际开发时，可根据团队习惯或框架特性灵活调整，但尽量保持模块的职责划分清晰，便于扩展和维护。
+
+
+import httpx
+
+TOKEN = "你的Bearer Token"
+USERNAME = "你订阅的用户名"
+
+# 测试获取用户信息
+r = httpx.get(
+   f"https://api.x.com/2/users/by/username/{USERNAME}",
+   headers={"Authorization": f"Bearer {TOKEN}"},
+   params={"user.fields": "id,name,username"}
+)
+print(r.status_code, r.json())

@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
 import IconButton from '@mui/material/IconButton';
 import InputBase from '@mui/material/InputBase';
-import { styled, useTheme } from '@mui/material/styles';
+import { styled } from '@mui/material/styles';
 import { useAuth } from '../contexts/AuthContext';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -14,7 +13,6 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import CircularProgress from '@mui/material/CircularProgress';
-import Chip from '@mui/material/Chip';
 import { useNavigate } from 'react-router-dom';
 
 const Search = styled('div')(({ theme }) => ({
@@ -23,16 +21,16 @@ const Search = styled('div')(({ theme }) => ({
   border: `1px solid ${theme.palette.divider}`,
   backgroundColor: theme.palette.background.paper,
   '&:hover': {
-    borderColor: theme.palette.text.primary,
+    borderColor: theme.palette.text.secondary,
   },
   '&:focus-within': {
     borderColor: theme.palette.primary.main,
     boxShadow: `0 0 0 3px ${theme.palette.primary.main}26`,
   },
-  marginRight: theme.spacing(1.5),
-  marginLeft: theme.spacing(1.5),
+  marginRight: theme.spacing(1.2),
+  marginLeft: theme.spacing(1.2),
   width: '100%',
-  maxWidth: 620,
+  maxWidth: 560,
   transition: 'all 0.2s ease',
   [theme.breakpoints.up('sm')]: {
     width: 'auto',
@@ -57,12 +55,12 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
     padding: theme.spacing(1.25, 1, 1.25, 0),
     paddingLeft: `calc(1em + ${theme.spacing(4)})`,
     transition: theme.transitions.create('width', { duration: 200 }),
-    width: '100%',
-    fontSize: '0.9rem',
-    [theme.breakpoints.up('md')]: {
-      width: '30ch',
+      width: '100%',
+      fontSize: '0.9rem',
+      [theme.breakpoints.up('md')]: {
+      width: '26ch',
       '&:focus': {
-        width: '42ch',
+        width: '34ch',
       },
     },
   },
@@ -77,7 +75,6 @@ interface TopBarProps {
 }
 
 export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hideSearch = false, hideSync = false }) => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { logout } = useAuth();
   const [searchValue, setSearchValue] = useState('');
@@ -127,11 +124,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
         borderBottom: '1px solid',
         borderColor: 'divider',
         bgcolor: 'background.paper',
-        backgroundImage:
-          theme.palette.mode === 'light'
-            ? 'linear-gradient(180deg, rgba(255,255,255,0.94), rgba(255,255,255,0.86))'
-            : 'linear-gradient(180deg, rgba(27,34,43,0.94), rgba(27,34,43,0.86))',
-        backdropFilter: 'blur(10px)',
+        backdropFilter: 'blur(6px)',
         color: 'text.primary',
       }}
     >
@@ -141,7 +134,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
           sx={{
             display: 'flex',
             alignItems: 'center',
-            mr: 0.8,
+            mr: 0.3,
             cursor: 'pointer',
             width: 38,
             height: 38,
@@ -152,23 +145,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
         >
           <img src="/logo.png" alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         </Box>
-        <Typography
-          variant="h6"
-          noWrap
-          component="div"
-          onClick={() => navigate('/')}
-          sx={{
-            display: { xs: 'none', sm: 'block' },
-            fontWeight: 700,
-            color: 'text.primary',
-            letterSpacing: '-0.015em',
-            cursor: 'pointer',
-            fontSize: '1.03rem',
-            mr: { xs: 0, md: 0.8 },
-          }}
-        >
-          MercuryDesk
-        </Typography>
 
         {!hideSearch && (
           <Search sx={{ height: 40, display: 'flex', alignItems: 'center', flex: 1 }}>
@@ -177,7 +153,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             </SearchIconWrapper>
             <StyledInputBase
               inputRef={searchInputRef}
-              placeholder="搜索联系人 / 邮件..."
+              placeholder="搜索联系人 / 邮件"
               inputProps={{ 'aria-label': 'search' }}
               value={searchValue}
               onChange={handleSearchChange}
@@ -191,18 +167,6 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
                 <CloseIcon fontSize="small" />
               </IconButton>
             )}
-            <Chip
-              size="small"
-              label={/Mac|iPhone|iPad|iPod/i.test(navigator.platform) ? '⌘K' : 'Ctrl+K'}
-              variant="outlined"
-              sx={{
-                mr: 0.8,
-                display: { xs: 'none', md: 'inline-flex' },
-                height: 22,
-                fontSize: '0.68rem',
-                color: 'text.secondary',
-              }}
-            />
           </Search>
         )}
 
@@ -217,8 +181,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
               sx={{
                 mr: 0.3,
                 color: 'text.primary',
-                border: '1px solid',
-                borderColor: 'divider',
+                border: '1px solid transparent',
                 '&:hover': { bgcolor: 'action.hover' },
               }}
             >
@@ -234,8 +197,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             sx={{
               mr: 0.3,
               color: 'text.primary',
-              border: '1px solid',
-              borderColor: 'divider',
+              border: '1px solid transparent',
               '&:hover': { bgcolor: 'action.hover' },
             }}
           >
@@ -249,8 +211,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onRefresh, onSearch, loading, hi
             onClick={logout}
             sx={{
               color: 'text.primary',
-              border: '1px solid',
-              borderColor: 'divider',
+              border: '1px solid transparent',
               '&:hover': { color: '#ef4444', bgcolor: 'rgba(239,68,68,0.08)' },
             }}
           >

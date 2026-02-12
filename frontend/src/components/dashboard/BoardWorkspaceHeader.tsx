@@ -3,9 +3,7 @@ import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Chip from '@mui/material/Chip';
 import Stack from '@mui/material/Stack';
-import Typography from '@mui/material/Typography';
 import Divider from '@mui/material/Divider';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 
 type WorkspaceItem = {
   key: string;
@@ -16,7 +14,6 @@ type BoardWorkspaceHeaderProps = {
   workspaces: WorkspaceItem[];
   activeWorkspace: string;
   onSelectWorkspace: (key: string) => void;
-  concurrency: number;
   onRefreshAgentPanels: () => void;
 };
 
@@ -24,7 +21,6 @@ function BoardWorkspaceHeaderView({
   workspaces,
   activeWorkspace,
   onSelectWorkspace,
-  concurrency,
   onRefreshAgentPanels,
 }: BoardWorkspaceHeaderProps) {
   return (
@@ -39,10 +35,7 @@ function BoardWorkspaceHeaderView({
           flexWrap: 'wrap',
         }}
       >
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 0.4 }}>
-            工作区:
-          </Typography>
+        <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
           {workspaces.map((item) => (
             <Chip
               key={item.key}
@@ -56,15 +49,9 @@ function BoardWorkspaceHeaderView({
           ))}
         </Stack>
 
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-          <Chip
-            size="small"
-            variant="outlined"
-            icon={<AutoAwesomeIcon fontSize="small" />}
-            label={`同步并发 ${concurrency}`}
-          />
+        <Stack direction="row" spacing={1} alignItems="center">
           <Button size="small" variant="outlined" onClick={onRefreshAgentPanels}>
-            刷新 AI 面板
+            刷新
           </Button>
         </Stack>
       </Box>
@@ -74,4 +61,3 @@ function BoardWorkspaceHeaderView({
 }
 
 export const BoardWorkspaceHeader = React.memo(BoardWorkspaceHeaderView);
-

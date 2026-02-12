@@ -5,7 +5,6 @@ import { ContactSkeleton } from './ContactSkeleton';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
-import Chip from '@mui/material/Chip';
 import PushPinIcon from '@mui/icons-material/PushPin';
 import { motion } from 'framer-motion';
 import { alpha, useTheme } from '@mui/material/styles';
@@ -179,7 +178,6 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
   const maxCardHeight = isMobile ? 620 : 920;
   const gap = isMobile ? 14 : 18;
   const columns = isMobile ? 1 : 3;
-  const boardCellSize = isMobile ? 18 : 24;
 
   const storageKey = React.useMemo(() => buildStorageKey(workspace), [workspace]);
   const [layoutMap, setLayoutMap] = React.useState<Record<number, CardLayoutState>>(() =>
@@ -771,39 +769,13 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
       transition={{ duration: 0.45 }}
       p={{ xs: 2, md: 4 }}
     >
-      <Box
-        sx={{
-          mb: 1.5,
-          px: 0.4,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Box sx={{ display: 'grid', gap: 0.2 }}>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-            关系画板
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            拖放排序、边框缩放、置顶带约束已启用。
-          </Typography>
-        </Box>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-          <Chip size="small" variant="outlined" icon={<PushPinIcon fontSize="small" />} label="置顶卡左上角受置顶带约束" />
-          {contacts.length > LARGE_MODE_THRESHOLD && (
-            <Chip size="small" color="primary" label="流畅模式已启用" />
-          )}
-        </Box>
-
-        {!!pinRecommendations?.length && (
-          <Button size="small" variant="outlined" onClick={applyPinRecommendations}>
-            应用 AI 置顶推荐
+      {!!pinRecommendations?.length && (
+        <Box sx={{ mb: 1 }}>
+          <Button size="small" variant="text" onClick={applyPinRecommendations}>
+            应用置顶推荐
           </Button>
-        )}
-      </Box>
+        </Box>
+      )}
 
       <Box
         ref={canvasRef}
@@ -814,17 +786,11 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
           borderColor: 'divider',
           boxShadow:
             theme.palette.mode === 'light'
-              ? '0 10px 26px rgba(0,0,0,0.08)'
-              : '0 14px 32px rgba(0,0,0,0.30)',
-          backgroundColor: alpha(theme.palette.background.paper, 0.82),
-          backgroundImage: `
-            linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.06)}, transparent 26%),
-            linear-gradient(${alpha(theme.palette.text.primary, 0.035)} 1px, transparent 1px),
-            linear-gradient(90deg, ${alpha(theme.palette.text.primary, 0.035)} 1px, transparent 1px)
-          `,
-          backgroundSize: `100% 100%, ${boardCellSize}px ${boardCellSize}px, ${boardCellSize}px ${boardCellSize}px`,
+              ? '0 6px 14px rgba(20,20,19,0.06)'
+              : '0 8px 18px rgba(0,0,0,0.24)',
+          backgroundColor: alpha(theme.palette.background.paper, 0.98),
           overflow: 'hidden',
-          borderRadius: 3,
+          borderRadius: 2.4,
         }}
       >
         <Box
@@ -834,24 +800,19 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
             top: 0,
             right: 0,
             height: pinnedZoneHeight,
-            px: 2.2,
-            py: 1.2,
-            borderBottom: '1px dashed',
-            borderColor: alpha(theme.palette.primary.main, 0.4),
-            bgcolor: alpha(theme.palette.primary.main, 0.08),
+            px: 2,
+            py: 0.95,
+            borderBottom: '1px solid',
+            borderColor: alpha(theme.palette.primary.main, 0.3),
+            bgcolor: alpha(theme.palette.primary.main, 0.07),
             pointerEvents: 'none',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
           }}
         >
-          <Typography variant="overline" sx={{ fontWeight: 900, letterSpacing: '0.1em', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography variant="overline" sx={{ fontWeight: 800, letterSpacing: '0.08em', display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
             <PushPinIcon fontSize="inherit" />
             置顶带
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            置顶卡片的左上角不会离开该区域
           </Typography>
         </Box>
 
@@ -876,12 +837,12 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
                 top: layout.y,
                 width: layout.width,
                 height: layout.height,
-                zIndex: active ? 9999 : layout.z,
-                transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
-                transform: dragging ? 'scale(1.01)' : 'scale(1)',
-                boxShadow: active
-                  ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.4)}, 0 10px 24px ${alpha(theme.palette.text.primary, 0.22)}`
-                  : undefined,
+              zIndex: active ? 9999 : layout.z,
+              transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
+              transform: dragging ? 'scale(1.006)' : 'scale(1)',
+              boxShadow: active
+                ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.32)}, 0 8px 16px ${alpha(theme.palette.text.primary, 0.18)}`
+                : undefined,
                 willChange: active ? 'transform, left, top, width, height' : 'auto',
                 contentVisibility: active ? 'visible' : 'auto',
                 containIntrinsicSize: '340px 320px',

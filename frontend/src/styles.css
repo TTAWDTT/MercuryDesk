@@ -7,7 +7,7 @@ body {
 }
 
 option {
-  font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Lora", "Noto Serif SC", "Songti SC", "STSong", serif;
   font-weight: 500;
   padding: 6px 10px;
   background-color: var(--md-select-bg, #ffffff);

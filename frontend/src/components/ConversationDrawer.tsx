@@ -12,6 +12,7 @@ import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Stack from '@mui/material/Stack';
+import useMediaQuery from '@mui/material/useMediaQuery';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import EditIcon from '@mui/icons-material/Edit';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -58,6 +59,7 @@ function renderTextWithLinks(text: string) {
 
 const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number }) => {
   const theme = useTheme();
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const abortRef = useRef<AbortController | null>(null);
   const [summary, setSummary] = useState<string | null>(msg.summary || null);
   const [isSummarizing, setIsSummarizing] = useState(false);
@@ -142,12 +144,12 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
     <motion.div
       initial={{ opacity: 0, y: 30, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{
+      transition={prefersReducedMotion ? { duration: 0 } : {
         delay: Math.min(index * 0.08, 0.5),
-        duration: 0.5,
+        duration: 0.45,
         type: 'spring',
-        stiffness: 100,
-        damping: 15
+        stiffness: 110,
+        damping: 16,
       }}
     >
       <Paper
@@ -193,6 +195,27 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                 {format(new Date(msg.received_at), 'M月d日 HH:mm', { locale: zhCN })}
             </Typography>
         </Box>
+        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 0.75 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.72rem' }}>
+            {msg.source}
+          </Typography>
+          {!msg.is_read ? (
+            <Box
+              component="span"
+              sx={{
+                px: 0.7,
+                py: 0.1,
+                borderRadius: 1.5,
+                fontSize: '0.68rem',
+                fontWeight: 700,
+                color: 'primary.main',
+                bgcolor: alpha(theme.palette.primary.main, 0.12),
+              }}
+            >
+              未读
+            </Box>
+          ) : null}
+        </Stack>
 
         <Typography variant="h6" fontSize="0.99rem" fontWeight="800" sx={{ letterSpacing: '0.01em', lineHeight: 1.35, mb: 0.9 }}>
           {displayTitle}
@@ -290,10 +313,18 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
              anchorEl={draftAnchorEl}
              open={Boolean(draftAnchorEl)}
              onClose={() => setDraftAnchorEl(null)}
+             slotProps={{
+              paper: {
+                sx: {
+                  p: 0.35,
+                  borderRadius: 2,
+                },
+              },
+             }}
            >
-             <MenuItem onClick={() => handleDraftReply('friendly')}>✨ 友好语气</MenuItem>
-             <MenuItem onClick={() => handleDraftReply('formal')}>👔 正式语气</MenuItem>
-             <MenuItem onClick={() => handleDraftReply('casual')}>👋 随意语气</MenuItem>
+             <MenuItem onClick={() => handleDraftReply('friendly')}>友好语气</MenuItem>
+             <MenuItem onClick={() => handleDraftReply('formal')}>正式语气</MenuItem>
+             <MenuItem onClick={() => handleDraftReply('casual')}>随意语气</MenuItem>
            </Menu>
         </Stack>
 
@@ -365,7 +396,7 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
                         Draft Reply {isDrafting && <CircularProgress size={10} thickness={6} sx={{ ml: 1 }} />}
                     </Typography>
                     {draft && !isDrafting && (
-                        <IconButton size="small" onClick={copyDraft} title="Copy" sx={{ color: 'text.secondary' }}>
+                        <IconButton size="small" onClick={copyDraft} title="复制草稿" aria-label="复制草稿" sx={{ color: 'text.secondary' }}>
                             <ContentCopyIcon fontSize="small" />
                         </IconButton>
                     )}
@@ -401,6 +432,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const theme = useTheme();
+  const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
 
   useEffect(() => {
     let cancelled = false;
@@ -480,7 +512,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
              <Typography variant="caption" color="textSecondary">{contact.handle}</Typography>
           </Box>
         </Box>
-        <IconButton onClick={onClose} sx={{ color: 'text.secondary' }}>
+        <IconButton onClick={onClose} aria-label="关闭详情面板" sx={{ color: 'text.secondary' }}>
           <CloseIcon />
         </IconButton>
       </Box>
@@ -489,7 +521,10 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
         p={{ xs: 1.2, md: 1.6 }}
         flexGrow={1}
         bgcolor={alpha(theme.palette.background.default, 0.7)}
-        sx={{ overflowY: 'auto' }}
+        sx={{
+          overflowY: 'auto',
+          scrollBehavior: prefersReducedMotion ? 'auto' : 'smooth',
+        }}
       >
         {loading ? (
           <Box display="flex" justifyContent="center" p={8}>
