@@ -83,6 +83,11 @@ type TrackingSheetState = {
   messageId: string;
 };
 
+type HandoffFXState = {
+  title: string;
+  detail: string;
+};
+
 export type AelinDeskBridgePayload = {
   sessionId: string;
   workspace: string;
@@ -1265,6 +1270,7 @@ export default function Aelin({
   const [trackingItems, setTrackingItems] = React.useState<AelinTrackingItem[]>([]);
   const [trackingBusy, setTrackingBusy] = React.useState(false);
   const [trackingError, setTrackingError] = React.useState("");
+  const [handoffFX, setHandoffFX] = React.useState<HandoffFXState | null>(null);
   const [latestSparkMessageId, setLatestSparkMessageId] = React.useState<string>("");
   const dismissedTrackTargetsRef = React.useRef<Record<string, true>>({});
   const [citationDrawer, setCitationDrawer] = React.useState<{
@@ -1277,6 +1283,7 @@ export default function Aelin({
   const timelineRef = React.useRef<HTMLDivElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const handledDeskReturnRef = React.useRef<string>("");
+  const handoffFXTimerRef = React.useRef<number | null>(null);
   const activeSession = React.useMemo(
     () => sessions.find((item) => item.id === activeSessionId) || sessions[0],
     [activeSessionId, sessions]
@@ -1298,6 +1305,17 @@ export default function Aelin({
     }
     return null;
   }, [messages]);
+
+  const playHandoffFX = React.useCallback((title: string, detail: string, holdMs = 900) => {
+    setHandoffFX({ title, detail });
+    if (handoffFXTimerRef.current !== null) {
+      window.clearTimeout(handoffFXTimerRef.current);
+    }
+    handoffFXTimerRef.current = window.setTimeout(() => {
+      setHandoffFX(null);
+      handoffFXTimerRef.current = null;
+    }, holdMs);
+  }, []);
 
   const openDeskWithContext = React.useCallback(
     (args?: {
@@ -1346,6 +1364,10 @@ export default function Aelin({
         }
       }
       if (onOpenDesk) {
+        playHandoffFX(
+          "Aelin -> Desk",
+          focusQuery ? `正在定位主题“${focusQuery.slice(0, 36)}”` : "正在打开观察视图"
+        );
         onOpenDesk({
           sessionId: sid,
           workspace: workspaceScope,
@@ -1357,9 +1379,15 @@ export default function Aelin({
         });
         return;
       }
-      navigate(`/desk?${qs.toString()}`);
+      playHandoffFX(
+        "Aelin -> Desk",
+        focusQuery ? `正在定位主题“${focusQuery.slice(0, 36)}”` : "正在打开观察视图"
+      );
+      window.setTimeout(() => {
+        navigate(`/desk?${qs.toString()}`);
+      }, 140);
     },
-    [activeSession?.id, activeSessionId, navigate, onOpenDesk, workspaceScope]
+    [activeSession?.id, activeSessionId, navigate, onOpenDesk, playHandoffFX, workspaceScope]
   );
 
   const refreshContext = React.useCallback(async () => {
@@ -1396,6 +1424,14 @@ export default function Aelin({
   React.useEffect(() => {
     void refreshTracking();
   }, [refreshTracking]);
+
+  React.useEffect(() => {
+    return () => {
+      if (handoffFXTimerRef.current !== null) {
+        window.clearTimeout(handoffFXTimerRef.current);
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     if (!sessions.length) {
@@ -1497,15 +1533,22 @@ export default function Aelin({
       setInput((prev) => (prev.trim() ? prev : `继续围绕这个主题：${focusQuery}`));
     }
     if (Number.isFinite(focusMessageId) && focusMessageId > 0) {
+      playHandoffFX(
+        "Desk -> Aelin",
+        source
+          ? `已带回 ${source} 的观察结果（消息 #${focusMessageId}）`
+          : `已带回焦点消息 #${focusMessageId}`
+      );
       showToast(
         source ? `已从 Desk 返回，继续围绕 ${source}（消息 #${focusMessageId}）` : `已从 Desk 返回，焦点消息 #${focusMessageId}`,
         "info"
       );
     } else {
+      playHandoffFX("Desk -> Aelin", "已返回聊天，可继续追问");
       showToast("已从 Desk 返回，可继续追问。", "info");
     }
     navigate("/", { replace: true });
-  }, [embedded, location.search, navigate, sessions, showToast]);
+  }, [embedded, location.search, navigate, playHandoffFX, sessions, showToast]);
 
   const resetConversation = React.useCallback(() => {
     const created = newSession();
@@ -1951,6 +1994,45 @@ export default function Aelin({
         </Container>
       </Box>
 
+      {handoffFX ? (
+        <Box
+          component={motion.div}
+          initial={{ opacity: 0, y: -8, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -6, scale: 0.99 }}
+          transition={{ duration: 0.2 }}
+          sx={{
+            position: "fixed",
+            top: { xs: 72, md: 80 },
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1500,
+            pointerEvents: "none",
+            width: "min(620px, calc(100vw - 28px))",
+          }}
+        >
+          <Paper
+            variant="outlined"
+            sx={{
+              px: 1.1,
+              py: 0.85,
+              borderRadius: 1.8,
+              borderColor: alpha(theme.palette.primary.main, 0.34),
+              bgcolor: alpha(theme.palette.background.paper, 0.95),
+              backdropFilter: "blur(10px)",
+              boxShadow: `0 12px 24px ${alpha(theme.palette.common.black, 0.14)}`,
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+              {handoffFX.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
+              {handoffFX.detail}
+            </Typography>
+          </Paper>
+        </Box>
+      ) : null}
+
       <Box
         ref={timelineRef}
         sx={{
@@ -2091,6 +2173,30 @@ export default function Aelin({
               borderColor: alpha(theme.palette.divider, 0.95),
             }}
           >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.65, px: 0.1 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>
+                观察联动
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<TravelExploreIcon sx={{ fontSize: 15 }} />}
+                onClick={() =>
+                  openDeskWithContext({
+                    messageId: lastAssistantCitation?.message_id,
+                    focusQuery: (input || "").trim() || lastAssistantCitation?.title || "",
+                    highlightSource: lastAssistantCitation?.source_label || lastAssistantCitation?.source || "",
+                    resumePrompt:
+                      ((input || "").trim() && `继续围绕这个问题讨论：${input.trim()}`) ||
+                      (lastAssistantCitation?.title && `继续分析这条线索：${lastAssistantCitation.title}`) ||
+                      "继续从观察视图里分析我的重点信息。",
+                  })
+                }
+              >
+                在 Desk 观察
+              </Button>
+            </Stack>
+
             <input
               ref={fileInputRef}
               type="file"

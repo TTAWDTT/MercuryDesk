@@ -19,6 +19,7 @@ interface ContactGridProps {
   pinRecommendations?: AgentPinRecommendationItem[];
   onCardAction?: (contact: Contact, action: 'summarize' | 'draft' | 'todo') => void;
   highlightContactId?: number | null;
+  focusContactId?: number | null;
 }
 
 type CardLayoutState = {
@@ -167,6 +168,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
   pinRecommendations,
   onCardAction,
   highlightContactId,
+  focusContactId,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -685,6 +687,23 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
     };
   }, []);
 
+  React.useEffect(() => {
+    if (!focusContactId) return;
+    const layout = layoutMapRef.current[focusContactId];
+    const canvas = canvasRef.current;
+    if (!layout || !canvas) return;
+
+    const canvasTop = canvas.getBoundingClientRect().top + window.scrollY;
+    const targetTop = Math.max(0, canvasTop + layout.y - 108);
+    const viewTop = window.scrollY;
+    const viewBottom = viewTop + window.innerHeight;
+    const targetBottom = targetTop + layout.height + 200;
+
+    if (targetTop < viewTop + 56 || targetBottom > viewBottom) {
+      window.scrollTo({ top: targetTop, behavior: 'smooth' });
+    }
+  }, [focusContactId]);
+
   const handleCardClickCapture = React.useCallback((contactId: number, event: React.MouseEvent<HTMLDivElement>) => {
     const until = suppressClickUntilRef.current[contactId] || 0;
     if (Date.now() > until) return;
@@ -719,12 +738,13 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
     if (contacts.length <= LARGE_MODE_THRESHOLD) return contacts;
     return contacts.filter((contact) => {
       if (activeCardId === contact.id) return true;
+      if (focusContactId != null && focusContactId === contact.id) return true;
       const layout = layoutMap[contact.id];
       if (!layout) return false;
       const bottom = layout.y + layout.height;
       return bottom >= viewportRange.top && layout.y <= viewportRange.bottom;
     });
-  }, [activeCardId, contacts, layoutMap, viewportRange.bottom, viewportRange.top]);
+  }, [activeCardId, contacts, focusContactId, layoutMap, viewportRange.bottom, viewportRange.top]);
 
   if (loading || !contacts) {
     return (
@@ -827,6 +847,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
           const dragging = active && interactionMode === 'drag';
           const resizing = active && interactionMode === 'resize';
           const highlighted = highlightContactId != null && highlightContactId === contact.id;
+          const focused = focusContactId != null && focusContactId === contact.id;
           const recommendation = recommendedMap.get(contact.id);
           const tag = recommendation ? `AI推荐 ${Math.round(recommendation.score)}` : undefined;
 
@@ -847,8 +868,8 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
                 zIndex: active ? 9999 : layout.z,
                 transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
                 transform: dragging ? 'scale(1.006)' : 'scale(1)',
-                animation: highlighted ? 'bridgePulse 940ms ease-in-out 2' : 'none',
-                boxShadow: highlighted
+                animation: highlighted || focused ? 'bridgePulse 940ms ease-in-out 2' : 'none',
+                boxShadow: highlighted || focused
                   ? `0 0 0 2px ${alpha(theme.palette.warning.main, 0.58)}, 0 0 0 7px ${alpha(theme.palette.warning.main, 0.16)}, 0 16px 24px ${alpha(theme.palette.text.primary, 0.14)}`
                   : active
                     ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.32)}, 0 8px 16px ${alpha(theme.palette.text.primary, 0.18)}`

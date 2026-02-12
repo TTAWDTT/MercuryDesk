@@ -105,6 +105,11 @@ type AelinBridgeContext = {
   resumePrompt: string;
 };
 
+type HandoffFXState = {
+  title: string;
+  detail: string;
+};
+
 const parsePositiveInt = (raw: string | null): number | null => {
   const n = Number(raw || 0);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -218,6 +223,7 @@ export default function Dashboard() {
   const [desktopHostWidth, setDesktopHostWidth] = useState(0);
   const [boardNaturalHeight, setBoardNaturalHeight] = useState(860);
   const [highlightContactId, setHighlightContactId] = useState<number | null>(null);
+  const [handoffFX, setHandoffFX] = useState<HandoffFXState | null>(null);
   const [pendingFocusMessageId, setPendingFocusMessageId] = useState<number | null>(null);
   const [pendingFocusContactId, setPendingFocusContactId] = useState<number | null>(null);
   const [bridgeContext, setBridgeContext] = useState<AelinBridgeContext | null>(() => {
@@ -232,6 +238,7 @@ export default function Dashboard() {
   });
 
   const layoutSyncTimerRef = useRef<number | null>(null);
+  const handoffFXTimerRef = useRef<number | null>(null);
   const desktopHostRef = useRef<HTMLDivElement | null>(null);
   const boardNaturalRef = useRef<HTMLDivElement | null>(null);
   const processedBridgeSearchRef = useRef<string>('');
@@ -338,6 +345,17 @@ export default function Dashboard() {
     loadMemorySnapshot('');
   }, [loadMemorySnapshot]);
 
+  const playHandoffFX = useCallback((title: string, detail: string, holdMs = 980) => {
+    setHandoffFX({ title, detail });
+    if (handoffFXTimerRef.current !== null) {
+      window.clearTimeout(handoffFXTimerRef.current);
+    }
+    handoffFXTimerRef.current = window.setTimeout(() => {
+      setHandoffFX(null);
+      handoffFXTimerRef.current = null;
+    }, holdMs);
+  }, []);
+
   useEffect(() => {
     const bridge = readBridgeFromSearch(location.search || '');
     const hasFocus = Boolean(bridge.focusMessageId || bridge.focusContactId);
@@ -362,6 +380,12 @@ export default function Dashboard() {
     if (bridge.fromAelin && !isMobile) {
       setDesktopSidebarOpen(true);
       setAelinDockOpen(true);
+      playHandoffFX(
+        'Aelin -> Desk',
+        bridge.focusQuery
+          ? `已接收主题“${bridge.focusQuery.slice(0, 36)}”，正在定位观察点`
+          : '已接收上下文，正在定位观察点'
+      );
     }
 
     setBridgeContext((prev) => {
@@ -385,7 +409,7 @@ export default function Dashboard() {
       }
       return merged;
     });
-  }, [activeWorkspace, isMobile, location.search]);
+  }, [activeWorkspace, isMobile, location.search, playHandoffFX]);
 
   useEffect(() => {
     if (!pendingFocusMessageId) return;
@@ -436,6 +460,9 @@ export default function Dashboard() {
     return () => {
       if (layoutSyncTimerRef.current !== null) {
         window.clearTimeout(layoutSyncTimerRef.current);
+      }
+      if (handoffFXTimerRef.current !== null) {
+        window.clearTimeout(handoffFXTimerRef.current);
       }
     };
   }, []);
@@ -707,6 +734,21 @@ export default function Dashboard() {
     }
   }, [bridgeContext]);
 
+  const clearBridgeContext = useCallback(() => {
+    setBridgeContext(null);
+    setPendingFocusMessageId(null);
+    setPendingFocusContactId(null);
+    setHighlightContactId(null);
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.removeItem(AELIN_LAST_DESK_BRIDGE_KEY);
+      } catch {
+        // ignore storage failures
+      }
+    }
+    navigate('/desk', { replace: true });
+  }, [navigate]);
+
   const returnToAelin = useCallback(() => {
     const fallbackSessionId = (() => {
       try {
@@ -735,8 +777,13 @@ export default function Dashboard() {
     if (focusQuery) qs.set('focus_query', focusQuery.slice(0, 180));
     if (highlightSource) qs.set('highlight_source', highlightSource.slice(0, 40));
     if (resumePrompt) qs.set('resume_prompt', resumePrompt.slice(0, 240));
-    navigate(`/?${qs.toString()}`);
-  }, [bridgeContext, navigate, searchQuery, selectedContact?.id]);
+    const to = `/?${qs.toString()}`;
+    playHandoffFX(
+      'Desk -> Aelin',
+      focusQuery ? `带着主题“${focusQuery.slice(0, 36)}”返回聊天` : '将观察结果带回聊天'
+    );
+    window.setTimeout(() => navigate(to), 140);
+  }, [bridgeContext, navigate, playHandoffFX, searchQuery, selectedContact?.id]);
 
   const handleAelinOpenDesk = useCallback((payload: AelinDeskBridgePayload) => {
     const nextBridge: AelinBridgeContext = {
@@ -770,7 +817,11 @@ export default function Dashboard() {
       setSearchQuery(nextBridge.focusQuery);
       setActivePanel('search');
     }
-  }, [activeWorkspace]);
+    playHandoffFX(
+      'Aelin 内联联动',
+      nextBridge.focusQuery ? `已聚焦“${nextBridge.focusQuery.slice(0, 36)}”` : '已切换为观察模式'
+    );
+  }, [activeWorkspace, playHandoffFX]);
 
   const handleCardAction = useCallback(async (contact: Contact, action: 'summarize' | 'draft' | 'todo') => {
     const text = [
@@ -1057,6 +1108,13 @@ export default function Dashboard() {
             <Typography variant="body2" sx={{ fontWeight: 700 }}>
               来自 Aelin 的上下文已加载
             </Typography>
+            <Chip
+              size="small"
+              color="primary"
+              variant="filled"
+              label="观察模式"
+              sx={{ '& .MuiChip-label': { fontWeight: 700 } }}
+            />
             {bridgeContext.highlightSource ? (
               <Chip size="small" label={bridgeContext.highlightSource} />
             ) : null}
@@ -1077,6 +1135,9 @@ export default function Dashboard() {
             ) : null}
             <Button size="small" variant="contained" startIcon={<KeyboardReturnIcon />} onClick={returnToAelin}>
               回到 Aelin 续聊
+            </Button>
+            <Button size="small" color="inherit" onClick={clearBridgeContext}>
+              退出观察模式
             </Button>
           </Paper>
         ) : null}
@@ -1123,6 +1184,7 @@ export default function Dashboard() {
               pinRecommendations={pinRecommendations?.items ?? []}
               onCardAction={handleCardAction}
               highlightContactId={highlightContactId}
+              focusContactId={highlightContactId}
             />
           </Paper>
         ) : (
@@ -1192,6 +1254,7 @@ export default function Dashboard() {
                     pinRecommendations={pinRecommendations?.items ?? []}
                     onCardAction={handleCardAction}
                     highlightContactId={highlightContactId}
+                    focusContactId={highlightContactId}
                   />
                 </Paper>
               </Box>
@@ -1232,6 +1295,46 @@ export default function Dashboard() {
           </Box>
         )}
       </Container>
+
+      {handoffFX ? (
+        <Box
+          component={motion.div}
+          initial={{ opacity: 0, y: -8, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -6, scale: 0.99 }}
+          transition={{ duration: 0.2 }}
+          sx={{
+            position: 'fixed',
+            top: { xs: 72, md: 80 },
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1500,
+            pointerEvents: 'none',
+            width: 'min(680px, calc(100vw - 28px))',
+          }}
+        >
+          <Paper
+            elevation={0}
+            sx={{
+              px: 1.2,
+              py: 0.95,
+              borderRadius: 2,
+              border: '1px solid',
+              borderColor: alpha(theme.palette.primary.main, 0.34),
+              bgcolor: alpha(theme.palette.background.paper, 0.94),
+              backdropFilter: 'blur(10px)',
+              boxShadow: `0 12px 26px ${alpha(theme.palette.common.black, 0.14)}`,
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+              {handoffFX.title}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.3 }}>
+              {handoffFX.detail}
+            </Typography>
+          </Paper>
+        </Box>
+      ) : null}
 
       <Tooltip title={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}>
         <Button
