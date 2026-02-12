@@ -19,6 +19,7 @@ _SOURCE_LABELS = {
     "bilibili": "Bilibili",
     "xiaohongshu": "小红书",
     "weibo": "微博",
+    "web": "Web",
     "rss": "RSS",
     "github": "GitHub",
     "imap": "Email",
@@ -33,6 +34,7 @@ class FocusItem:
     message_id: int
     source: str
     sender: str
+    sender_avatar_url: str | None
     title: str
     received_at: str
     score: float
@@ -487,6 +489,19 @@ class AgentMemoryService:
         if not rows:
             return []
 
+        contact_ids = {int(m.contact_id) for m in rows if m.contact_id is not None}
+        avatar_by_contact_id: dict[int, str] = {}
+        if contact_ids:
+            avatar_rows = db.execute(
+                select(Contact.id, Contact.avatar_url).where(
+                    Contact.user_id == user_id,
+                    Contact.id.in_(contact_ids),
+                )
+            ).all()
+            for cid, avatar in avatar_rows:
+                if avatar:
+                    avatar_by_contact_id[int(cid)] = str(avatar)
+
         terms = _extract_terms(query)
         contact_hits = Counter(m.contact_id for m in rows if m.contact_id is not None)
         now = datetime.now(timezone.utc)
@@ -522,6 +537,7 @@ class AgentMemoryService:
                     message_id=m.id,
                     source=source or "unknown",
                     sender=_truncate(_clean_text(m.sender or ""), 60),
+                    sender_avatar_url=avatar_by_contact_id.get(int(m.contact_id or 0)),
                     title=_truncate(title, 140),
                     received_at=received.strftime("%Y-%m-%d %H:%M"),
                     score=score,
@@ -578,6 +594,7 @@ class AgentMemoryService:
                     "source": item.source,
                     "source_label": _SOURCE_LABELS.get(item.source, item.source),
                     "sender": item.sender,
+                    "sender_avatar_url": item.sender_avatar_url,
                     "title": item.title,
                     "received_at": item.received_at,
                     "score": round(item.score, 2),
@@ -681,6 +698,7 @@ class AgentMemoryService:
                     "source": item.source,
                     "source_label": _SOURCE_LABELS.get(item.source, item.source),
                     "sender": item.sender,
+                    "sender_avatar_url": item.sender_avatar_url,
                     "title": item.title,
                     "received_at": item.received_at,
                     "score": round(item.score, 2),

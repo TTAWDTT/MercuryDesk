@@ -98,6 +98,7 @@ export type AgentFocusItem = {
   source: string;
   source_label: string;
   sender: string;
+  sender_avatar_url?: string | null;
   title: string;
   received_at: string;
   score: number;
@@ -107,6 +108,58 @@ export type AgentMemorySnapshot = {
   summary: string;
   notes: AgentMemoryNote[];
   focus_items: AgentFocusItem[];
+};
+
+export type AelinCitation = {
+  message_id: number;
+  source: string;
+  source_label: string;
+  sender: string;
+  sender_avatar_url?: string | null;
+  title: string;
+  received_at: string;
+  score: number;
+};
+
+export type AelinAction = {
+  kind: string;
+  title: string;
+  detail: string;
+  payload: Record<string, string>;
+};
+
+export type AelinImageInput = {
+  data_url: string;
+  name?: string;
+};
+
+export type AelinContextResponse = {
+  workspace: string;
+  summary: string;
+  focus_items: AgentFocusItem[];
+  notes: AgentMemoryNote[];
+  notes_count: number;
+  todos: AgentTodoItem[];
+  pin_recommendations: AgentPinRecommendationItem[];
+  daily_brief?: AgentDailyBrief | null;
+  layout_cards: AgentCardLayoutItem[];
+  generated_at: string;
+};
+
+export type AelinChatResponse = {
+  answer: string;
+  citations: AelinCitation[];
+  actions: AelinAction[];
+  memory_summary: string;
+  generated_at: string;
+};
+
+export type AelinTrackConfirmResponse = {
+  status: string;
+  message: string;
+  provider?: string | null;
+  actions: AelinAction[];
+  generated_at: string;
 };
 
 export type AgentCardLayoutItem = {
@@ -534,6 +587,50 @@ export async function* agentChatStream(
       use_memory: options?.use_memory ?? true,
     })
   }, signal);
+}
+
+export async function getAelinContext(workspace = "default", query = ""): Promise<AelinContextResponse> {
+  const qs = new URLSearchParams();
+  if (workspace.trim()) qs.set("workspace", workspace.trim());
+  if (query.trim()) qs.set("query", query.trim());
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return await fetchJson<AelinContextResponse>(`/api/v1/aelin/context${suffix}`);
+}
+
+export async function aelinChat(
+  query: string,
+  options?: { use_memory?: boolean; max_citations?: number; workspace?: string; images?: AelinImageInput[] }
+): Promise<AelinChatResponse> {
+  return await fetchJson<AelinChatResponse>("/api/v1/aelin/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query,
+      use_memory: options?.use_memory ?? true,
+      max_citations: options?.max_citations ?? 6,
+      workspace: options?.workspace?.trim() || "default",
+      images: (options?.images || []).slice(0, 4).map((item) => ({
+        data_url: item.data_url,
+        name: item.name || "",
+      })),
+    }),
+  });
+}
+
+export async function aelinConfirmTrack(payload: {
+  target: string;
+  source?: string;
+  query?: string;
+}): Promise<AelinTrackConfirmResponse> {
+  return await fetchJson<AelinTrackConfirmResponse>("/api/v1/aelin/track/confirm", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target: payload.target,
+      source: payload.source || "auto",
+      query: payload.query || "",
+    }),
+  });
 }
 
 export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {

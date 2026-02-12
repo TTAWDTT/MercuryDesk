@@ -5,6 +5,10 @@
 ## 已实现能力
 
 - 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
+- Aelin（Chat-first 入口）：
+  - 默认首页 `/` 为 Aelin 聊天入口
+  - Desk 保留在 `/desk`，用于证据可视化与卡片工作台
+  - 新增上下文接口 `/api/v1/aelin/context` 与聊天接口 `/api/v1/aelin/chat`
 - 数据来源：
   - 邮箱 IMAP（真实邮箱）
   - GitHub 通知（支持 OAuth 一键授权 / Token 直连）
@@ -112,6 +116,12 @@ python -m uvicorn app.main:app --reload --port 8000
 4. 保存并测试连接
 
 > 当前执行链路为 OpenAI-Compatible 请求格式，请保证所选服务商与 Base URL、模型 ID 一致。
+
+## Aelin 产品文档
+
+- 愿景：`docs/aelin/vision.md`
+- V1 PRD：`docs/aelin/prd-v1.md`
+- 记忆模型：`docs/aelin/memory-model.md`
 
 ## 环境变量（后端）
 

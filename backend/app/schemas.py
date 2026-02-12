@@ -157,15 +157,130 @@ class AgentFocusItemOut(BaseModel):
     source: str
     source_label: str
     sender: str
+    sender_avatar_url: Optional[str] = None
     title: str
     received_at: str
     score: float
+
+
+class AelinChatRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=1200)
+    use_memory: bool = True
+    max_citations: int = Field(default=6, ge=1, le=20)
+    workspace: str = Field(default="default", min_length=1, max_length=64)
+    images: list["AelinImageInput"] = Field(default_factory=list, max_length=4)
+
+
+class AelinImageInput(BaseModel):
+    data_url: str = Field(min_length=20, max_length=3_000_000)
+    name: str = Field(default="", max_length=120)
+
+
+class AelinCitation(BaseModel):
+    message_id: int
+    source: str
+    source_label: str
+    sender: str
+    sender_avatar_url: Optional[str] = None
+    title: str
+    received_at: str
+    score: float
+
+
+class AelinAction(BaseModel):
+    kind: str
+    title: str
+    detail: str = ""
+    payload: dict[str, str] = Field(default_factory=dict)
+
+
+class AelinTodoItem(BaseModel):
+    id: int
+    title: str
+    detail: str = ""
+    done: bool = False
+    due_at: Optional[str] = None
+    priority: str = "normal"
+    contact_id: Optional[int] = None
+    message_id: Optional[int] = None
+    updated_at: str
+
+
+class AelinPinRecommendationItem(BaseModel):
+    contact_id: int
+    display_name: str
+    score: float
+    reasons: list[str] = Field(default_factory=list)
+    unread_count: int = 0
+    last_message_at: Optional[datetime] = None
+
+
+class AelinDailyBriefAction(BaseModel):
+    kind: str
+    title: str
+    detail: str = ""
+    contact_id: Optional[int] = None
+    message_id: Optional[int] = None
+    priority: str = "normal"
+
+
+class AelinDailyBrief(BaseModel):
+    generated_at: datetime
+    summary: str
+    top_updates: list[AgentFocusItemOut] = Field(default_factory=list)
+    actions: list[AelinDailyBriefAction] = Field(default_factory=list)
+
+
+class AelinLayoutCard(BaseModel):
+    contact_id: int
+    display_name: str
+    pinned: bool = False
+    order: int = Field(default=0, ge=0)
+    x: float = Field(default=0, ge=0)
+    y: float = Field(default=0, ge=0)
+    width: float = Field(default=312, ge=120, le=2400)
+    height: float = Field(default=316, ge=120, le=2400)
 
 
 class AgentMemorySnapshot(BaseModel):
     summary: str = ""
     notes: list[AgentMemoryNoteOut] = Field(default_factory=list)
     focus_items: list[AgentFocusItemOut] = Field(default_factory=list)
+
+
+class AelinContextResponse(BaseModel):
+    workspace: str = "default"
+    summary: str = ""
+    focus_items: list[AgentFocusItemOut] = Field(default_factory=list)
+    notes: list[AgentMemoryNoteOut] = Field(default_factory=list)
+    notes_count: int = 0
+    todos: list[AelinTodoItem] = Field(default_factory=list)
+    pin_recommendations: list[AelinPinRecommendationItem] = Field(default_factory=list)
+    daily_brief: Optional[AelinDailyBrief] = None
+    layout_cards: list[AelinLayoutCard] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class AelinChatResponse(BaseModel):
+    answer: str
+    citations: list[AelinCitation] = Field(default_factory=list)
+    actions: list[AelinAction] = Field(default_factory=list)
+    memory_summary: str = ""
+    generated_at: datetime
+
+
+class AelinTrackConfirmRequest(BaseModel):
+    target: str = Field(min_length=1, max_length=240)
+    source: str = Field(default="auto", min_length=1, max_length=32)
+    query: str = Field(default="", max_length=500)
+
+
+class AelinTrackConfirmResponse(BaseModel):
+    status: str
+    message: str
+    provider: Optional[str] = None
+    actions: list[AelinAction] = Field(default_factory=list)
+    generated_at: datetime
 
 
 class AgentCardLayoutItem(BaseModel):

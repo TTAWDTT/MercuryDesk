@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { SWRConfig } from "swr";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -11,6 +11,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ToastProvider } from "./contexts/ToastContext";
 
 const Dashboard = React.lazy(() => import("./components/Dashboard"));
+const Aelin = React.lazy(() => import("./components/Aelin"));
 const Login = React.lazy(() => import("./components/Login"));
 const Settings = React.lazy(() => import("./components/Settings"));
 const NotFound = React.lazy(() => import("./components/NotFound"));
@@ -35,7 +36,9 @@ function AnimatedRoutes() {
             <Route path="*" element={<Login />} />
           ) : (
             <>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Aelin />} />
+              <Route path="/desk" element={<Dashboard />} />
+              <Route path="/dashboard" element={<Navigate to="/desk" replace />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </>
