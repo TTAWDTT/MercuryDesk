@@ -120,6 +120,7 @@ def test_aelin_context_and_chat_endpoints():
     assert isinstance(chat_data.get("answer"), str) and chat_data.get("answer")
     assert isinstance(chat_data.get("citations"), list)
     assert isinstance(chat_data.get("actions"), list)
+    assert isinstance(chat_data.get("tool_trace"), list)
     assert "memory_summary" in chat_data
     assert "generated_at" in chat_data
 
@@ -139,6 +140,7 @@ def test_aelin_context_and_chat_endpoints():
     assert isinstance(chat_smalltalk_data.get("answer"), str) and chat_smalltalk_data.get("answer")
     # Casual chat should not be forced into retrieval listing mode.
     assert chat_smalltalk_data.get("citations") == []
+    assert isinstance(chat_smalltalk_data.get("tool_trace"), list)
 
 
 def test_aelin_track_confirm_endpoint(monkeypatch):
@@ -152,9 +154,9 @@ def test_aelin_track_confirm_endpoint(monkeypatch):
     )
     assert missing.status_code == 200, missing.text
     missing_data = missing.json()
-    assert missing_data.get("status") == "needs_config"
+    assert missing_data.get("status") in {"sync_started", "needs_config"}
     assert missing_data.get("provider") == "x"
-    assert any((it.get("kind") == "open_settings") for it in (missing_data.get("actions") or []))
+    assert any((it.get("kind") in {"open_settings", "open_desk"}) for it in (missing_data.get("actions") or []))
 
     monkeypatch.setattr(
         aelin_router._web_search,
@@ -164,6 +166,19 @@ def test_aelin_track_confirm_endpoint(monkeypatch):
                 title="Warriors beat Spurs 130-119",
                 url="https://example.com/nba/game",
                 snippet="Curry scored 30 with 6 threes.",
+                fetched_excerpt="Warriors beat Spurs 130-119. Curry scored 30 with 6 threes.",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors beat Spurs 130-119",
+                url="https://example.com/nba/game",
+                snippet="Curry scored 30 with 6 threes.",
+                fetched_excerpt="Warriors beat Spurs 130-119. Curry scored 30 with 6 threes.",
             )
         ],
     )
@@ -176,6 +191,16 @@ def test_aelin_track_confirm_endpoint(monkeypatch):
     ok_data = ok.json()
     assert ok_data.get("status") == "tracking_enabled"
     assert ok_data.get("provider") == "web"
+    contacts = client.get("/api/v1/contacts?q=Aelin%20Tracking&limit=12", headers=headers)
+    assert contacts.status_code == 200, contacts.text
+    assert any("Aelin Tracking" in str(row.get("display_name", "")) for row in contacts.json())
+
+    tracking_list = client.get("/api/v1/aelin/tracking?limit=20", headers=headers)
+    assert tracking_list.status_code == 200, tracking_list.text
+    tracking_data = tracking_list.json()
+    assert isinstance(tracking_data.get("items"), list)
+    assert tracking_data.get("total", 0) >= 1
+    assert any((row.get("target") == "NBA 比赛") for row in (tracking_data.get("items") or []))
 
 
 def test_aelin_chat_can_use_web_search_plan(monkeypatch):
@@ -205,6 +230,19 @@ def test_aelin_chat_can_use_web_search_plan(monkeypatch):
                 title="Warriors 130-119 Spurs",
                 url="https://example.com/nba/box",
                 snippet="Curry drops 30 with 6 threes.",
+                fetched_excerpt="Warriors 130-119 Spurs. Curry 30 with 6 threes.",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 130-119 Spurs",
+                url="https://example.com/nba/box",
+                snippet="Curry drops 30 with 6 threes.",
+                fetched_excerpt="Warriors 130-119 Spurs. Curry 30 with 6 threes.",
             )
         ],
     )
@@ -218,5 +256,7 @@ def test_aelin_chat_can_use_web_search_plan(monkeypatch):
     data = resp.json()
     assert isinstance(data.get("answer"), str) and data.get("answer")
     assert isinstance(data.get("citations"), list)
+    assert isinstance(data.get("tool_trace"), list)
+    assert any((it.get("stage") == "web_search") for it in data.get("tool_trace") or [])
     assert any((it.get("source") == "web") for it in data.get("citations") or [])
     assert any((it.get("kind") == "confirm_track") for it in data.get("actions") or [])

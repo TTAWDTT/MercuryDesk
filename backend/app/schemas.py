@@ -169,6 +169,12 @@ class AelinChatRequest(BaseModel):
     max_citations: int = Field(default=6, ge=1, le=20)
     workspace: str = Field(default="default", min_length=1, max_length=64)
     images: list["AelinImageInput"] = Field(default_factory=list, max_length=4)
+    history: list["AelinChatHistoryTurn"] = Field(default_factory=list, max_length=20)
+
+
+class AelinChatHistoryTurn(BaseModel):
+    role: str = Field(min_length=1, max_length=16)
+    content: str = Field(min_length=1, max_length=3000)
 
 
 class AelinImageInput(BaseModel):
@@ -192,6 +198,13 @@ class AelinAction(BaseModel):
     title: str
     detail: str = ""
     payload: dict[str, str] = Field(default_factory=dict)
+
+
+class AelinToolStep(BaseModel):
+    stage: str
+    status: str = "completed"
+    detail: str = ""
+    count: int = 0
 
 
 class AelinTodoItem(BaseModel):
@@ -265,6 +278,7 @@ class AelinChatResponse(BaseModel):
     answer: str
     citations: list[AelinCitation] = Field(default_factory=list)
     actions: list[AelinAction] = Field(default_factory=list)
+    tool_trace: list[AelinToolStep] = Field(default_factory=list)
     memory_summary: str = ""
     generated_at: datetime
 
@@ -280,6 +294,23 @@ class AelinTrackConfirmResponse(BaseModel):
     message: str
     provider: Optional[str] = None
     actions: list[AelinAction] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class AelinTrackingItem(BaseModel):
+    note_id: Optional[int] = None
+    message_id: Optional[int] = None
+    target: str
+    source: str
+    query: str = ""
+    status: str = "active"
+    updated_at: str
+    status_updated_at: Optional[str] = None
+
+
+class AelinTrackingListResponse(BaseModel):
+    total: int
+    items: list[AelinTrackingItem] = Field(default_factory=list)
     generated_at: datetime
 
 

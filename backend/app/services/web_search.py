@@ -16,6 +16,13 @@ def _clean(text: str, limit: int = 500) -> str:
     return stripped[: max(0, limit - 1)].rstrip() + "…"
 
 
+def _strip_html(text: str) -> str:
+    no_script = re.sub(r"<(script|style|noscript|svg|iframe)[^>]*>[\s\S]*?</\1>", " ", text or "", flags=re.I)
+    no_comment = re.sub(r"<!--[\s\S]*?-->", " ", no_script)
+    plain = re.sub(r"<[^>]+>", " ", no_comment)
+    return _clean(unescape(plain), limit=20_000)
+
+
 def _extract_domain(url: str) -> str:
     try:
         host = urlparse(url).netloc.lower().strip()
@@ -42,6 +49,7 @@ class WebSearchResult:
     url: str
     snippet: str
     source: str = "web"
+    fetched_excerpt: str = ""
 
 
 class WebSearchService:
@@ -69,6 +77,89 @@ class WebSearchService:
             if len(dedup) >= n:
                 break
         return list(dedup.values())[:n]
+
+    def fetch_page_excerpt(self, url: str, *, max_chars: int = 1800) -> tuple[str, str]:
+        clean_url = (url or "").strip()
+        if not clean_url.startswith(("http://", "https://")):
+            return "", ""
+
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
+        }
+        try:
+            with httpx.Client(timeout=self.timeout_seconds, follow_redirects=True, headers=headers) as client:
+                resp = client.get(clean_url)
+            if resp.status_code >= 400:
+                return "", ""
+            content_type = str(resp.headers.get("content-type") or "").lower()
+            body = resp.text or ""
+        except Exception:
+            return "", ""
+
+        title = ""
+        excerpt = ""
+        if "html" in content_type or "<html" in body.lower():
+            m = re.search(r"<title[^>]*>([\s\S]*?)</title>", body, flags=re.I)
+            title = _clean(unescape(m.group(1)) if m else "", limit=180)
+            # Prefer semantically rich blocks first.
+            blocks = re.findall(
+                r"<(?:article|main|p|li|h1|h2|h3|blockquote|td)[^>]*>([\s\S]*?)</(?:article|main|p|li|h1|h2|h3|blockquote|td)>",
+                body,
+                flags=re.I,
+            )
+            segments: list[str] = []
+            for raw in blocks:
+                item = _clean(unescape(re.sub(r"<[^>]+>", " ", raw)), limit=420)
+                if len(item) < 28:
+                    continue
+                if item in segments:
+                    continue
+                segments.append(item)
+                if len(segments) >= 24:
+                    break
+            joined = " ".join(segments).strip()
+            if joined:
+                excerpt = _clean(joined, limit=max_chars)
+            else:
+                excerpt = _clean(_strip_html(body), limit=max_chars)
+        elif "text/plain" in content_type:
+            excerpt = _clean(body, limit=max_chars)
+        else:
+            # Try as text anyway for permissive fetch behavior.
+            excerpt = _clean(_strip_html(body), limit=max_chars)
+
+        return title, excerpt
+
+    def search_and_fetch(
+        self,
+        query: str,
+        *,
+        max_results: int = 6,
+        fetch_top_k: int = 3,
+    ) -> list[WebSearchResult]:
+        rows = self.search(query, max_results=max_results)
+        if not rows:
+            return []
+
+        top_k = max(0, min(len(rows), int(fetch_top_k or 0)))
+        if top_k <= 0:
+            return rows
+
+        for idx, row in enumerate(rows[:top_k]):
+            page_title, excerpt = self.fetch_page_excerpt(row.url, max_chars=1800)
+            if page_title and len(row.title.strip()) < 8:
+                row.title = page_title
+            if excerpt:
+                row.fetched_excerpt = excerpt
+                if not row.snippet or len(row.snippet.strip()) < 40:
+                    row.snippet = _clean(excerpt, limit=320)
+            rows[idx] = row
+        return rows
 
     def _search_duckduckgo_lite(self, query: str, *, max_results: int) -> list[WebSearchResult]:
         url = "https://lite.duckduckgo.com/lite/"

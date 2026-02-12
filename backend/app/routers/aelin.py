@@ -8,12 +8,16 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import crud
+from app.connectors.douyin import _extract_sec_uid as extract_douyin_uid
+from app.connectors.xiaohongshu import _extract_user_id as extract_xhs_uid
+from app.connectors.weibo import _extract_uid as extract_weibo_uid
 from app.db import get_session
-from app.models import Contact, Message, User
+from app.models import AgentMemoryNote, Contact, Message, User
 from app.routers.auth import get_current_user
 from app.schemas import (
     AelinAction,
@@ -24,9 +28,12 @@ from app.schemas import (
     AelinDailyBrief,
     AelinDailyBriefAction,
     AelinLayoutCard,
+    AelinTrackingItem,
+    AelinTrackingListResponse,
     AelinPinRecommendationItem,
     AelinTrackConfirmRequest,
     AelinTrackConfirmResponse,
+    AelinToolStep,
     AelinTodoItem,
     AgentConfigOut,
     AgentFocusItemOut,
@@ -315,7 +322,7 @@ def _build_actions(
             kind="open_desk",
             title="在 Desk 查看可视化证据",
             detail="打开 /desk，在卡片与时间线里核验上下文",
-            payload={"path": "/desk"},
+            payload={"path": "/desk", "query": query.strip()[:180]},
         ),
     ]
     if citations:
@@ -325,7 +332,7 @@ def _build_actions(
                 kind="open_message",
                 title="打开最高相关消息",
                 detail=f"查看：{citations[0].title}",
-                payload={"message_id": str(citations[0].message_id)},
+                payload={"message_id": str(citations[0].message_id), "query": query.strip()[:180]},
             ),
         )
     if track_suggestion:
@@ -360,7 +367,7 @@ def _build_actions(
                 kind="open_todos",
                 title="查看待办跟进",
                 detail="在 Desk 的 Agent 面板里处理待办",
-                payload={"path": "/desk"},
+                payload={"path": "/desk", "query": query.strip()[:180]},
             )
         )
     return actions[:4]
@@ -378,6 +385,19 @@ def _normalize_images(raw_images: list[Any]) -> list[dict[str, str]]:
         if len(data_url) > 3_000_000:
             continue
         out.append({"data_url": data_url, "name": name})
+    return out
+
+
+def _normalize_history(raw_turns: list[Any]) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for item in raw_turns[-12:]:
+        role = str(getattr(item, "role", "") or "").strip().lower()
+        content = str(getattr(item, "content", "") or "").strip()
+        if role not in {"user", "assistant"}:
+            continue
+        if not content:
+            continue
+        out.append({"role": role, "content": content[:3000]})
     return out
 
 
@@ -432,6 +452,28 @@ def _normalize_web_queries(query: str, items: Any) -> list[str]:
     return out[:3]
 
 
+def _is_smalltalk_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return True
+    signals = [
+        "你好",
+        "hello",
+        "hi ",
+        "在吗",
+        "聊聊",
+        "你觉得",
+        "你怎么看",
+        "心情",
+        "焦虑",
+        "emo",
+        "哈哈",
+        "谢谢",
+        "晚安",
+    ]
+    return any(sig in text for sig in signals)
+
+
 def _plan_tool_usage(
     *,
     query: str,
@@ -446,6 +488,8 @@ def _plan_tool_usage(
         "track_suggestion": None,
         "reason": "planner_unavailable:chat_only",
     }
+    if _is_smalltalk_query(query):
+        return {**default_plan, "reason": "smalltalk:chat_only"}
     if provider == "rule_based" or not service.is_configured():
         return default_plan
 
@@ -467,6 +511,11 @@ def _plan_tool_usage(
         "\"tracking_reason\": string,"
         "\"reason\": string"
         "}"
+        "规划原则："
+        "A) 普通聊天、观点讨论、情绪支持、创作请求 => 两个工具都关闭；"
+        "B) 事实性、时效性问题（比赛、新闻、价格、政策、实时数据）=> 优先打开 web_search；"
+        "C) 当问题明显依赖用户历史同步内容时才打开 local_search；"
+        "D) 除非确定用户存在长期跟踪意图，否则不要建议跟踪。"
     )
     user_msg = (
         f"用户问题：{query.strip()}\n"
@@ -623,7 +672,11 @@ def _persist_web_search_results(
     for idx, item in enumerate(results[:10]):
         title = (item.title or "").strip()[:220]
         url = (item.url or "").strip()
-        snippet = (item.snippet or "").strip()[:1200]
+        snippet = (item.snippet or "").strip()
+        fetched = (getattr(item, "fetched_excerpt", "") or "").strip()
+        if fetched and len(snippet) < 120:
+            snippet = fetched
+        snippet = snippet[:2200]
         if not title or not url:
             continue
         external_id = f"web:{hashlib.sha1(url.encode('utf-8')).hexdigest()}"
@@ -718,6 +771,11 @@ def aelin_chat(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    tool_trace: list[AelinToolStep] = []
+
+    def add_trace(stage: str, *, status: str = "completed", detail: str = "", count: int = 0) -> None:
+        tool_trace.append(AelinToolStep(stage=stage, status=status, detail=detail[:240], count=max(0, int(count or 0))))
+
     service, provider = _resolve_llm_service(db, current_user)
 
     base_bundle = _build_context_bundle(
@@ -730,6 +788,7 @@ def aelin_chat(
     brief_summary = base_bundle["daily_brief"].summary if base_bundle.get("daily_brief") else ""
     todo_titles = [item.title for item in base_bundle["todos"]]
     images = _normalize_images(payload.images)
+    history_turns = _normalize_history(payload.history)
 
     tool_plan = _plan_tool_usage(
         query=payload.query,
@@ -742,6 +801,11 @@ def aelin_chat(
     planning_reason = str(tool_plan.get("reason") or "planner:none")
     web_queries = _normalize_web_queries(payload.query, tool_plan.get("web_queries"))
     track_suggestion = tool_plan.get("track_suggestion")
+    add_trace(
+        "planner",
+        status="completed",
+        detail=f"{planning_reason}; local={'on' if need_local_search else 'off'}; web={'on' if need_web_search else 'off'}",
+    )
 
     active_bundle = base_bundle
     local_citations: list[AelinCitation] = []
@@ -754,24 +818,32 @@ def aelin_chat(
         )
         local_citations = _to_citations(active_bundle["focus_items_raw"], payload.max_citations)
         local_citations = _hydrate_citation_avatars(db, current_user.id, local_citations)
+        add_trace("local_search", status="completed", detail="retrieved local memory signals", count=len(local_citations))
+    else:
+        add_trace("local_search", status="skipped", detail="planner disabled local search")
 
     web_citations: list[AelinCitation] = []
     web_evidence_lines: list[str] = []
     web_results_for_answer: list[WebSearchResult] = []
     if need_web_search and web_queries:
         for q in web_queries[:3]:
-            rows = _web_search.search(q, max_results=4)
+            rows = _web_search.search_and_fetch(q, max_results=5, fetch_top_k=3)
             if not rows:
                 continue
-            web_results_for_answer.extend(rows[:4])
+            web_results_for_answer.extend(rows[:5])
             web_citations.extend(_persist_web_search_results(db, current_user.id, query=q, results=rows))
-            for item in rows[:4]:
+            for item in rows[:5]:
                 host = _domain_from_url(item.url)
-                snippet = (item.snippet or "").strip()
+                snippet = ((getattr(item, "fetched_excerpt", "") or "").strip() or (item.snippet or "").strip())
                 evidence = f"- [Web] {item.title} ({host})"
                 if snippet:
                     evidence += f" | {snippet}"
                 web_evidence_lines.append(evidence)
+        add_trace("web_search", status="completed", detail="; ".join(web_queries[:3]), count=len(web_citations))
+    elif need_web_search:
+        add_trace("web_search", status="failed", detail="planner enabled but no query/result")
+    else:
+        add_trace("web_search", status="skipped", detail="planner disabled web search")
 
     citations = sorted(
         [*local_citations, *web_citations],
@@ -790,6 +862,7 @@ def aelin_chat(
     )
 
     if provider == "rule_based":
+        add_trace("generation", status="completed", detail="rule_based response path")
         if local_citations:
             answer = _rule_based_answer(
                 payload.query,
@@ -808,6 +881,7 @@ def aelin_chat(
                 brief_summary=brief_summary,
             )
     elif not service.is_configured():
+        add_trace("generation", status="failed", detail="llm client not configured")
         answer = (
             "当前无法初始化 LLM 客户端，Aelin 已停止静默降级。"
             "\n\n请检查设置中的 Provider / Base URL / API Key 是否正确，然后重试。"
@@ -836,10 +910,20 @@ def aelin_chat(
         user_msg = (
             f"用户问题：{payload.query.strip()}\n\n"
             f"工具规划：{retrieval_note}\n\n"
-            f"长期记忆摘要：{memory_summary or '暂无'}\n\n"
-            f"今日简报：{brief_summary or '暂无'}\n\n"
-            f"待跟进事项：{'; '.join(todo_titles[:5]) if todo_titles else '暂无'}\n\n"
-            f"置顶建议：{'; '.join(pin_lines) if pin_lines else '暂无'}\n\n"
+            + (
+                "最近对话（供连续上下文参考）：\n"
+                + "\n".join(
+                    f"- {'用户' if turn['role'] == 'user' else 'Aelin'}: {turn['content'][:220]}"
+                    for turn in history_turns[-6:]
+                )
+                + "\n\n"
+                if history_turns
+                else ""
+            )
+            + f"长期记忆摘要：{memory_summary or '暂无'}\n\n"
+            + f"今日简报：{brief_summary or '暂无'}\n\n"
+            + f"待跟进事项：{'; '.join(todo_titles[:5]) if todo_titles else '暂无'}\n\n"
+            + f"置顶建议：{'; '.join(pin_lines) if pin_lines else '暂无'}\n\n"
             + (
                 "用户上传图片：\n"
                 + "\n".join(f"- {img['name'] or 'image'}" for img in images)
@@ -853,6 +937,8 @@ def aelin_chat(
         llm_messages = [{"role": "system", "content": prompt}]
         if memory_prompt:
             llm_messages.append({"role": "system", "content": memory_prompt})
+        if history_turns:
+            llm_messages.extend(history_turns[-10:])
         if images:
             user_content: list[dict[str, Any]] = [{"type": "text", "text": user_msg}]
             for img in images:
@@ -868,9 +954,11 @@ def aelin_chat(
                 stream=False,
             )
             answer = str(raw).strip() if raw else ""
+            add_trace("generation", status="completed", detail="llm generation succeeded")
         except Exception as e:
             llm_error = str(e)
             answer = ""
+            add_trace("generation", status="failed", detail=f"llm error: {llm_error[:180]}")
             if images:
                 # Some providers/models are text-only; retry once without image payload.
                 fallback_messages: list[dict[str, Any]] = [{"role": "system", "content": prompt}]
@@ -889,6 +977,7 @@ def aelin_chat(
                             "当前模型可能不支持图片输入，我已先基于文本上下文回答。\n\n"
                             + maybe
                         )
+                        add_trace("generation", status="completed", detail="fallback text-only generation succeeded")
                 except Exception as e2:
                     llm_error = llm_error or str(e2)
                     answer = ""
@@ -938,6 +1027,7 @@ def aelin_chat(
             has_todos=bool(todo_titles),
             track_suggestion=track_suggestion if isinstance(track_suggestion, dict) else None,
         ),
+        tool_trace=tool_trace[:8],
         memory_summary=memory_summary,
         generated_at=datetime.now(timezone.utc),
     )
@@ -960,6 +1050,318 @@ def _infer_tracking_source(target: str) -> str:
     if any(token in text for token in ["rss", "订阅"]):
         return "rss"
     return "web"
+
+
+def _extract_x_username(target: str) -> str:
+    text = (target or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"(?:x\.com/|twitter\.com/)?@?([A-Za-z0-9_]{1,15})", text, flags=re.I)
+    if not match:
+        return ""
+    return match.group(1).lstrip("@").strip()
+
+
+def _extract_bilibili_uid(target: str) -> str:
+    text = (target or "").strip()
+    if not text:
+        return ""
+    match = re.search(r"(?:space\.bilibili\.com/)?([1-9]\d{3,19})", text)
+    return match.group(1).strip() if match else ""
+
+
+def _build_tracking_account_seed(source: str, target: str, query: str) -> dict[str, str] | None:
+    text = (target or query or "").strip()
+    if not text:
+        return None
+
+    if source == "x":
+        username = _extract_x_username(text)
+        if not username:
+            return None
+        return {
+            "provider": "x",
+            "identifier": f"x:{username}",
+            "feed_url": "",
+            "feed_homepage_url": f"https://x.com/{username}",
+            "feed_display_name": f"X @{username}",
+        }
+    if source == "douyin":
+        sec_uid = extract_douyin_uid(text)
+        if not sec_uid:
+            return None
+        return {
+            "provider": "douyin",
+            "identifier": sec_uid,
+            "feed_url": "",
+            "feed_homepage_url": f"https://www.douyin.com/user/{sec_uid}",
+            "feed_display_name": "抖音用户",
+        }
+    if source == "xiaohongshu":
+        user_id = extract_xhs_uid(text)
+        if not user_id:
+            return None
+        return {
+            "provider": "xiaohongshu",
+            "identifier": user_id,
+            "feed_url": "",
+            "feed_homepage_url": f"https://www.xiaohongshu.com/user/profile/{user_id}",
+            "feed_display_name": "小红书用户",
+        }
+    if source == "weibo":
+        uid = extract_weibo_uid(text)
+        if not uid:
+            return None
+        return {
+            "provider": "weibo",
+            "identifier": uid,
+            "feed_url": "",
+            "feed_homepage_url": f"https://weibo.com/u/{uid}",
+            "feed_display_name": "微博用户",
+        }
+    if source == "bilibili":
+        uid = _extract_bilibili_uid(text)
+        if not uid:
+            return None
+        return {
+            "provider": "bilibili",
+            "identifier": f"bilibili:{uid}",
+            "feed_url": "",
+            "feed_homepage_url": f"https://space.bilibili.com/{uid}",
+            "feed_display_name": f"B站 UP {uid}",
+        }
+    return None
+
+
+def _ensure_tracking_account(
+    db: Session,
+    *,
+    user_id: int,
+    source: str,
+    target: str,
+    query: str,
+) -> Any | None:
+    seed = _build_tracking_account_seed(source, target, query)
+    if not seed:
+        return None
+
+    existing = crud.get_account_by_provider_identifier(
+        db,
+        user_id=user_id,
+        provider=seed["provider"],
+        identifier=seed["identifier"],
+    )
+    if existing is not None:
+        return existing
+
+    try:
+        return crud.create_connected_account(
+            db,
+            user_id=user_id,
+            provider=seed["provider"],
+            identifier=seed["identifier"],
+            access_token=None,
+            refresh_token=None,
+            feed_url=seed.get("feed_url"),
+            feed_homepage_url=seed.get("feed_homepage_url"),
+            feed_display_name=seed.get("feed_display_name"),
+        )
+    except IntegrityError:
+        db.rollback()
+        return crud.get_account_by_provider_identifier(
+            db,
+            user_id=user_id,
+            provider=seed["provider"],
+            identifier=seed["identifier"],
+        )
+    except Exception:
+        db.rollback()
+        return None
+
+
+def _persist_tracking_event(
+    db: Session,
+    *,
+    user_id: int,
+    target: str,
+    source: str,
+    query: str,
+    status: str,
+) -> int | None:
+    contact = crud.upsert_contact(db, user_id=user_id, handle="aelin:tracking", display_name="Aelin Tracking")
+    now = datetime.now(timezone.utc)
+    seed = f"{target}|{query}|{status}|{now.strftime('%Y%m%d%H%M%S')}"
+    external_id = f"aelin-track:{source}:{hashlib.sha1(seed.encode('utf-8')).hexdigest()}"
+    body = (
+        f"跟踪目标: {target}\n"
+        f"来源: {source}\n"
+        f"状态: {status}\n"
+        f"触发问题: {query or '未提供'}\n"
+        f"时间: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    )
+    msg = crud.create_message(
+        db,
+        user_id=user_id,
+        contact_id=contact.id,
+        source="aelin",
+        external_id=external_id,
+        sender="Aelin",
+        subject=f"跟踪任务：{target[:80]}",
+        body=body,
+        received_at=now,
+        summary=f"{source} / {status}",
+    )
+    if msg is not None and getattr(msg, "id", None) is None:
+        db.flush()
+    if msg is None:
+        msg = db.scalar(
+            select(Message).where(
+                Message.user_id == user_id,
+                Message.source == "aelin",
+                Message.external_id == external_id,
+            )
+        )
+    if msg is None:
+        return None
+    crud.touch_contact_last_message(db, contact=contact, received_at=now)
+    db.flush()
+    return int(msg.id)
+
+
+def _extract_tracking_field(text: str, label: str) -> str:
+    if not text:
+        return ""
+    match = re.search(rf"{re.escape(label)}\s*[:：]\s*(.+)", text, flags=re.I)
+    if not match:
+        return ""
+    return (match.group(1) or "").strip().splitlines()[0].strip()
+
+
+def _parse_tracking_payload(raw: str) -> dict[str, str]:
+    text = (raw or "").strip()
+    return {
+        "target": _extract_tracking_field(text, "跟踪目标"),
+        "source": _normalize_track_source(_extract_tracking_field(text, "来源") or "auto"),
+        "status": _extract_tracking_field(text, "状态"),
+        "query": _extract_tracking_field(text, "触发问题"),
+        "time": _extract_tracking_field(text, "时间"),
+    }
+
+
+def _tracking_key(source: str, target: str) -> str:
+    return f"{(source or 'auto').strip().lower()}::{(target or '').strip().lower()}"
+
+
+def _load_tracking_events(db: Session, *, user_id: int, limit: int) -> dict[str, dict[str, Any]]:
+    contact = db.scalar(
+        select(Contact).where(
+            Contact.user_id == user_id,
+            Contact.handle == "aelin:tracking",
+        )
+    )
+    if contact is None:
+        return {}
+
+    rows = crud.list_messages(
+        db,
+        user_id=user_id,
+        contact_id=int(contact.id),
+        limit=max(20, min(500, int(limit) * 4)),
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for msg in rows:
+        parsed = _parse_tracking_payload(msg.body or "")
+        target = (parsed.get("target") or "").strip()
+        if not target:
+            continue
+        source = _normalize_track_source(parsed.get("source") or "auto")
+        key = _tracking_key(source, target)
+        if key in out:
+            continue
+        received = msg.received_at.isoformat() if msg.received_at else ""
+        out[key] = {
+            "message_id": int(msg.id),
+            "target": target,
+            "source": source,
+            "query": (parsed.get("query") or "").strip(),
+            "status": (parsed.get("status") or "").strip() or "active",
+            "updated_at": received,
+        }
+    return out
+
+
+@router.get("/tracking", response_model=AelinTrackingListResponse)
+def list_trackings(
+    limit: int = Query(default=80, ge=1, le=300),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    notes = db.scalars(
+        select(AgentMemoryNote)
+        .where(
+            AgentMemoryNote.user_id == current_user.id,
+            AgentMemoryNote.kind == "tracking",
+        )
+        .order_by(AgentMemoryNote.updated_at.desc(), AgentMemoryNote.id.desc())
+        .limit(limit)
+    ).all()
+
+    events_by_key = _load_tracking_events(db, user_id=current_user.id, limit=limit)
+    seen_keys: set[str] = set()
+    items: list[AelinTrackingItem] = []
+
+    for note in notes:
+        parsed = _parse_tracking_payload(note.content or "")
+        note_source = ""
+        if (note.source or "").startswith("track:"):
+            note_source = (note.source or "").split(":", 1)[1].strip()
+        source = _normalize_track_source(parsed.get("source") or note_source or "auto")
+        target = (parsed.get("target") or "").strip()
+        if not target:
+            continue
+        key = _tracking_key(source, target)
+        seen_keys.add(key)
+        event = events_by_key.get(key)
+        note_updated = note.updated_at.isoformat() if note.updated_at else ""
+        items.append(
+            AelinTrackingItem(
+                note_id=int(note.id),
+                message_id=int(event["message_id"]) if event and event.get("message_id") else None,
+                target=target,
+                source=source,
+                query=(parsed.get("query") or "").strip(),
+                status=(event.get("status") if event else "") or "active",
+                updated_at=note_updated,
+                status_updated_at=(event.get("updated_at") if event else "") or None,
+            )
+        )
+
+    for key, event in events_by_key.items():
+        if key in seen_keys:
+            continue
+        items.append(
+            AelinTrackingItem(
+                note_id=None,
+                message_id=int(event["message_id"]) if event.get("message_id") else None,
+                target=str(event.get("target") or "").strip(),
+                source=_normalize_track_source(str(event.get("source") or "auto")),
+                query=str(event.get("query") or "").strip(),
+                status=str(event.get("status") or "").strip() or "active",
+                updated_at=str(event.get("updated_at") or ""),
+                status_updated_at=str(event.get("updated_at") or "") or None,
+            )
+        )
+
+    items.sort(
+        key=lambda row: (row.status_updated_at or row.updated_at or ""),
+        reverse=True,
+    )
+    trimmed = items[:limit]
+    return AelinTrackingListResponse(
+        total=len(trimmed),
+        items=trimmed,
+        generated_at=datetime.now(timezone.utc),
+    )
 
 
 def _matching_accounts_for_tracking(accounts: list[Any], source: str) -> list[Any]:
@@ -991,11 +1393,33 @@ def confirm_track_subscription(
     except Exception:
         pass
 
+    tracking_message_id = _persist_tracking_event(
+        db,
+        user_id=current_user.id,
+        target=target,
+        source=source,
+        query=query,
+        status="created",
+    )
+
     if source == "web":
         search_query = query or target
-        rows = _web_search.search(search_query, max_results=6)
+        rows = _web_search.search_and_fetch(search_query, max_results=7, fetch_top_k=4)
         citations = _persist_web_search_results(db, current_user.id, query=search_query, results=rows)
+        tracking_message_id = _persist_tracking_event(
+            db,
+            user_id=current_user.id,
+            target=target,
+            source=source,
+            query=query,
+            status="seeded",
+        ) or tracking_message_id
         db.commit()
+        action_payload: dict[str, str] = {"path": "/desk"}
+        if tracking_message_id:
+            action_payload["message_id"] = str(tracking_message_id)
+        if target:
+            action_payload["query"] = target[:120]
         return AelinTrackConfirmResponse(
             status="tracking_enabled",
             message=(
@@ -1008,7 +1432,7 @@ def confirm_track_subscription(
                     kind="open_desk",
                     title="查看已保存数据",
                     detail="打开 Desk 查看刚保存的跟踪结果",
-                    payload={"path": "/desk"},
+                    payload=action_payload,
                 )
             ],
             generated_at=datetime.now(timezone.utc),
@@ -1016,8 +1440,31 @@ def confirm_track_subscription(
 
     all_accounts = crud.list_accounts(db, user_id=current_user.id)
     matched = _matching_accounts_for_tracking(all_accounts, source)
+    if not matched and source in {"x", "douyin", "xiaohongshu", "weibo", "bilibili"}:
+        created = _ensure_tracking_account(
+            db,
+            user_id=current_user.id,
+            source=source,
+            target=target,
+            query=query,
+        )
+        if created is not None:
+            all_accounts = crud.list_accounts(db, user_id=current_user.id)
+            matched = _matching_accounts_for_tracking(all_accounts, source)
+
     if not matched:
+        tracking_message_id = _persist_tracking_event(
+            db,
+            user_id=current_user.id,
+            target=target,
+            source=source,
+            query=query,
+            status="needs_config",
+        ) or tracking_message_id
         db.commit()
+        payload_settings = {"path": "/settings", "provider": source}
+        if target:
+            payload_settings["target"] = target[:120]
         return AelinTrackConfirmResponse(
             status="needs_config",
             message=f"要跟踪“{target}”，你需要先配置 {source} 数据源。",
@@ -1027,7 +1474,7 @@ def confirm_track_subscription(
                     kind="open_settings",
                     title="去设置数据源",
                     detail=f"当前缺少 {source} 配置，打开设置页完成接入",
-                    payload={"path": "/settings", "provider": source},
+                    payload=payload_settings,
                 )
             ],
             generated_at=datetime.now(timezone.utc),
@@ -1038,7 +1485,20 @@ def confirm_track_subscription(
             enqueue_sync_job(user_id=current_user.id, account_id=int(account.id), force_full=False)
         except Exception:
             continue
+    tracking_message_id = _persist_tracking_event(
+        db,
+        user_id=current_user.id,
+        target=target,
+        source=source,
+        query=query,
+        status="sync_started",
+    ) or tracking_message_id
     db.commit()
+    action_payload = {"path": "/desk"}
+    if tracking_message_id:
+        action_payload["message_id"] = str(tracking_message_id)
+    if target:
+        action_payload["query"] = target[:120]
     return AelinTrackConfirmResponse(
         status="sync_started",
         message=f"已为“{target}”启动 {len(matched[:4])} 个同步任务，后续会持续更新并写入本地。",
@@ -1048,7 +1508,7 @@ def confirm_track_subscription(
                 kind="open_desk",
                 title="查看同步进度",
                 detail="打开 Desk 观察新数据写入",
-                payload={"path": "/desk"},
+                payload=action_payload,
             )
         ],
         generated_at=datetime.now(timezone.utc),
