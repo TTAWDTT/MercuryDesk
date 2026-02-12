@@ -18,6 +18,7 @@ interface ContactGridProps {
   workspace?: string;
   pinRecommendations?: AgentPinRecommendationItem[];
   onCardAction?: (contact: Contact, action: 'summarize' | 'draft' | 'todo') => void;
+  highlightContactId?: number | null;
 }
 
 type CardLayoutState = {
@@ -165,6 +166,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
   workspace = 'default',
   pinRecommendations,
   onCardAction,
+  highlightContactId,
 }) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -824,6 +826,7 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
           const active = activeCardId === contact.id;
           const dragging = active && interactionMode === 'drag';
           const resizing = active && interactionMode === 'resize';
+          const highlighted = highlightContactId != null && highlightContactId === contact.id;
           const recommendation = recommendedMap.get(contact.id);
           const tag = recommendation ? `AI推荐 ${Math.round(recommendation.score)}` : undefined;
 
@@ -832,17 +835,24 @@ export const ContactGrid: React.FC<ContactGridProps> = ({
               key={contact.id}
               data-card-id={contact.id}
               sx={{
+                '@keyframes bridgePulse': {
+                  '0%, 100%': { transform: 'scale(1)' },
+                  '50%': { transform: 'scale(1.012)' },
+                },
                 position: 'absolute',
                 left: layout.x,
                 top: layout.y,
                 width: layout.width,
                 height: layout.height,
-              zIndex: active ? 9999 : layout.z,
-              transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
-              transform: dragging ? 'scale(1.006)' : 'scale(1)',
-              boxShadow: active
-                ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.32)}, 0 8px 16px ${alpha(theme.palette.text.primary, 0.18)}`
-                : undefined,
+                zIndex: active ? 9999 : layout.z,
+                transition: active ? 'none' : 'box-shadow 0.2s ease, transform 0.2s ease',
+                transform: dragging ? 'scale(1.006)' : 'scale(1)',
+                animation: highlighted ? 'bridgePulse 940ms ease-in-out 2' : 'none',
+                boxShadow: highlighted
+                  ? `0 0 0 2px ${alpha(theme.palette.warning.main, 0.58)}, 0 0 0 7px ${alpha(theme.palette.warning.main, 0.16)}, 0 16px 24px ${alpha(theme.palette.text.primary, 0.14)}`
+                  : active
+                    ? `0 0 0 2px ${alpha(theme.palette.primary.main, 0.32)}, 0 8px 16px ${alpha(theme.palette.text.primary, 0.18)}`
+                    : undefined,
                 willChange: active ? 'transform, left, top, width, height' : 'auto',
                 contentVisibility: active ? 'visible' : 'auto',
                 containIntrinsicSize: '340px 320px',

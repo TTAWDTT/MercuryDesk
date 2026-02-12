@@ -57,7 +57,7 @@ function renderTextWithLinks(text: string) {
   });
 }
 
-const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number }) => {
+const MessageItem = React.memo(({ msg, index, highlight }: { msg: Message; index: number; highlight?: boolean }) => {
   const theme = useTheme();
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const abortRef = useRef<AbortController | null>(null);
@@ -155,25 +155,32 @@ const MessageItem = React.memo(({ msg, index }: { msg: Message; index: number })
       <Paper
         elevation={0}
         sx={{
+            '@keyframes drawerFocusPulse': {
+              '0%, 100%': { transform: 'scale(1)' },
+              '50%': { transform: 'scale(1.008)' },
+            },
             p: { xs: 1.5, md: 1.8 },
             borderRadius: 3,
             border: '1px solid',
-            borderColor: 'divider',
+            borderColor: highlight ? alpha(theme.palette.warning.main, 0.55) : 'divider',
             bgcolor: 'background.paper',
             backgroundImage: 'none',
             transition: 'box-shadow 0.2s ease, border-color 0.2s ease',
             position: 'relative',
             overflow: 'hidden',
+            animation: highlight ? 'drawerFocusPulse 860ms ease-in-out 2' : 'none',
             boxShadow:
-              theme.palette.mode === 'light'
-                ? '0 6px 16px rgba(20,20,19,0.08)'
-                : '0 10px 22px rgba(0,0,0,0.3)',
+              highlight
+                ? `0 0 0 2px ${alpha(theme.palette.warning.main, 0.26)}, 0 10px 24px ${alpha(theme.palette.text.primary, 0.14)}`
+                : theme.palette.mode === 'light'
+                  ? '0 6px 16px rgba(20,20,19,0.08)'
+                  : '0 10px 22px rgba(0,0,0,0.3)',
             '&:hover': {
                 boxShadow:
                   theme.palette.mode === 'light'
                     ? '0 10px 24px rgba(20,20,19,0.12)'
                     : '0 14px 28px rgba(0,0,0,0.34)',
-                borderColor: alpha(theme.palette.primary.main, 0.34),
+                borderColor: highlight ? alpha(theme.palette.warning.main, 0.58) : alpha(theme.palette.primary.main, 0.34),
             }
         }}
       >
@@ -426,13 +433,16 @@ interface ConversationDrawerProps {
   open: boolean;
   onClose: () => void;
   contact: Contact | null;
+  focusMessageId?: number | null;
 }
 
-export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, onClose, contact }) => {
+export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, onClose, contact, focusMessageId }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
+  const [highlightMessageId, setHighlightMessageId] = useState<number | null>(null);
   const theme = useTheme();
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const bodyRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -452,6 +462,23 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
     }
     return () => { cancelled = true; };
   }, [open, contact?.id]);
+
+  useEffect(() => {
+    if (!open || !focusMessageId || messages.length === 0) return;
+    if (!messages.some((msg) => msg.id === focusMessageId)) return;
+    setHighlightMessageId(focusMessageId);
+    const clearTimer = window.setTimeout(() => setHighlightMessageId(null), 2600);
+    const frame = window.requestAnimationFrame(() => {
+      const host = bodyRef.current;
+      if (!host) return;
+      const target = host.querySelector(`[data-message-id="${focusMessageId}"]`) as HTMLElement | null;
+      target?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'center' });
+    });
+    return () => {
+      window.clearTimeout(clearTimer);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [focusMessageId, messages, open, prefersReducedMotion]);
 
   if (!contact) return null;
 
@@ -510,6 +537,11 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
           <Box>
              <Typography variant="subtitle1" lineHeight={1.2} sx={{ fontWeight: 700 }}>{contact.display_name}</Typography>
              <Typography variant="caption" color="textSecondary">{contact.handle}</Typography>
+             {focusMessageId ? (
+               <Typography variant="caption" sx={{ display: 'block', color: 'warning.main', fontWeight: 700 }}>
+                 焦点消息 #{focusMessageId}
+               </Typography>
+             ) : null}
           </Box>
         </Box>
         <IconButton onClick={onClose} aria-label="关闭详情面板" sx={{ color: 'text.secondary' }}>
@@ -518,6 +550,7 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
       </Box>
 
       <Box
+        ref={bodyRef}
         p={{ xs: 1.2, md: 1.6 }}
         flexGrow={1}
         bgcolor={alpha(theme.palette.background.default, 0.7)}
@@ -538,7 +571,9 @@ export const ConversationDrawer: React.FC<ConversationDrawerProps> = ({ open, on
           <Box display="flex" flexDirection="column" gap={1.5}>
             <AnimatePresence>
             {messages.map((msg, i) => (
-              <MessageItem key={msg.id} msg={msg} index={i} />
+              <Box key={msg.id} data-message-id={msg.id}>
+                <MessageItem msg={msg} index={i} highlight={highlightMessageId === msg.id} />
+              </Box>
             ))}
             </AnimatePresence>
           </Box>

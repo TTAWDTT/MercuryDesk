@@ -37,6 +37,7 @@ function AnimatedRoutes() {
           ) : (
             <>
               <Route path="/" element={<Aelin />} />
+              <Route path="/chat" element={<Navigate to="/" replace />} />
               <Route path="/desk" element={<Dashboard />} />
               <Route path="/dashboard" element={<Navigate to="/desk" replace />} />
               <Route path="/settings" element={<Settings />} />

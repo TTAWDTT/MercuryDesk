@@ -128,9 +128,21 @@ export type AelinAction = {
   payload: Record<string, string>;
 };
 
+export type AelinToolStep = {
+  stage: string;
+  status: string;
+  detail?: string;
+  count?: number;
+};
+
 export type AelinImageInput = {
   data_url: string;
   name?: string;
+};
+
+export type AelinChatHistoryTurn = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 export type AelinContextResponse = {
@@ -150,6 +162,7 @@ export type AelinChatResponse = {
   answer: string;
   citations: AelinCitation[];
   actions: AelinAction[];
+  tool_trace: AelinToolStep[];
   memory_summary: string;
   generated_at: string;
 };
@@ -159,6 +172,23 @@ export type AelinTrackConfirmResponse = {
   message: string;
   provider?: string | null;
   actions: AelinAction[];
+  generated_at: string;
+};
+
+export type AelinTrackingItem = {
+  note_id?: number | null;
+  message_id?: number | null;
+  target: string;
+  source: string;
+  query: string;
+  status: string;
+  updated_at: string;
+  status_updated_at?: string | null;
+};
+
+export type AelinTrackingListResponse = {
+  total: number;
+  items: AelinTrackingItem[];
   generated_at: string;
 };
 
@@ -599,7 +629,13 @@ export async function getAelinContext(workspace = "default", query = ""): Promis
 
 export async function aelinChat(
   query: string,
-  options?: { use_memory?: boolean; max_citations?: number; workspace?: string; images?: AelinImageInput[] }
+  options?: {
+    use_memory?: boolean;
+    max_citations?: number;
+    workspace?: string;
+    images?: AelinImageInput[];
+    history?: AelinChatHistoryTurn[];
+  }
 ): Promise<AelinChatResponse> {
   return await fetchJson<AelinChatResponse>("/api/v1/aelin/chat", {
     method: "POST",
@@ -613,6 +649,13 @@ export async function aelinChat(
         data_url: item.data_url,
         name: item.name || "",
       })),
+      history: (options?.history || [])
+        .filter((item) => item && (item.role === "user" || item.role === "assistant") && String(item.content || "").trim())
+        .slice(-12)
+        .map((item) => ({
+          role: item.role,
+          content: String(item.content || "").trim(),
+        })),
     }),
   });
 }
@@ -631,6 +674,11 @@ export async function aelinConfirmTrack(payload: {
       query: payload.query || "",
     }),
   });
+}
+
+export async function getAelinTracking(limit = 80): Promise<AelinTrackingListResponse> {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(300, Math.floor(limit))) : 80;
+  return await fetchJson<AelinTrackingListResponse>(`/api/v1/aelin/tracking?limit=${safeLimit}`);
 }
 
 export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {

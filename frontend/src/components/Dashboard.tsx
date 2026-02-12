@@ -15,16 +15,19 @@ import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Drawer from '@mui/material/Drawer';
 import Tooltip from '@mui/material/Tooltip';
+import Chip from '@mui/material/Chip';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import LaunchIcon from '@mui/icons-material/Launch';
+import KeyboardReturnIcon from '@mui/icons-material/KeyboardReturn';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
-import { useTheme } from '@mui/material/styles';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { alpha, useTheme } from '@mui/material/styles';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
-import { AgentChatPanel } from './AgentChatPanel';
+import Aelin, { AelinDeskBridgePayload } from './Aelin';
 import { GmailBindDialog } from './dashboard/GmailBindDialog';
 import { FirstRunGuideDialog } from './dashboard/FirstRunGuideDialog';
 import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
@@ -53,6 +56,7 @@ import {
   deleteAgentMemoryNote,
   deleteAgentTodo,
   getAgentMemory,
+  getMessage,
   listAccounts,
   startAccountOAuth,
   syncAccount,
@@ -76,6 +80,9 @@ const DASHBOARD_SYNC_CONCURRENCY = (() => {
 const FIRST_RUN_GUIDE_KEY = 'mercurydesk:dashboard:first-run-guide:v1';
 const WORKSPACE_KEY = 'mercurydesk:dashboard:workspace:v1';
 const SIDEBAR_OPEN_KEY = 'mercurydesk:dashboard:ai-sidebar-open:v1';
+const AELIN_DOCK_OPEN_KEY = 'mercurydesk:dashboard:aelin-dock-open:v1';
+const AELIN_LAST_SESSION_KEY = 'aelin:last-session-id:v1';
+const AELIN_LAST_DESK_BRIDGE_KEY = 'aelin:last-desk-bridge:v1';
 const WORKSPACES = [
   { key: 'default', label: '主工作区' },
   { key: 'work', label: '工作' },
@@ -86,6 +93,61 @@ const DESKTOP_SIDEBAR_WIDTH = 372;
 const DESKTOP_SIDEBAR_GAP = 16;
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+type AelinBridgeContext = {
+  fromAelin: boolean;
+  sessionId: string;
+  workspace: string;
+  focusMessageId: number | null;
+  focusContactId: number | null;
+  focusQuery: string;
+  highlightSource: string;
+  resumePrompt: string;
+};
+
+const parsePositiveInt = (raw: string | null): number | null => {
+  const n = Number(raw || 0);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.floor(n);
+};
+
+const readBridgeFromSearch = (search: string): AelinBridgeContext => {
+  const qs = new URLSearchParams(search);
+  const workspace = (qs.get('workspace') || 'default').trim() || 'default';
+  return {
+    fromAelin: (qs.get('from') || '').trim().toLowerCase() === 'aelin',
+    sessionId: (qs.get('session_id') || '').trim(),
+    workspace,
+    focusMessageId: parsePositiveInt(qs.get('focus_message_id') || qs.get('message_id')),
+    focusContactId: parsePositiveInt(qs.get('focus_contact_id')),
+    focusQuery: (qs.get('focus_query') || '').trim(),
+    highlightSource: (qs.get('highlight_source') || '').trim(),
+    resumePrompt: (qs.get('resume_prompt') || '').trim(),
+  };
+};
+
+const normalizeBridgeContext = (raw: Partial<AelinBridgeContext> | null | undefined): AelinBridgeContext | null => {
+  if (!raw) return null;
+  const legacy = raw as Record<string, unknown>;
+  return {
+    fromAelin: Boolean(raw.fromAelin ?? legacy.from_aelin ?? legacy.from === 'aelin'),
+    sessionId: String(raw.sessionId || legacy.session_id || '').trim(),
+    workspace: String(raw.workspace || 'default').trim() || 'default',
+    focusMessageId: parsePositiveInt(
+      raw.focusMessageId == null && legacy.focus_message_id == null
+        ? null
+        : String(raw.focusMessageId ?? legacy.focus_message_id)
+    ),
+    focusContactId: parsePositiveInt(
+      raw.focusContactId == null && legacy.focus_contact_id == null
+        ? null
+        : String(raw.focusContactId ?? legacy.focus_contact_id)
+    ),
+    focusQuery: String(raw.focusQuery || legacy.focus_query || '').trim(),
+    highlightSource: String(raw.highlightSource || legacy.highlight_source || '').trim(),
+    resumePrompt: String(raw.resumePrompt || legacy.resume_prompt || '').trim(),
+  };
+};
 
 const formatRunningAccounts = (labels: string[]) => {
   if (labels.length === 0) return '';
@@ -98,6 +160,7 @@ export default function Dashboard() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
 
@@ -135,6 +198,13 @@ export default function Dashboard() {
   const [actionBusy, setActionBusy] = useState(false);
   const [activePanel, setActivePanel] = useState<'brief' | 'todo' | 'search' | 'memory'>('brief');
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [aelinDockOpen, setAelinDockOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(AELIN_DOCK_OPEN_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem(SIDEBAR_OPEN_KEY);
@@ -147,10 +217,24 @@ export default function Dashboard() {
   });
   const [desktopHostWidth, setDesktopHostWidth] = useState(0);
   const [boardNaturalHeight, setBoardNaturalHeight] = useState(860);
+  const [highlightContactId, setHighlightContactId] = useState<number | null>(null);
+  const [pendingFocusMessageId, setPendingFocusMessageId] = useState<number | null>(null);
+  const [pendingFocusContactId, setPendingFocusContactId] = useState<number | null>(null);
+  const [bridgeContext, setBridgeContext] = useState<AelinBridgeContext | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.sessionStorage.getItem(AELIN_LAST_DESK_BRIDGE_KEY);
+      if (!raw) return null;
+      return normalizeBridgeContext(JSON.parse(raw) as Partial<AelinBridgeContext>);
+    } catch {
+      return null;
+    }
+  });
 
   const layoutSyncTimerRef = useRef<number | null>(null);
   const desktopHostRef = useRef<HTMLDivElement | null>(null);
   const boardNaturalRef = useRef<HTMLDivElement | null>(null);
+  const processedBridgeSearchRef = useRef<string>('');
 
   useEffect(() => {
     if (selectedContact) setDrawerContact(selectedContact);
@@ -239,12 +323,114 @@ export default function Dashboard() {
   }, [desktopSidebarOpen]);
 
   useEffect(() => {
+    try {
+      localStorage.setItem(AELIN_DOCK_OPEN_KEY, aelinDockOpen ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [aelinDockOpen]);
+
+  useEffect(() => {
     if (!isMobile) setMobilePanelOpen(false);
   }, [isMobile]);
 
   useEffect(() => {
     loadMemorySnapshot('');
   }, [loadMemorySnapshot]);
+
+  useEffect(() => {
+    const bridge = readBridgeFromSearch(location.search || '');
+    const hasFocus = Boolean(bridge.focusMessageId || bridge.focusContactId);
+    const hasBridgeSignal = bridge.fromAelin || hasFocus;
+    if (!hasBridgeSignal) return;
+    if (processedBridgeSearchRef.current === location.search) return;
+    processedBridgeSearchRef.current = location.search;
+
+    if (bridge.workspace && bridge.workspace !== activeWorkspace) {
+      setActiveWorkspace(bridge.workspace);
+    }
+    if (hasFocus) {
+      setSearchQuery('');
+      setPendingFocusMessageId(bridge.focusMessageId);
+      setPendingFocusContactId(bridge.focusContactId);
+      setActivePanel('search');
+    }
+    if (bridge.focusQuery) {
+      setSearchQuery(bridge.focusQuery);
+      setActivePanel('search');
+    }
+    if (bridge.fromAelin && !isMobile) {
+      setDesktopSidebarOpen(true);
+      setAelinDockOpen(true);
+    }
+
+    setBridgeContext((prev) => {
+      const merged: AelinBridgeContext = {
+        fromAelin: bridge.fromAelin || Boolean(prev?.fromAelin),
+        sessionId: bridge.sessionId || prev?.sessionId || '',
+        workspace: bridge.workspace || prev?.workspace || 'default',
+        focusMessageId: bridge.focusMessageId ?? prev?.focusMessageId ?? null,
+        focusContactId: bridge.focusContactId ?? prev?.focusContactId ?? null,
+        focusQuery: bridge.focusQuery || prev?.focusQuery || '',
+        highlightSource: bridge.highlightSource || prev?.highlightSource || '',
+        resumePrompt: bridge.resumePrompt || prev?.resumePrompt || '',
+      };
+      if (typeof window !== 'undefined') {
+        try {
+          if (merged.sessionId) window.localStorage.setItem(AELIN_LAST_SESSION_KEY, merged.sessionId);
+          window.sessionStorage.setItem(AELIN_LAST_DESK_BRIDGE_KEY, JSON.stringify(merged));
+        } catch {
+          // ignore storage failures
+        }
+      }
+      return merged;
+    });
+  }, [activeWorkspace, isMobile, location.search]);
+
+  useEffect(() => {
+    if (!pendingFocusMessageId) return;
+    let cancelled = false;
+    const targetMessageId = pendingFocusMessageId;
+    setPendingFocusMessageId(null);
+    (async () => {
+      try {
+        const detail = await getMessage(targetMessageId);
+        if (cancelled) return;
+        setPendingFocusContactId(detail.contact_id);
+      } catch (error) {
+        if (!cancelled) {
+          showToast(
+            error instanceof Error ? `无法定位焦点消息: ${error.message}` : '无法定位焦点消息',
+            'warning'
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingFocusMessageId, showToast]);
+
+  useEffect(() => {
+    if (!pendingFocusContactId) return;
+    if (!contacts) return;
+    const target = contactsById.get(pendingFocusContactId);
+    if (!target) {
+      showToast('Aelin 指向的联系人不在当前列表中。', 'warning');
+      setPendingFocusContactId(null);
+      return;
+    }
+    setSelectedContact(target);
+    setDrawerContact(target);
+    setHighlightContactId(target.id);
+    setPendingFocusContactId(null);
+  }, [contacts, contactsById, pendingFocusContactId, showToast]);
+
+  useEffect(() => {
+    if (!highlightContactId) return;
+    const timer = window.setTimeout(() => setHighlightContactId(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightContactId]);
 
   useEffect(() => {
     return () => {
@@ -510,6 +696,81 @@ export default function Dashboard() {
     }
     setSelectedContact(target);
   }, [contactsById, showToast]);
+
+  const replayBridgeFocus = useCallback(() => {
+    if (bridgeContext?.focusMessageId) {
+      setPendingFocusMessageId(bridgeContext.focusMessageId);
+      return;
+    }
+    if (bridgeContext?.focusContactId) {
+      setPendingFocusContactId(bridgeContext.focusContactId);
+    }
+  }, [bridgeContext]);
+
+  const returnToAelin = useCallback(() => {
+    const fallbackSessionId = (() => {
+      try {
+        return localStorage.getItem(AELIN_LAST_SESSION_KEY) || '';
+      } catch {
+        return '';
+      }
+    })();
+    const sid = (bridgeContext?.sessionId || fallbackSessionId || '').trim();
+    const focusMessageId = bridgeContext?.focusMessageId || null;
+    const focusContactId = bridgeContext?.focusContactId || selectedContact?.id || null;
+    const highlightSource = (bridgeContext?.highlightSource || '').trim();
+    const focusQuery = (bridgeContext?.focusQuery || searchQuery || '').trim();
+    const resumePrompt = (
+      bridgeContext?.resumePrompt
+      || (focusMessageId
+        ? `继续围绕消息 #${focusMessageId} 帮我判断下一步应该关注什么。`
+        : '继续我们刚才在 Desk 里的讨论。')
+    ).trim();
+
+    const qs = new URLSearchParams();
+    qs.set('from', 'desk');
+    if (sid) qs.set('session_id', sid);
+    if (focusMessageId) qs.set('focus_message_id', String(focusMessageId));
+    if (focusContactId) qs.set('focus_contact_id', String(focusContactId));
+    if (focusQuery) qs.set('focus_query', focusQuery.slice(0, 180));
+    if (highlightSource) qs.set('highlight_source', highlightSource.slice(0, 40));
+    if (resumePrompt) qs.set('resume_prompt', resumePrompt.slice(0, 240));
+    navigate(`/?${qs.toString()}`);
+  }, [bridgeContext, navigate, searchQuery, selectedContact?.id]);
+
+  const handleAelinOpenDesk = useCallback((payload: AelinDeskBridgePayload) => {
+    const nextBridge: AelinBridgeContext = {
+      fromAelin: true,
+      sessionId: (payload.sessionId || '').trim(),
+      workspace: (payload.workspace || activeWorkspace || 'default').trim() || 'default',
+      focusMessageId: payload.messageId && Number.isFinite(payload.messageId) ? Math.floor(payload.messageId) : null,
+      focusContactId: payload.contactId && Number.isFinite(payload.contactId) ? Math.floor(payload.contactId) : null,
+      focusQuery: (payload.focusQuery || '').trim(),
+      highlightSource: (payload.highlightSource || '').trim(),
+      resumePrompt: (payload.resumePrompt || '').trim(),
+    };
+    setBridgeContext(nextBridge);
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(AELIN_LAST_DESK_BRIDGE_KEY, JSON.stringify(nextBridge));
+      } catch {
+        // ignore storage failures
+      }
+    }
+    if (nextBridge.workspace && nextBridge.workspace !== activeWorkspace) {
+      setActiveWorkspace(nextBridge.workspace);
+    }
+    if (nextBridge.focusMessageId) {
+      setPendingFocusMessageId(nextBridge.focusMessageId);
+      setActivePanel('search');
+    } else if (nextBridge.focusContactId) {
+      setPendingFocusContactId(nextBridge.focusContactId);
+    }
+    if (nextBridge.focusQuery) {
+      setSearchQuery(nextBridge.focusQuery);
+      setActivePanel('search');
+    }
+  }, [activeWorkspace]);
 
   const handleCardAction = useCallback(async (contact: Contact, action: 'summarize' | 'draft' | 'todo') => {
     const text = [
@@ -777,6 +1038,49 @@ export default function Dashboard() {
       />
 
       <Container maxWidth="xl" sx={{ mt: { xs: 2.2, md: 3.2 } }}>
+        {bridgeContext?.fromAelin ? (
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 1.3,
+              px: { xs: 1.1, md: 1.4 },
+              py: 0.85,
+              borderRadius: 2.2,
+              borderColor: alpha(theme.palette.primary.main, 0.36),
+              bgcolor: alpha(theme.palette.primary.main, 0.07),
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: 0.8,
+            }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
+              来自 Aelin 的上下文已加载
+            </Typography>
+            {bridgeContext.highlightSource ? (
+              <Chip size="small" label={bridgeContext.highlightSource} />
+            ) : null}
+            {bridgeContext.focusMessageId ? (
+              <Chip size="small" variant="outlined" label={`消息 #${bridgeContext.focusMessageId}`} />
+            ) : null}
+            {bridgeContext.workspace ? (
+              <Chip size="small" variant="outlined" label={`工作区 ${bridgeContext.workspace}`} />
+            ) : null}
+            {bridgeContext.focusQuery ? (
+              <Chip size="small" variant="outlined" label={`检索: ${bridgeContext.focusQuery}`} />
+            ) : null}
+            <Box sx={{ flex: 1 }} />
+            {(bridgeContext.focusMessageId || bridgeContext.focusContactId) ? (
+              <Button size="small" variant="outlined" startIcon={<LaunchIcon />} onClick={replayBridgeFocus}>
+                重新定位焦点
+              </Button>
+            ) : null}
+            <Button size="small" variant="contained" startIcon={<KeyboardReturnIcon />} onClick={returnToAelin}>
+              回到 Aelin 续聊
+            </Button>
+          </Paper>
+        ) : null}
+
         {isMobile ? (
           <Paper
             elevation={0}
@@ -818,6 +1122,7 @@ export default function Dashboard() {
               workspace={activeWorkspace}
               pinRecommendations={pinRecommendations?.items ?? []}
               onCardAction={handleCardAction}
+              highlightContactId={highlightContactId}
             />
           </Paper>
         ) : (
@@ -886,6 +1191,7 @@ export default function Dashboard() {
                     workspace={activeWorkspace}
                     pinRecommendations={pinRecommendations?.items ?? []}
                     onCardAction={handleCardAction}
+                    highlightContactId={highlightContactId}
                   />
                 </Paper>
               </Box>
@@ -962,6 +1268,34 @@ export default function Dashboard() {
         </Button>
       </Tooltip>
 
+      {bridgeContext && (bridgeContext.fromAelin || Boolean(bridgeContext.sessionId)) ? (
+        <Tooltip title="回到 Aelin 并继续当前主题">
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={returnToAelin}
+            sx={{
+              position: 'fixed',
+              right: { xs: 10, lg: 66 },
+              top: { xs: 'auto', lg: '50%' },
+              bottom: { xs: 140, lg: 'auto' },
+              transform: { xs: 'none', lg: 'translateY(-50%)' },
+              zIndex: 1320,
+              minWidth: 0,
+              width: 44,
+              height: 44,
+              px: 0,
+              borderRadius: 999,
+              borderColor: alpha(theme.palette.primary.main, 0.55),
+              bgcolor: alpha(theme.palette.background.paper, 0.9),
+              boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
+            }}
+          >
+            <KeyboardReturnIcon fontSize="small" />
+          </Button>
+        </Tooltip>
+      ) : null}
+
       <Drawer
         anchor="right"
         open={mobilePanelOpen}
@@ -973,16 +1307,59 @@ export default function Dashboard() {
         {panelBody}
       </Drawer>
 
+      <Tooltip title={aelinDockOpen ? '收起 Aelin' : '展开 Aelin'}>
+        <Button
+          size="small"
+          variant={aelinDockOpen ? 'contained' : 'outlined'}
+          onClick={() => setAelinDockOpen((prev) => !prev)}
+          sx={{
+            position: 'fixed',
+            right: { xs: 10, lg: 66 },
+            bottom: { xs: 88, lg: 18 },
+            zIndex: 1320,
+            minWidth: 0,
+            width: 44,
+            height: 44,
+            px: 0,
+            borderRadius: 999,
+            boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
+          }}
+        >
+          <AutoAwesomeIcon fontSize="small" />
+        </Button>
+      </Tooltip>
+
+      <Drawer
+        anchor="right"
+        open={aelinDockOpen}
+        onClose={() => setAelinDockOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', sm: 520, lg: 560 },
+            borderLeft: '1px solid',
+            borderColor: 'divider',
+          },
+        }}
+      >
+        <Box sx={{ height: '100%' }}>
+          <Aelin
+            embedded
+            workspace={activeWorkspace}
+            onOpenDesk={handleAelinOpenDesk}
+            onRequestClose={() => setAelinDockOpen(false)}
+          />
+        </Box>
+      </Drawer>
+
       <ConversationDrawer
         open={!!selectedContact}
         contact={drawerContact}
+        focusMessageId={bridgeContext?.focusMessageId ?? null}
         onClose={() => {
           setSelectedContact(null);
           mutateContacts();
         }}
       />
-
-      <AgentChatPanel currentContact={selectedContact} />
 
       <GmailBindDialog
         open={gmailPromptOpen}
