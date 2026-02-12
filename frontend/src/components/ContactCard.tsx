@@ -153,7 +153,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.04, duration: 0.32 }}
+      transition={{ delay: index * 0.05, duration: 0.4 }}
       style={{ height: '100%' }}
     >
       <Card
@@ -163,43 +163,38 @@ const ContactCardView: React.FC<ContactCardProps> = ({
           height: '100%',
           position: 'relative',
           overflow: 'hidden',
-          transition: 'transform 200ms ease, box-shadow 200ms ease, border-color 200ms ease',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           border: '1px solid',
           borderColor: pinned ? (isLight ? '#000' : 'primary.main') : 'divider',
           opacity: disabled ? 0.65 : 1,
-          borderRadius: 3,
-          backgroundImage:
-            theme.palette.mode === 'light'
-              ? 'linear-gradient(180deg, rgba(255,255,255,0.95), rgba(249,251,252,0.95))'
-              : 'linear-gradient(180deg, rgba(27,34,43,0.95), rgba(31,39,49,0.95))',
           boxShadow: pinned
             ? isLight
               ? '0 10px 24px rgba(17,20,24,0.18)'
-              : `0 12px 28px ${alpha(theme.palette.primary.main, 0.28)}`
+              : `0 12px 28px ${alpha(theme.palette.primary.main, 0.35)}`
             : undefined,
           '&::before': pinned
             ? {
                 content: '"置顶"',
                 position: 'absolute',
-                left: 8,
-                top: 8,
-                px: 0.9,
-                py: 0.2,
+                left: 0,
+                top: 0,
+                px: 1,
+                py: 0.25,
                 fontSize: '0.7rem',
                 fontWeight: 900,
                 letterSpacing: '0.08em',
                 bgcolor: isLight ? '#000' : 'primary.main',
                 color: isLight ? '#fff' : theme.palette.getContrastText(theme.palette.primary.main),
                 zIndex: 4,
-                borderRadius: 999,
+                borderBottomRightRadius: 8,
               }
             : undefined,
           '&:hover': {
             ...(disabled
               ? {}
               : {
-                  transform: 'translateY(-3px)',
-                  boxShadow: `0 14px 30px ${alpha(theme.palette.text.primary, 0.19)}`,
+                  transform: 'translateY(-2px)',
+                  boxShadow: `0 10px 24px ${alpha(theme.palette.text.primary, 0.18)}`,
                 }),
           },
         }}
@@ -217,9 +212,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               bgcolor: alpha(theme.palette.background.paper, 0.94),
               border: '1px solid',
               borderColor: pinned && isLight ? '#000' : 'divider',
-              borderRadius: 999,
-              backdropFilter: 'blur(6px)',
-              boxShadow: `0 2px 12px ${alpha(theme.palette.text.primary, 0.14)}`,
+              boxShadow: `0 2px 10px ${alpha(theme.palette.text.primary, 0.15)}`,
             }}
             onClick={(event) => event.stopPropagation()}
             onMouseDown={(event) => event.stopPropagation()}
@@ -230,8 +223,9 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               size="small"
               onClick={(event) => setActionAnchor(event.currentTarget)}
               sx={{
-                borderRadius: 999,
-                border: 'none',
+                borderRadius: 0,
+                border: '1px solid',
+                borderColor: isLight ? '#000' : 'divider',
                 color: 'text.secondary',
                 bgcolor: isLight ? '#fff' : alpha(theme.palette.background.default, 0.5),
                 '&:hover': {
@@ -246,8 +240,9 @@ const ContactCardView: React.FC<ContactCardProps> = ({
               size="small"
               onClick={() => onTogglePin?.(contact)}
               sx={{
-                borderRadius: 999,
-                border: 'none',
+                borderRadius: 0,
+                border: '1px solid',
+                borderColor: pinned ? (isLight ? '#000' : 'primary.main') : (isLight ? '#000' : 'divider'),
                 color: pinned ? (isLight ? '#fff' : 'primary.main') : 'text.secondary',
                 bgcolor: pinned ? (isLight ? '#000' : alpha(theme.palette.primary.main, 0.12)) : (isLight ? '#fff' : alpha(theme.palette.background.default, 0.5)),
                 '&:hover': {
@@ -267,7 +262,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
           open={Boolean(actionAnchor)}
           onClose={() => setActionAnchor(null)}
           onClick={(event) => event.stopPropagation()}
-          slotProps={{ paper: { sx: { borderRadius: 2, border: '1px solid', borderColor: 'divider' } } }}
+          slotProps={{ paper: { sx: { borderRadius: 0, border: '2px solid', borderColor: 'text.primary' } } }}
         >
           <MenuItem
             onClick={() => {
@@ -321,7 +316,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 borderRadius: 999,
                 fontWeight: 700,
                 letterSpacing: '0.02em',
-                bgcolor: alpha(theme.palette.background.paper, 0.94),
+                bgcolor: 'background.paper',
                 border: '1px solid',
                 borderColor: 'divider',
                 boxShadow: 'none',
@@ -335,7 +330,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
             sx={{
               position: 'absolute',
               top: 8,
-              right: 64,
+              right: 52,
               width: 12,
               height: 12,
               bgcolor: 'text.primary',
@@ -369,8 +364,8 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 width: avatarSize,
                 height: avatarSize,
                 fontWeight: 600,
-                borderRadius: 2.2,
-                border: '1px solid',
+                borderRadius: 0,
+                border: '2px solid',
                 borderColor: 'divider',
                 boxShadow: 'none',
               }}
@@ -411,9 +406,9 @@ const ContactCardView: React.FC<ContactCardProps> = ({
             <Box
               sx={{
                 bgcolor: theme.palette.background.default,
-                border: '1px solid',
-                borderColor: alpha(theme.palette.text.primary, 0.12),
-                borderRadius: 2.2,
+                border: '1px dashed',
+                borderColor: alpha(theme.palette.text.primary, 0.2),
+                borderRadius: 1.5,
                 p: isTiny ? 1 : isCompact ? 1.35 : isFeature ? 2.4 : 1.8,
                 mb: showSourceAndTime ? 1.8 : 0,
                 minHeight: 0,
@@ -422,17 +417,16 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 flex: 1,
               }}
             >
-              <Box sx={{ minHeight: 0, overflowY: 'auto', pr: 0.5, display: 'grid', gap: 0.6 }}>
+              <Box sx={{ minHeight: 0, overflowY: 'auto', pr: 0.5 }}>
                 {showPreviewImage && previewImageUrl && (
                   <Box
                     sx={{
-                      borderRadius: 1.8,
-                      mb: isFeature ? 1.4 : 1,
+                      borderRadius: 0,
+                      mb: isFeature ? 1.8 : 1.3,
                       border: '1px solid',
                       borderColor: 'divider',
                       bgcolor: alpha(theme.palette.text.primary, 0.06),
                       flexShrink: 0,
-                      overflow: 'hidden',
                     }}
                   >
                     <Box
@@ -511,7 +505,7 @@ const ContactCardView: React.FC<ContactCardProps> = ({
                 label={sourceLabel}
                 size="small"
                 sx={{
-                  borderRadius: 999,
+                  borderRadius: 0,
                   fontWeight: 700,
                   maxWidth: Math.max(110, safeWidth - 165),
                   '& .MuiChip-label': {
