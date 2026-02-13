@@ -115,25 +115,11 @@ type ResultCard = {
   icon: React.ReactNode;
 };
 
-type SlashCommandDef = {
-  key: "/compare" | "/track" | "/digest" | "/debate";
-  label: string;
-  template: string;
-  helper: string;
-};
-
 const QUICK_PROMPTS = [
   "今天最值得我看的5条更新是什么？",
   "帮我梳理最近7天这个话题的变化。",
   "我现在最该优先关注什么？",
   "给我一个20分钟的信息阅读计划。",
-];
-
-const SLASH_COMMANDS: SlashCommandDef[] = [
-  { key: "/compare", label: "Compare", template: "/compare A vs B", helper: "比较两个对象的近期动态与差异" },
-  { key: "/track", label: "Track", template: "/track 主题名", helper: "回答后建议/开启持续跟踪" },
-  { key: "/digest", label: "Digest", template: "/digest 主题名", helper: "产出最近24小时重点简报" },
-  { key: "/debate", label: "Debate", template: "/debate 观点", helper: "从正反两面进行论证" },
 ];
 
 const AELIN_CHAT_STORAGE_KEY = "aelin:chat:v1";
@@ -438,24 +424,6 @@ function cardsFromMessage(message: ChatMessage): ResultCard[] {
     });
   }
   return cards;
-}
-
-function transformSlashCommand(raw: string): string {
-  const text = raw.trim();
-  if (!text.startsWith("/")) return text;
-  const [cmd, ...rest] = text.split(/\s+/);
-  const arg = rest.join(" ").trim();
-  if (cmd === "/track") return `请先回答我的问题，并判断是否应持续跟踪主题：${arg || "（未指定）"}。`;
-  if (cmd === "/digest") return `请基于最近24小时信号，输出结构化简报：${arg || "今日重点"}。`;
-  if (cmd === "/debate") return `请围绕这个观点做正反辩论并给结论：${arg || "（未指定）"}。`;
-  if (cmd === "/compare") return `请比较以下对象最近动态并给差异总结：${arg || "A vs B"}。`;
-  return text;
-}
-
-function matchingSlashCommands(input: string): SlashCommandDef[] {
-  const t = input.trim().toLowerCase();
-  if (!t.startsWith("/")) return [];
-  return SLASH_COMMANDS.filter((it) => it.key.startsWith(t as SlashCommandDef["key"]));
 }
 
 function buildStoryFromContext(ctx: AelinContextResponse | null): string {
@@ -1297,13 +1265,13 @@ export default function Aelin({
     [sessions]
   );
   const groupedMessages = useGroupedMessages(messages);
-  const slashMatches = React.useMemo(() => matchingSlashCommands(input), [input]);
   const workspaceScope = React.useMemo(() => (workspace || "default").trim() || "default", [workspace]);
   const compactMode = React.useMemo(() => {
     if (embedded) return false;
     const qs = new URLSearchParams(location.search || "");
     return (qs.get("compact") || "").trim() === "1";
   }, [embedded, location.search]);
+  const mainContainerMaxWidth = embedded ? false : compactMode ? false : "md";
   const lastAssistantCitation = React.useMemo(() => {
     const reversed = [...messages].reverse();
     for (const item of reversed) {
@@ -1622,7 +1590,7 @@ export default function Aelin({
     async (raw: string) => {
       const query = raw.trim();
       if ((!query && pendingImages.length === 0) || busy) return;
-      const transformedQuery = transformSlashCommand(query || "请分析我上传的图片并结合上下文回复。");
+      const requestQuery = query || "请分析我上传的图片并结合上下文回复。";
 
       setBusy(true);
       setInput("");
@@ -1667,7 +1635,7 @@ export default function Aelin({
       );
 
       try {
-        const result = await aelinChat(transformedQuery, {
+        const result = await aelinChat(requestQuery, {
           use_memory: true,
           max_citations: 8,
           workspace: workspaceScope,
@@ -1900,16 +1868,22 @@ export default function Aelin({
       sx={{
         height: embedded ? "100%" : "100dvh",
         maxHeight: embedded ? "100%" : "100dvh",
+        width: embedded ? "100%" : compactMode ? "min(100vw, 430px)" : "100%",
         display: "flex",
         flexDirection: "column",
         bgcolor: "background.default",
         overflow: "hidden",
         fontSize: compactMode ? "0.94rem" : "1rem",
+        mx: embedded ? 0 : compactMode ? "auto" : 0,
+        borderLeft: compactMode ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
+        borderRight: compactMode ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
       }}
     >
       <Box
         sx={{
-          height: compactMode ? 56 : 64,
+          height: compactMode ? "auto" : 64,
+          minHeight: compactMode ? 74 : 64,
+          py: compactMode ? 0.75 : 0,
           borderBottom: "1px solid",
           borderColor: "divider",
           display: "flex",
@@ -1921,8 +1895,18 @@ export default function Aelin({
           backdropFilter: "blur(8px)",
         }}
       >
-        <Container maxWidth={embedded ? false : "md"} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: { xs: 1.2, sm: 2.2 } }}>
-          <Stack direction="row" spacing={1.1} alignItems="center">
+        <Container
+          maxWidth={mainContainerMaxWidth}
+          sx={{
+            display: "flex",
+            flexDirection: compactMode ? "column" : "row",
+            alignItems: compactMode ? "stretch" : "center",
+            justifyContent: "space-between",
+            rowGap: compactMode ? 0.65 : 0,
+            px: { xs: 0.9, sm: compactMode ? 1.3 : 2.2 },
+          }}
+        >
+          <Stack direction="row" spacing={1.1} alignItems="center" sx={{ width: compactMode ? "100%" : "auto" }}>
             <Avatar sx={{ width: 34, height: 34, borderRadius: 1.2, bgcolor: "background.paper", border: "1px solid", borderColor: "divider" }}>
               <AutoAwesomeIcon sx={{ fontSize: 17, color: "primary.main" }} />
             </Avatar>
@@ -1936,8 +1920,26 @@ export default function Aelin({
             </Box>
           </Stack>
 
-          <Stack direction="row" spacing={0.6} alignItems="center">
-            <FormControl size="small" sx={{ minWidth: 170 }}>
+          <Stack
+            direction="row"
+            spacing={0.55}
+            alignItems="center"
+            flexWrap={compactMode ? "wrap" : "nowrap"}
+            useFlexGap
+            sx={{
+              width: compactMode ? "100%" : "auto",
+              justifyContent: compactMode ? "flex-start" : "flex-end",
+              rowGap: compactMode ? 0.5 : 0,
+            }}
+          >
+            <FormControl
+              size="small"
+              sx={{
+                minWidth: compactMode ? 150 : 170,
+                width: compactMode ? "100%" : "auto",
+                flex: compactMode ? "1 1 210px" : "0 0 auto",
+              }}
+            >
               <Select
                 value={activeSession?.id || ""}
                 onChange={(event) => setActiveSessionId(String(event.target.value || ""))}
@@ -1945,7 +1947,7 @@ export default function Aelin({
                 sx={{
                   borderRadius: 1.4,
                   fontSize: "0.85rem",
-                  "& .MuiSelect-select": { py: 0.6, pr: 2.2 },
+                  "& .MuiSelect-select": { py: compactMode ? 0.58 : 0.6, pr: 2.2 },
                 }}
               >
                 {sortedSessions.map((session) => (
@@ -2057,7 +2059,7 @@ export default function Aelin({
           overscrollBehaviorY: "contain",
         }}
       >
-        <Container maxWidth={embedded ? false : compactMode ? "sm" : "md"} sx={{ px: { xs: 0.2, sm: 0.4 }, py: compactMode ? 1.0 : 1.35 }}>
+        <Container maxWidth={mainContainerMaxWidth} sx={{ px: { xs: 0.5, sm: compactMode ? 1.0 : 0.4 }, py: compactMode ? 1.0 : 1.35 }}>
           {messages.length <= 1 ? (
             <Paper
               variant="outlined"
@@ -2129,22 +2131,6 @@ export default function Aelin({
                   <Chip key={prompt} size="small" variant="outlined" clickable onClick={() => send(prompt)} label={prompt} />
                 ))}
               </Stack>
-              <Stack direction="row" spacing={0.7} flexWrap="wrap" useFlexGap sx={{ pt: 0.6 }}>
-                {SLASH_COMMANDS.map((cmd) => (
-                  <Chip
-                    key={cmd.key}
-                    size="small"
-                    variant="filled"
-                    onClick={() => setInput(cmd.template + " ")}
-                    label={cmd.key}
-                    sx={{
-                      bgcolor: alpha(theme.palette.text.primary, 0.08),
-                      color: "text.primary",
-                      "& .MuiChip-label": { fontWeight: 700, fontSize: "0.71rem" },
-                    }}
-                  />
-                ))}
-              </Stack>
             </Paper>
           ) : null}
 
@@ -2177,7 +2163,7 @@ export default function Aelin({
               : "linear-gradient(to top, rgba(20,20,19,1), rgba(20,20,19,0.96), rgba(20,20,19,0.52), rgba(20,20,19,0))",
         }}
       >
-        <Container maxWidth={embedded ? false : compactMode ? "sm" : "md"} sx={{ px: { xs: 0.2, sm: 0.4 } }}>
+        <Container maxWidth={mainContainerMaxWidth} sx={{ px: { xs: 0.5, sm: compactMode ? 1.0 : 0.4 } }}>
           <Paper
             variant="outlined"
             sx={{
@@ -2284,7 +2270,7 @@ export default function Aelin({
                 multiline
                 minRows={1}
                 maxRows={8}
-                placeholder="发送消息...（可用 /compare /track /digest /debate）"
+                placeholder="发送消息..."
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onPaste={async (event) => {
@@ -2301,11 +2287,6 @@ export default function Aelin({
                   await appendFiles(imageFiles);
                 }}
                 onKeyDown={(event) => {
-                  if (event.key === "Tab" && slashMatches.length > 0) {
-                    event.preventDefault();
-                    setInput(slashMatches[0].template + " ");
-                    return;
-                  }
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
                     send(input);
@@ -2357,20 +2338,6 @@ export default function Aelin({
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.55, px: 0.6 }}>
               Enter 发送，Shift+Enter 换行
             </Typography>
-            {slashMatches.length ? (
-              <Stack direction="row" spacing={0.6} flexWrap="wrap" useFlexGap sx={{ mt: 0.7, px: 0.35 }}>
-                {slashMatches.map((cmd) => (
-                  <Chip
-                    key={cmd.key}
-                    size="small"
-                    variant="outlined"
-                    onClick={() => setInput(cmd.template + " ")}
-                    label={`${cmd.key} · ${cmd.helper}`}
-                    sx={{ "& .MuiChip-label": { fontSize: "0.73rem", fontWeight: 600 } }}
-                  />
-                ))}
-              </Stack>
-            ) : null}
           </Paper>
         </Container>
       </Box>
@@ -2505,7 +2472,7 @@ export default function Aelin({
         onClose={() => setDeskOpen(false)}
         PaperProps={{
           sx: {
-            width: { xs: "100%", sm: compactMode ? "min(100vw, 1080px)" : "min(100vw, 1320px)" },
+            width: { xs: "100%", sm: compactMode ? "min(100vw, 430px)" : "min(100vw, 1320px)" },
             maxWidth: "100vw",
             borderLeft: "1px solid",
             borderColor: "divider",

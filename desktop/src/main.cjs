@@ -5,11 +5,12 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { spawn } = require("child_process");
+const { StringDecoder } = require("string_decoder");
 
 const isDev = process.env.MERCURYDESK_DESKTOP_DEV === "1" || !app.isPackaged;
 const backendPort = Number(process.env.MERCURYDESK_BACKEND_PORT || (isDev ? 8000 : 18080));
 const frontendPort = Number(process.env.MERCURYDESK_DESKTOP_PORT || (isDev ? 5173 : 1420));
-const desktopZoom = Number(process.env.MERCURYDESK_DESKTOP_ZOOM || "0.9");
+const desktopZoom = Number(process.env.MERCURYDESK_DESKTOP_ZOOM || "1.0");
 
 let mainWindow = null;
 let backendProc = null;
@@ -85,7 +86,37 @@ function killProcTree(proc) {
 
 function spawnViaCmd(commandLine, options) {
   const comspec = process.env.COMSPEC || "cmd.exe";
-  return spawn(comspec, ["/d", "/s", "/c", commandLine], options);
+  const normalized = process.platform === "win32" ? `chcp 65001>nul && ${commandLine}` : commandLine;
+  return spawn(comspec, ["/d", "/s", "/c", normalized], options);
+}
+
+function stripAnsiCodes(text) {
+  return String(text || "").replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function normalizeLogText(text, tag) {
+  let s = stripAnsiCodes(text).replace(/\uFFFD/g, "");
+  s = s.replace(/[\u279C\u27A4\u25B8\u203A\u2192]/g, ">");
+  // Some Windows terminals decode the leading glyph into mojibake before "Local:".
+  if (tag === "frontend") {
+    s = s.replace(/^[^\r\nA-Za-z0-9\u4e00-\u9fff]*Local:/gm, "Local:");
+    s = s.replace(/^[^\r\nA-Za-z0-9\u4e00-\u9fff]*Network:/gm, "Network:");
+  }
+  return s;
+}
+
+function pipeTaggedLog(proc, tag) {
+  if (!proc) return;
+  const outDecoder = new StringDecoder("utf8");
+  const errDecoder = new StringDecoder("utf8");
+  proc.stdout.on("data", (chunk) => {
+    const text = normalizeLogText(outDecoder.write(Buffer.from(chunk)), tag);
+    if (text) process.stdout.write(`[${tag}] ${text}`);
+  });
+  proc.stderr.on("data", (chunk) => {
+    const text = normalizeLogText(errDecoder.write(Buffer.from(chunk)), tag);
+    if (text) process.stderr.write(`[${tag}] ${text}`);
+  });
 }
 
 function startBackend() {
@@ -102,6 +133,7 @@ function startBackend() {
   const env = {
     ...process.env,
     PYTHONUTF8: "1",
+    PYTHONIOENCODING: "utf-8",
     MERCURYDESK_DATABASE_URL: sqliteUrl(dbFile),
     MERCURYDESK_MEDIA_DIR: mediaDir,
     MERCURYDESK_CORS_ORIGINS: [
@@ -138,12 +170,7 @@ function startBackend() {
     throw new Error(`无法启动后端 Python 进程。${lastError ? `最后错误: ${lastError}` : ""}`);
   }
 
-  backendProc.stdout.on("data", (chunk) => {
-    process.stdout.write(`[backend] ${String(chunk)}`);
-  });
-  backendProc.stderr.on("data", (chunk) => {
-    process.stderr.write(`[backend] ${String(chunk)}`);
-  });
+  pipeTaggedLog(backendProc, "backend");
   backendProc.on("error", (err) => {
     if (closing) return;
     dialog.showErrorBox("后端启动失败", String(err?.message || err));
@@ -160,14 +187,12 @@ function startFrontendDev() {
     env: {
       ...process.env,
       BROWSER: "none",
+      FORCE_COLOR: "0",
+      NO_COLOR: "1",
+      npm_config_color: "false",
     },
   });
-  frontendDevProc.stdout.on("data", (chunk) => {
-    process.stdout.write(`[frontend] ${String(chunk)}`);
-  });
-  frontendDevProc.stderr.on("data", (chunk) => {
-    process.stderr.write(`[frontend] ${String(chunk)}`);
-  });
+  pipeTaggedLog(frontendDevProc, "frontend");
 }
 
 function startFrontendServer() {
@@ -189,10 +214,10 @@ function startFrontendServer() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1160,
-    height: 760,
-    minWidth: 920,
-    minHeight: 620,
+    width: 430,
+    height: 860,
+    minWidth: 390,
+    minHeight: 700,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#111111",
@@ -205,8 +230,8 @@ function createMainWindow() {
   });
 
   const zoom = Number.isFinite(desktopZoom)
-    ? Math.max(0.75, Math.min(1.25, desktopZoom))
-    : 0.9;
+    ? Math.max(0.72, Math.min(1.15, desktopZoom))
+    : 1.0;
   mainWindow.webContents.setZoomFactor(zoom);
 
   const url = `http://127.0.0.1:${frontendPort}/?desktop=1&compact=1`;
