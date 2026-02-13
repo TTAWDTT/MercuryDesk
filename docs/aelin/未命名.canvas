@@ -1,0 +1,33 @@
+{
+	"nodes":[
+		{"id":"4aba2dd1ebe1cf77","type":"text","text":"规划","x":-256,"y":-105,"width":76,"height":50},
+		{"id":"339db13cc27e4502","type":"text","text":"内部检索","x":-120,"y":-105,"width":120,"height":50},
+		{"id":"e4615caf24b009c6","type":"text","text":"作答","x":240,"y":-105,"width":80,"height":50},
+		{"id":"24d75d5dd24ab0ff","type":"text","text":"外部检索","x":60,"y":-105,"width":120,"height":50},
+		{"id":"5bac6eac26d83018","x":-300,"y":200,"width":140,"height":60,"type":"text","text":"Main Agent"},
+		{"id":"5e351016e097f761","x":-100,"y":260,"width":160,"height":60,"color":"3","type":"text","text":"Trace Agent"},
+		{"id":"08ba41b61c7cbf98","x":-100,"y":143,"width":160,"height":60,"color":"2","type":"text","text":"Reply Agent"},
+		{"id":"ce84989c51ab5d6e","x":380,"y":140,"width":250,"height":60,"color":"6","type":"text","text":"sub agents（执行搜索）"},
+		{"id":"80036ff0ac369011","x":-300,"y":60,"width":140,"height":60,"type":"text","text":"Human Input"},
+		{"id":"54c31969d7eb870b","x":230,"y":380,"width":180,"height":60,"color":"2","type":"text","text":"Reply Agent确定是否OK"},
+		{"id":"eb62c72e2748902c","x":380,"y":260,"width":250,"height":60,"color":"6","type":"text","text":"消息汇总（此区域传入Reply Agent和Trace Agent）"},
+		{"id":"2d6a1d62af72c333","x":380,"y":560,"width":100,"height":62,"color":"3","type":"text","text":"Trace Agent"},
+		{"id":"9b801af53effe8a6","x":140,"y":560,"width":137,"height":60,"color":"4","type":"text","text":"产生回复"},
+		{"id":"bbf312cbed036f2f","x":545,"y":561,"width":250,"height":60,"color":"3","type":"text","text":"确认需要追踪的内容并呈现"}
+	],
+	"edges":[
+		{"id":"92c291d2fb94e599","fromNode":"4aba2dd1ebe1cf77","fromSide":"right","toNode":"339db13cc27e4502","toSide":"left"},
+		{"id":"eb8c98b7d9bd7372","fromNode":"339db13cc27e4502","fromSide":"right","toNode":"24d75d5dd24ab0ff","toSide":"left"},
+		{"id":"b5505b776b5f705b","fromNode":"24d75d5dd24ab0ff","fromSide":"right","toNode":"e4615caf24b009c6","toSide":"left"},
+		{"id":"f54fe955481f30b5","fromNode":"5bac6eac26d83018","fromSide":"right","toNode":"08ba41b61c7cbf98","toSide":"left","color":"4"},
+		{"id":"f7ae17d77b88ed7f","fromNode":"5bac6eac26d83018","fromSide":"right","toNode":"5e351016e097f761","toSide":"left","color":"4"},
+		{"id":"97c4fe8fa5297f6f","fromNode":"08ba41b61c7cbf98","fromSide":"right","toNode":"ce84989c51ab5d6e","toSide":"left","color":"4","label":"自主选择派出子agent"},
+		{"id":"68e8147af14ee03e","fromNode":"80036ff0ac369011","fromSide":"bottom","toNode":"5bac6eac26d83018","toSide":"top","color":"4"},
+		{"id":"e237eb485d552383","fromNode":"eb62c72e2748902c","fromSide":"bottom","toNode":"54c31969d7eb870b","toSide":"top","color":"4"},
+		{"id":"94b792da228784e0","fromNode":"54c31969d7eb870b","fromSide":"left","toNode":"ce84989c51ab5d6e","toSide":"left","color":"1","label":"不通过"},
+		{"id":"49d02dfeead63ddb","fromNode":"ce84989c51ab5d6e","fromSide":"bottom","toNode":"eb62c72e2748902c","toSide":"top","color":"4"},
+		{"id":"8bd3a7e4e5f104c0","fromNode":"54c31969d7eb870b","fromSide":"bottom","toNode":"2d6a1d62af72c333","toSide":"top","color":"4","label":"通过"},
+		{"id":"e241dd9ed90fce0b","fromNode":"54c31969d7eb870b","fromSide":"bottom","toNode":"9b801af53effe8a6","toSide":"top","color":"4","label":"通过"},
+		{"id":"3a486e47b66e67a1","fromNode":"2d6a1d62af72c333","fromSide":"right","toNode":"bbf312cbed036f2f","toSide":"left","color":"4"}
+	]
+}
