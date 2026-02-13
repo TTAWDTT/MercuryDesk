@@ -1,0 +1,58 @@
+{
+  "name": "aelin-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Aelin Desktop wrapper for MercuryDesk",
+  "main": "src/main.cjs",
+  "scripts": {
+    "dev": "cross-env MERCURYDESK_DESKTOP_DEV=1 electron .",
+    "build:frontend": "npm --prefix ../frontend run build",
+    "pack": "npm run build:frontend && electron-builder --dir",
+    "dist": "npm run build:frontend && electron-builder"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.ttawdtt.aelin",
+    "productName": "Aelin",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../frontend/dist",
+        "to": "frontend-dist"
+      },
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "app/**",
+          "requirements.txt",
+          ".env.example"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}

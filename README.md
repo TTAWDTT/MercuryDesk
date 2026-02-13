@@ -7,7 +7,7 @@
 - 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
 - Aelin（Chat-first 入口）：
   - 默认首页 `/` 为 Aelin 聊天入口
-  - Desk 保留在 `/desk`，用于证据可视化与卡片工作台
+  - Desk 观察台已内嵌进 Aelin（`/desk` 会重定向并打开内嵌观察台）
   - 新增上下文接口 `/api/v1/aelin/context` 与聊天接口 `/api/v1/aelin/chat`
 - 数据来源：
   - 邮箱 IMAP（真实邮箱）
@@ -41,6 +41,50 @@ npm run dev
 ```
 
 打开 `http://localhost:5173`，注册并登录后即可在「设置」中连接来源。
+
+## 桌面版（Windows）
+
+已提供 Electron 桌面壳工程（目录：`desktop/`），可将 Aelin + 内嵌观察台打包为桌面软件。
+
+### 前置要求
+
+1. 已安装 Node.js（建议 18+）
+2. 已安装 Python（建议 3.11+）
+3. Python 环境已安装后端依赖：
+
+```powershell
+cd backend
+python -m pip install -r requirements.txt
+```
+
+### 开发模式（桌面壳）
+
+```powershell
+cd desktop
+npm install
+npm run dev
+```
+
+说明：
+
+- 会自动拉起后端服务与前端开发服务，并打开 Electron 窗口。
+- 默认后端端口 `8000`，前端端口 `5173`。
+
+### 打包安装包（Windows）
+
+```powershell
+cd desktop
+npm install
+npm run dist
+```
+
+产物输出在：`desktop/release/`
+
+提示：当前桌面壳会调用本机 Python 启动后端。如果你的 Python 不在 PATH，可设置：
+
+```powershell
+$env:MERCURYDESK_PYTHON="C:\\path\\to\\python.exe"
+```
 
 ## 最简配置流程（中文界面）
 
