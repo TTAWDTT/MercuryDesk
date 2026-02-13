@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { SWRConfig } from "swr";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, HashRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import Box from "@mui/material/Box";
 import CircularProgress from "@mui/material/CircularProgress";
@@ -9,6 +9,7 @@ import { fetchJson } from "./api";
 import { ThemeProvider } from "./theme";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ToastProvider } from "./contexts/ToastContext";
+import { isNativeMobileShell } from "./mobile/runtime";
 
 const Aelin = React.lazy(() => import("./components/Aelin"));
 const Login = React.lazy(() => import("./components/Login"));
@@ -50,6 +51,7 @@ function AnimatedRoutes() {
 }
 
 export default function App() {
+  const RouterComponent = isNativeMobileShell() ? HashRouter : BrowserRouter;
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -65,9 +67,9 @@ export default function App() {
                 focusThrottleInterval: 10000,
               }}
             >
-              <BrowserRouter>
+              <RouterComponent>
                 <AnimatedRoutes />
-              </BrowserRouter>
+              </RouterComponent>
             </SWRConfig>
           </ErrorBoundary>
         </ToastProvider>

@@ -40,9 +40,9 @@ const lightTokens: ColorTokens = {
   textMuted: '#7a786f',
   border: '#e8e6dc',
   borderStrong: '#d7d4c8',
-  accent: '#d97757',
-  accentSoft: '#f4e3dc',
-  danger: '#c45b3a',
+  accent: '#111111',
+  accentSoft: '#ececeb',
+  danger: '#2b2b2a',
 };
 
 const darkTokens: ColorTokens = {
@@ -54,9 +54,9 @@ const darkTokens: ColorTokens = {
   textMuted: '#b0aea5',
   border: '#34332f',
   borderStrong: '#4a4943',
-  accent: '#d97757',
-  accentSoft: '#3a2a24',
-  danger: '#e18f74',
+  accent: '#f3f3f1',
+  accentSoft: '#2b2b28',
+  danger: '#d9d9d6',
 };
 
 export const boardLight = '#fffdf8';
@@ -88,10 +88,10 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
           mode,
           primary: {
             main: t.accent,
-            contrastText: '#faf9f5',
+            contrastText: '#f8fbff',
           },
           secondary: {
-            main: '#6a9bcc',
+            main: mode === 'light' ? '#3b3b3a' : '#c9c9c6',
           },
           success: {
             main: '#788c5d',
@@ -140,8 +140,8 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
                 color: t.text,
                 backgroundImage:
                   mode === 'light'
-                    ? 'radial-gradient(circle at -10% -20%, rgba(217,119,87,0.12), transparent 32%)'
-                    : 'radial-gradient(circle at -10% -20%, rgba(217,119,87,0.2), transparent 34%)',
+                    ? 'radial-gradient(circle at -10% -20%, rgba(20,20,19,0.08), transparent 32%)'
+                    : 'radial-gradient(circle at -10% -20%, rgba(250,249,245,0.1), transparent 34%)',
                 backgroundAttachment: 'fixed',
               },
               'select, option, optgroup': {

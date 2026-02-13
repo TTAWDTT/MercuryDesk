@@ -18,7 +18,6 @@ import Tooltip from '@mui/material/Tooltip';
 import Chip from '@mui/material/Chip';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import LaunchIcon from '@mui/icons-material/Launch';
 import KeyboardReturnIcon from '@mui/icons-material/KeyboardReturn';
 import { motion } from 'framer-motion';
@@ -745,6 +744,7 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
 
   const returnToAelin = useCallback(() => {
     if (embedded) {
+      playHandoffFX('Desk -> Aelin', '已返回聊天，可继续追问');
       onRequestClose?.();
       return;
     }
@@ -1051,8 +1051,51 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
         />
       ) : null}
 
+      {embedded ? (
+        <Box
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: 8,
+            px: { xs: 0.8, md: 1.1 },
+            pt: 0.8,
+          }}
+        >
+          <Paper
+            variant="outlined"
+            sx={{
+              px: 1.1,
+              py: 0.9,
+              borderRadius: 2.2,
+              borderColor: alpha(theme.palette.primary.main, 0.22),
+              bgcolor: alpha(theme.palette.background.paper, 0.9),
+              backdropFilter: 'blur(8px)',
+              boxShadow:
+                theme.palette.mode === 'light'
+                  ? '0 6px 14px rgba(20,20,19,0.05)'
+                  : '0 8px 18px rgba(0,0,0,0.24)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.9, flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+                  Desk
+                </Typography>
+                <Chip size="small" variant="outlined" color="primary" label={WORKSPACES.find((w) => w.key === activeWorkspace)?.label || '主工作区'} />
+                {bridgeContext?.focusQuery ? (
+                  <Chip size="small" variant="outlined" label={`主题: ${bridgeContext.focusQuery.slice(0, 22)}`} />
+                ) : null}
+              </Box>
+              <Button size="small" variant="contained" startIcon={<KeyboardReturnIcon />} onClick={returnToAelin}>
+                回到聊天
+              </Button>
+            </Box>
+          </Paper>
+        </Box>
+      ) : null}
+
       <Container maxWidth="xl" sx={{ mt: embedded ? { xs: 0.8, md: 1.2 } : { xs: 2.2, md: 3.2 } }}>
-        {bridgeContext?.fromAelin ? (
+        {bridgeContext?.fromAelin && !embedded ? (
           <Paper
             variant="outlined"
             sx={{
@@ -1333,7 +1376,16 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
               },
             }}
           >
-            {panelToggleOpen ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
+            {panelToggleOpen ? (
+              <ChevronRightIcon />
+            ) : (
+              <Box
+                component="img"
+                src="/logo.png"
+                alt="Aelin"
+                sx={{ width: 22, height: 22, objectFit: 'cover', objectPosition: 'center 24%' }}
+              />
+            )}
           </Button>
         </Tooltip>
       ) : null}
