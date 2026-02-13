@@ -7,9 +7,20 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mobile:sync": "npm run build && npx cap sync",
+    "mobile:add:ios": "npx cap add ios",
+    "mobile:add:android": "npx cap add android",
+    "mobile:open:ios": "npx cap open ios",
+    "mobile:open:android": "npx cap open android",
+    "mobile:run:ios": "npm run build && npx cap run ios",
+    "mobile:run:android": "npm run build && npx cap run android"
   },
   "dependencies": {
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/keyboard": "^6.0.1",
+    "@capacitor/status-bar": "^6.0.1",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@mui/icons-material": "^7.3.7",
@@ -23,6 +34,9 @@
     "swr": "^2.2.5"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/ios": "^6.2.0",
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^15.0.7",
     "@types/react": "^18.2.70",
