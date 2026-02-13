@@ -46,10 +46,20 @@ async def lifespan(_app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="MercuryDesk API", version="0.1.0", lifespan=lifespan)
 
-    origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    origins = {o.strip() for o in settings.cors_origins.split(",") if o.strip()}
+    # Native shells (Capacitor/Electron) and local dev hosts.
+    origins.update(
+        {
+            "http://localhost",
+            "https://localhost",
+            "capacitor://localhost",
+            "http://127.0.0.1",
+            "https://127.0.0.1",
+        }
+    )
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins,
+        allow_origins=sorted(origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

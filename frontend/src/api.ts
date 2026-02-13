@@ -160,6 +160,7 @@ export type AelinContextResponse = {
 
 export type AelinChatResponse = {
   answer: string;
+  expression: string;
   citations: AelinCitation[];
   actions: AelinAction[];
   tool_trace: AelinToolStep[];
@@ -286,7 +287,30 @@ export type ForwardAccountInfo = {
 };
 
 const TOKEN_KEY = "mercurydesk_token";
+const API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").trim().replace(/\/+$/, "");
+const MOBILE_API_BASE_URL = String(import.meta.env.VITE_MOBILE_API_BASE_URL || "http://10.0.2.2:8000")
+  .trim()
+  .replace(/\/+$/, "");
 let tokenCache: string | null | undefined;
+
+function isNativeMobileShellRuntime(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return Boolean((window as any)?.Capacitor?.isNativePlatform?.());
+  } catch {
+    return false;
+  }
+}
+
+function resolveApiUrl(path: string): string {
+  const raw = String(path || "").trim();
+  if (!raw) return raw;
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const normalized = raw.startsWith("/") ? raw : `/${raw}`;
+  if (API_BASE_URL) return `${API_BASE_URL}${normalized}`;
+  if (isNativeMobileShellRuntime()) return `${MOBILE_API_BASE_URL}${normalized}`;
+  return normalized;
+}
 
 export function getToken(): string | null {
   if (tokenCache === undefined) tokenCache = localStorage.getItem(TOKEN_KEY);
@@ -313,7 +337,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const resp = await fetch(path, { ...init, headers });
+  const resp = await fetch(resolveApiUrl(path), { ...init, headers });
   if (resp.status === 401) {
     setToken(null);
     if (typeof window !== "undefined") window.dispatchEvent(new Event("mercurydesk:unauthorized"));
@@ -337,7 +361,23 @@ async function apiFetch(path: string, init: RequestInit = {}) {
 
 export async function fetchJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const resp = await apiFetch(path, init);
-  return (await resp.json()) as T;
+  const text = await resp.text();
+  if (!text) return {} as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const bodyStart = text.trimStart().slice(0, 80).toLowerCase();
+    const contentType = (resp.headers.get("content-type") || "").toLowerCase();
+    const resolved = resolveApiUrl(path);
+    const maybeHtml = contentType.includes("text/html") || bodyStart.startsWith("<!doctype") || bodyStart.startsWith("<html");
+    if (maybeHtml) {
+      throw new ApiError(
+        `API 返回了 HTML 而不是 JSON，请检查移动端接口地址配置（当前请求: ${resolved}）`,
+        resp.status || 500
+      );
+    }
+    throw new ApiError(`接口返回了无法解析的 JSON（请求: ${resolved}）`, resp.status || 500);
+  }
 }
 
 export async function register(email: string, password: string) {
@@ -558,7 +598,7 @@ async function* streamFetch(path: string, init: RequestInit = {}, signal?: Abort
   const token = getToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(path, { ...init, headers, signal });
+  const response = await fetch(resolveApiUrl(path), { ...init, headers, signal });
   if (!response.ok) {
       const text = await response.text();
       let msg = text;

@@ -30,7 +30,9 @@ export default function Login() {
       setAuthed(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) setError("邮箱或密码不正确");
-      else setError(err instanceof Error ? err.message : String(err));
+      else if (err instanceof TypeError && /failed to fetch/i.test(err.message)) {
+        setError("网络连接失败：请确认后端已启动，并检查移动端 API 地址配置。");
+      } else setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -89,4 +91,3 @@ export default function Login() {
     </Box>
   );
 }
-
