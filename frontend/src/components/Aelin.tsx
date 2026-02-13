@@ -22,7 +22,6 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import AddIcon from "@mui/icons-material/Add";
-import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
@@ -52,6 +51,7 @@ import {
 } from "../api";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
+import { isNativeMobileShell } from "../mobile/runtime";
 import Dashboard from "./Dashboard";
 
 type ChatMessage = {
@@ -59,6 +59,7 @@ type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   ts: number;
+  expression?: string;
   pending?: boolean;
   citations?: AelinCitation[];
   actions?: AelinAction[];
@@ -129,6 +130,41 @@ const AELIN_LAST_DESK_BRIDGE_KEY = "aelin:last-desk-bridge:v1";
 const MAX_PERSISTED_MESSAGES = 180;
 const MAX_PERSISTED_IMAGE_DATA_URL = 320_000;
 const MAX_PERSISTED_SESSIONS = 20;
+const AELIN_LOGO_SRC = "/logo.png";
+const AELIN_EXPRESSION_IDS = [
+  "exp-01",
+  "exp-02",
+  "exp-03",
+  "exp-04",
+  "exp-05",
+  "exp-06",
+  "exp-07",
+  "exp-08",
+  "exp-09",
+  "exp-10",
+  "exp-11",
+] as const;
+type AelinExpressionId = (typeof AELIN_EXPRESSION_IDS)[number];
+const AELIN_EXPRESSION_SRC: Record<AelinExpressionId, string> = AELIN_EXPRESSION_IDS.reduce(
+  (acc, id) => {
+    acc[id] = `/expressions/${id}.png`;
+    return acc;
+  },
+  {} as Record<AelinExpressionId, string>
+);
+const AELIN_EXPRESSION_META: Record<AelinExpressionId, { label: string; usage: string }> = {
+  "exp-01": { label: "捂嘴惊喜", usage: "害羞、惊喜、被夸时的可爱反馈" },
+  "exp-02": { label: "热情出击", usage: "开场打招呼、推进执行、强积极反馈" },
+  "exp-03": { label: "温柔赞同", usage: "支持、认可、安抚、温和鼓励" },
+  "exp-04": { label: "托腮思考", usage: "解释、分析、答疑、默认交流" },
+  "exp-05": { label: "轻声提醒", usage: "注意事项、风险提示、保守建议" },
+  "exp-06": { label: "偷看观察", usage: "围观进展、持续关注、等待更多线索" },
+  "exp-07": { label: "低落求助", usage: "失败、遗憾、道歉、需要帮助" },
+  "exp-08": { label: "不满委屈", usage: "吐槽、不爽、抗议、情绪性反馈" },
+  "exp-09": { label: "指着大笑", usage: "玩梗、幽默、轻松调侃" },
+  "exp-10": { label: "发财得意", usage: "成果突出、搞定任务、高价值收获" },
+  "exp-11": { label: "趴桌躺平", usage: "困倦、过载、精力不足、需要休息" },
+};
 
 type PlatformKey =
   | "bilibili"
@@ -264,12 +300,28 @@ function formatIsoTime(raw: string | null | undefined) {
   });
 }
 
+function normalizeExpressionId(raw: string | null | undefined): AelinExpressionId | undefined {
+  const text = String(raw || "").trim().toLowerCase();
+  if (!text) return undefined;
+  if (AELIN_EXPRESSION_IDS.includes(text as AelinExpressionId)) return text as AelinExpressionId;
+  if (/^exp[-_]\d{1,2}$/.test(text)) {
+    const n = Number(text.replace("exp", "").replace("-", "").replace("_", ""));
+    if (Number.isFinite(n) && n >= 1 && n <= 11) return `exp-${String(n).padStart(2, "0")}` as AelinExpressionId;
+  }
+  if (/^\d{1,2}$/.test(text)) {
+    const n = Number(text);
+    if (n >= 1 && n <= 11) return `exp-${String(n).padStart(2, "0")}` as AelinExpressionId;
+  }
+  return undefined;
+}
+
 function initialMessages(): ChatMessage[] {
   return [
     {
       id: nextMessageId(),
       role: "assistant",
       content: "我是 Aelin。告诉我你想追踪什么，我会基于你的长期信号来回答。",
+      expression: "exp-04",
       ts: Date.now(),
     },
   ];
@@ -327,6 +379,7 @@ function loadPersistedMessages(): ChatMessage[] {
         role: rawMessage.role,
         content: rawMessage.content,
         ts: rawMessage.ts,
+        expression: normalizeExpressionId(typeof rawMessage.expression === "string" ? rawMessage.expression : ""),
         citations: Array.isArray(rawMessage.citations) ? rawMessage.citations : undefined,
         actions: Array.isArray(rawMessage.actions) ? rawMessage.actions : undefined,
         images,
@@ -355,6 +408,7 @@ function toPersistedMessages(messages: ChatMessage[]): ChatMessage[] {
         role: item.role,
         content: item.content,
         ts: item.ts,
+        expression: normalizeExpressionId(item.expression),
         citations: item.citations,
         actions: item.actions,
         images,
@@ -1000,6 +1054,7 @@ const MessageRow = React.memo(function MessageRow(props: {
   const { message, isGroupStart, onActionClick, onCopy, onCitationOpen, pulse } = props;
   const theme = useTheme();
   const isUser = message.role === "user";
+  const expressionId = !isUser && !message.pending ? normalizeExpressionId(message.expression) : undefined;
   const [hovered, setHovered] = React.useState(false);
   const cards = React.useMemo(() => cardsFromMessage(message), [message]);
   const accountAvatarMap = React.useMemo(() => {
@@ -1040,18 +1095,18 @@ const MessageRow = React.memo(function MessageRow(props: {
     >
       {!isUser ? (
         <Avatar
+          src={AELIN_LOGO_SRC}
           sx={{
             width: 36,
             height: 36,
             borderRadius: 1.2,
-            bgcolor: "background.paper",
-            border: "1px solid",
-            borderColor: "divider",
+            bgcolor: "transparent",
+            border: "none",
+            boxShadow: "none",
             opacity: isGroupStart ? 1 : 0,
           }}
-        >
-          <AutoAwesomeIcon sx={{ fontSize: 17, color: "primary.main" }} />
-        </Avatar>
+          imgProps={{ style: { objectFit: "cover", objectPosition: "center 24%" } }}
+        />
       ) : (
         <Box sx={{ width: 36, height: 36 }} />
       )}
@@ -1083,6 +1138,24 @@ const MessageRow = React.memo(function MessageRow(props: {
         >
           {!isUser ? <ToolTraceRow steps={message.tool_trace || []} /> : null}
           {!isUser ? <ResultDeck cards={cards} pulse={pulse} /> : null}
+          {!isUser && expressionId ? (
+            <Box sx={{ display: "flex", justifyContent: "flex-start", mb: message.content ? 0.72 : 0 }}>
+              <Tooltip title={`${AELIN_EXPRESSION_META[expressionId].label} · ${AELIN_EXPRESSION_META[expressionId].usage}`}>
+                <Box
+                  component="img"
+                  src={AELIN_EXPRESSION_SRC[expressionId]}
+                  alt={AELIN_EXPRESSION_META[expressionId].label}
+                  sx={{
+                    width: { xs: 140, sm: 168 },
+                    maxWidth: "74%",
+                    height: "auto",
+                    display: "block",
+                    filter: "drop-shadow(0 6px 14px rgba(0,0,0,0.12))",
+                  }}
+                />
+              </Tooltip>
+            </Box>
+          ) : null}
           {message.images?.length ? (
             <Box
               sx={{
@@ -1266,11 +1339,13 @@ export default function Aelin({
   );
   const groupedMessages = useGroupedMessages(messages);
   const workspaceScope = React.useMemo(() => (workspace || "default").trim() || "default", [workspace]);
+  const nativeMobileShell = React.useMemo(() => isNativeMobileShell(), []);
   const compactMode = React.useMemo(() => {
     if (embedded) return false;
     const qs = new URLSearchParams(location.search || "");
-    return (qs.get("compact") || "").trim() === "1";
-  }, [embedded, location.search]);
+    return nativeMobileShell || (qs.get("compact") || "").trim() === "1";
+  }, [embedded, location.search, nativeMobileShell]);
+  const compactFramed = compactMode && !nativeMobileShell;
   const mainContainerMaxWidth = embedded ? false : compactMode ? false : "md";
   const lastAssistantCitation = React.useMemo(() => {
     const reversed = [...messages].reverse();
@@ -1648,11 +1723,12 @@ export default function Aelin({
               ? {
                   ...session,
                   messages: session.messages.map((item) =>
-                    item.id === assistantId
+                        item.id === assistantId
                       ? {
                           ...item,
                           pending: false,
                           content: result.answer || "当前未生成文本回答。",
+                          expression: normalizeExpressionId(result.expression),
                           citations: result.citations || [],
                           actions: result.actions || [],
                           tool_trace: (result.tool_trace || []).map(normalizeTraceStep),
@@ -1682,7 +1758,7 @@ export default function Aelin({
               ? {
                   ...session,
                   messages: session.messages.map((item) =>
-                    item.id === assistantId
+                        item.id === assistantId
                       ? {
                           ...item,
                           pending: false,
@@ -1690,6 +1766,7 @@ export default function Aelin({
                             error instanceof Error
                               ? `请求失败：${error.message}`
                               : "请求失败，请稍后重试。",
+                          expression: "exp-07",
                           tool_trace: [
                             { stage: "planner", status: "completed", detail: "request prepared", count: 1 },
                             {
@@ -1808,6 +1885,7 @@ export default function Aelin({
             id: nextMessageId(),
             role: "assistant",
             content: ret.message || "已处理你的跟踪请求。",
+            expression: ret.status === "needs_config" ? "exp-05" : "exp-02",
             ts: Date.now(),
             actions: ret.actions || [],
           },
@@ -1845,6 +1923,7 @@ export default function Aelin({
           id: nextMessageId(),
           role: "assistant",
           content: story,
+          expression: "exp-03",
           ts: Date.now(),
           tool_trace: [
             { stage: "planner", status: "completed", detail: "story mode enabled", count: 1 },
@@ -1868,15 +1947,15 @@ export default function Aelin({
       sx={{
         height: embedded ? "100%" : "100dvh",
         maxHeight: embedded ? "100%" : "100dvh",
-        width: embedded ? "100%" : compactMode ? "min(100vw, 430px)" : "100%",
+        width: embedded ? "100%" : compactFramed ? "min(100vw, 430px)" : "100%",
         display: "flex",
         flexDirection: "column",
         bgcolor: "background.default",
         overflow: "hidden",
         fontSize: compactMode ? "0.94rem" : "1rem",
-        mx: embedded ? 0 : compactMode ? "auto" : 0,
-        borderLeft: compactMode ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
-        borderRight: compactMode ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
+        mx: embedded ? 0 : compactFramed ? "auto" : 0,
+        borderLeft: compactFramed ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
+        borderRight: compactFramed ? `1px solid ${alpha(theme.palette.divider, 0.8)}` : "none",
       }}
     >
       <Box
@@ -1907,9 +1986,11 @@ export default function Aelin({
           }}
         >
           <Stack direction="row" spacing={1.1} alignItems="center" sx={{ width: compactMode ? "100%" : "auto" }}>
-            <Avatar sx={{ width: 34, height: 34, borderRadius: 1.2, bgcolor: "background.paper", border: "1px solid", borderColor: "divider" }}>
-              <AutoAwesomeIcon sx={{ fontSize: 17, color: "primary.main" }} />
-            </Avatar>
+            <Avatar
+              src={AELIN_LOGO_SRC}
+              sx={{ width: 34, height: 34, borderRadius: 1.2, bgcolor: "transparent", border: "none", boxShadow: "none" }}
+              imgProps={{ style: { objectFit: "cover", objectPosition: "center 24%" } }}
+            />
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 700, lineHeight: 1.06, fontSize: "1.03rem" }}>
                 Aelin
@@ -2324,10 +2405,10 @@ export default function Aelin({
                   alignSelf: "flex-end",
                   mb: 0.2,
                   transition: "transform 180ms ease, box-shadow 200ms ease",
-                  boxShadow: "0 6px 14px rgba(217,119,87,0.24)",
+                  boxShadow: `0 6px 14px ${alpha(theme.palette.primary.main, 0.24)}`,
                   "&:hover": {
                     transform: "translateY(-1px) scale(1.03)",
-                    boxShadow: "0 10px 20px rgba(217,119,87,0.3)",
+                    boxShadow: `0 10px 20px ${alpha(theme.palette.primary.main, 0.32)}`,
                   },
                 }}
               >
@@ -2472,7 +2553,7 @@ export default function Aelin({
         onClose={() => setDeskOpen(false)}
         PaperProps={{
           sx: {
-            width: { xs: "100%", sm: compactMode ? "min(100vw, 430px)" : "min(100vw, 1320px)" },
+            width: { xs: "100%", sm: compactFramed ? "min(100vw, 430px)" : "min(100vw, 1320px)" },
             maxWidth: "100vw",
             borderLeft: "1px solid",
             borderColor: "divider",

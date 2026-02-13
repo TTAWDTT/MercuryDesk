@@ -276,6 +276,7 @@ class AelinContextResponse(BaseModel):
 
 class AelinChatResponse(BaseModel):
     answer: str
+    expression: str = "exp-04"
     citations: list[AelinCitation] = Field(default_factory=list)
     actions: list[AelinAction] = Field(default_factory=list)
     tool_trace: list[AelinToolStep] = Field(default_factory=list)

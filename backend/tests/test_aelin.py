@@ -118,6 +118,7 @@ def test_aelin_context_and_chat_endpoints():
     assert chat.status_code == 200, chat.text
     chat_data = chat.json()
     assert isinstance(chat_data.get("answer"), str) and chat_data.get("answer")
+    assert isinstance(chat_data.get("expression"), str) and chat_data.get("expression").startswith("exp-")
     assert isinstance(chat_data.get("citations"), list)
     assert isinstance(chat_data.get("actions"), list)
     assert isinstance(chat_data.get("tool_trace"), list)
@@ -138,6 +139,7 @@ def test_aelin_context_and_chat_endpoints():
     assert chat_smalltalk.status_code == 200, chat_smalltalk.text
     chat_smalltalk_data = chat_smalltalk.json()
     assert isinstance(chat_smalltalk_data.get("answer"), str) and chat_smalltalk_data.get("answer")
+    assert isinstance(chat_smalltalk_data.get("expression"), str) and chat_smalltalk_data.get("expression").startswith("exp-")
     # Casual chat should not be forced into retrieval listing mode.
     assert chat_smalltalk_data.get("citations") == []
     assert isinstance(chat_smalltalk_data.get("tool_trace"), list)
@@ -255,8 +257,22 @@ def test_aelin_chat_can_use_web_search_plan(monkeypatch):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert isinstance(data.get("answer"), str) and data.get("answer")
+    assert isinstance(data.get("expression"), str) and data.get("expression").startswith("exp-")
     assert isinstance(data.get("citations"), list)
     assert isinstance(data.get("tool_trace"), list)
     assert any((it.get("stage") == "web_search") for it in data.get("tool_trace") or [])
     assert any((it.get("source") == "web") for it in data.get("citations") or [])
     assert any((it.get("kind") == "confirm_track") for it in data.get("actions") or [])
+
+
+def test_expression_tag_parsing_and_normalization():
+    text, exp = aelin_router._extract_expression_tag("结论如下。[expression:exp-11]")
+    assert text == "结论如下。"
+    assert exp == "exp-11"
+
+    text2, exp2 = aelin_router._extract_expression_tag("我知道了 [表情:11]")
+    assert text2 == "我知道了"
+    assert exp2 == "exp-11"
+
+    fallback = aelin_router._pick_expression("今天这事为什么这样？", "先别急，我来解释。")
+    assert fallback in aelin_router._AELIN_EXPRESSION_IDS
