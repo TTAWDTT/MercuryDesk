@@ -1299,6 +1299,11 @@ export default function Aelin({
   const groupedMessages = useGroupedMessages(messages);
   const slashMatches = React.useMemo(() => matchingSlashCommands(input), [input]);
   const workspaceScope = React.useMemo(() => (workspace || "default").trim() || "default", [workspace]);
+  const compactMode = React.useMemo(() => {
+    if (embedded) return false;
+    const qs = new URLSearchParams(location.search || "");
+    return (qs.get("compact") || "").trim() === "1";
+  }, [embedded, location.search]);
   const lastAssistantCitation = React.useMemo(() => {
     const reversed = [...messages].reverse();
     for (const item of reversed) {
@@ -1899,11 +1904,12 @@ export default function Aelin({
         flexDirection: "column",
         bgcolor: "background.default",
         overflow: "hidden",
+        fontSize: compactMode ? "0.94rem" : "1rem",
       }}
     >
       <Box
         sx={{
-          height: 64,
+          height: compactMode ? 56 : 64,
           borderBottom: "1px solid",
           borderColor: "divider",
           display: "flex",
@@ -2047,11 +2053,11 @@ export default function Aelin({
           minHeight: 0,
           overflowY: "auto",
           overflowX: "hidden",
-          pb: 1.6,
+          pb: compactMode ? 1.1 : 1.6,
           overscrollBehaviorY: "contain",
         }}
       >
-        <Container maxWidth={embedded ? false : "md"} sx={{ px: { xs: 0.2, sm: 0.4 }, py: 1.35 }}>
+        <Container maxWidth={embedded ? false : compactMode ? "sm" : "md"} sx={{ px: { xs: 0.2, sm: 0.4 }, py: compactMode ? 1.0 : 1.35 }}>
           {messages.length <= 1 ? (
             <Paper
               variant="outlined"
@@ -2159,8 +2165,8 @@ export default function Aelin({
       <Box
         sx={{
           flexShrink: 0,
-          pt: 1.1,
-          pb: 1.35,
+          pt: compactMode ? 0.7 : 1.1,
+          pb: compactMode ? 1.0 : 1.35,
           px: 1.1,
           borderTop: "1px solid",
           borderColor: alpha(theme.palette.divider, 0.9),
@@ -2171,11 +2177,11 @@ export default function Aelin({
               : "linear-gradient(to top, rgba(20,20,19,1), rgba(20,20,19,0.96), rgba(20,20,19,0.52), rgba(20,20,19,0))",
         }}
       >
-        <Container maxWidth={embedded ? false : "md"} sx={{ px: { xs: 0.2, sm: 0.4 } }}>
+        <Container maxWidth={embedded ? false : compactMode ? "sm" : "md"} sx={{ px: { xs: 0.2, sm: 0.4 } }}>
           <Paper
             variant="outlined"
             sx={{
-              p: 0.9,
+              p: compactMode ? 0.72 : 0.9,
               borderRadius: 2.4,
               borderColor: alpha(theme.palette.divider, 0.95),
             }}
@@ -2499,7 +2505,7 @@ export default function Aelin({
         onClose={() => setDeskOpen(false)}
         PaperProps={{
           sx: {
-            width: { xs: "100%", sm: "min(100vw, 1320px)" },
+            width: { xs: "100%", sm: compactMode ? "min(100vw, 1080px)" : "min(100vw, 1320px)" },
             maxWidth: "100vw",
             borderLeft: "1px solid",
             borderColor: "divider",

@@ -9,6 +9,7 @@ const { spawn } = require("child_process");
 const isDev = process.env.MERCURYDESK_DESKTOP_DEV === "1" || !app.isPackaged;
 const backendPort = Number(process.env.MERCURYDESK_BACKEND_PORT || (isDev ? 8000 : 18080));
 const frontendPort = Number(process.env.MERCURYDESK_DESKTOP_PORT || (isDev ? 5173 : 1420));
+const desktopZoom = Number(process.env.MERCURYDESK_DESKTOP_ZOOM || "0.9");
 
 let mainWindow = null;
 let backendProc = null;
@@ -188,10 +189,10 @@ function startFrontendServer() {
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width: 1480,
-    height: 920,
-    minWidth: 1160,
-    minHeight: 760,
+    width: 1160,
+    height: 760,
+    minWidth: 920,
+    minHeight: 620,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#111111",
@@ -203,7 +204,12 @@ function createMainWindow() {
     },
   });
 
-  const url = `http://127.0.0.1:${frontendPort}`;
+  const zoom = Number.isFinite(desktopZoom)
+    ? Math.max(0.75, Math.min(1.25, desktopZoom))
+    : 0.9;
+  mainWindow.webContents.setZoomFactor(zoom);
+
+  const url = `http://127.0.0.1:${frontendPort}/?desktop=1&compact=1`;
   mainWindow.loadURL(url);
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();

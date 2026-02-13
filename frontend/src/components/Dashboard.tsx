@@ -171,6 +171,10 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
   const location = useLocation();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const compactMode = useMemo(() => {
+    const panel = new URLSearchParams(location.search || '').get('compact') || '';
+    return panel.trim() === '1';
+  }, [location.search]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -1008,7 +1012,8 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
   );
 
   const hasDesktopMeasure = desktopHostWidth > 0;
-  const desktopSidebarWidth = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_WIDTH : 0;
+  const desktopSidebarBaseWidth = compactMode ? 332 : DESKTOP_SIDEBAR_WIDTH;
+  const desktopSidebarWidth = !isMobile && desktopSidebarOpen ? desktopSidebarBaseWidth : 0;
   const desktopGap = !isMobile && desktopSidebarOpen ? DESKTOP_SIDEBAR_GAP : 0;
   const desktopReservedWidth = desktopSidebarWidth + desktopGap;
   const boardBaseWidth = hasDesktopMeasure ? desktopHostWidth : 1;
@@ -1019,7 +1024,7 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
     ? Math.max(0.62, Math.min(1, boardAvailableWidth / boardBaseWidth))
     : 1;
   const boardScaledHeight = hasDesktopMeasure
-    ? Math.max(600, Math.round(boardNaturalHeight * boardScale))
+    ? Math.max(compactMode ? 520 : 600, Math.round(boardNaturalHeight * boardScale))
     : 'auto';
   const boardTransition = prefersReducedMotion
     ? 'none'
@@ -1225,7 +1230,7 @@ export default function Dashboard({ embedded = false, onRequestClose }: Dashboar
                 position: 'absolute',
                 right: 0,
                 top: 0,
-                width: DESKTOP_SIDEBAR_WIDTH,
+                width: desktopSidebarBaseWidth,
                 opacity: desktopSidebarOpen ? 1 : 0,
                 pointerEvents: desktopSidebarOpen ? 'auto' : 'none',
                 transform: desktopSidebarOpen ? 'translate3d(0, 0, 0)' : 'translate3d(calc(100% + 8px), 0, 0)',
