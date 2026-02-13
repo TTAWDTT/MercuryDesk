@@ -27,7 +27,6 @@ import { alpha, useTheme } from '@mui/material/styles';
 import { TopBar } from './TopBar';
 import { ContactGrid } from './ContactGrid';
 import { ConversationDrawer } from './ConversationDrawer';
-import Aelin, { AelinDeskBridgePayload } from './Aelin';
 import { GmailBindDialog } from './dashboard/GmailBindDialog';
 import { FirstRunGuideDialog } from './dashboard/FirstRunGuideDialog';
 import { DashboardSyncProgress, SyncProgressPanel } from './dashboard/SyncProgressPanel';
@@ -80,7 +79,6 @@ const DASHBOARD_SYNC_CONCURRENCY = (() => {
 const FIRST_RUN_GUIDE_KEY = 'mercurydesk:dashboard:first-run-guide:v1';
 const WORKSPACE_KEY = 'mercurydesk:dashboard:workspace:v1';
 const SIDEBAR_OPEN_KEY = 'mercurydesk:dashboard:ai-sidebar-open:v1';
-const AELIN_DOCK_OPEN_KEY = 'mercurydesk:dashboard:aelin-dock-open:v1';
 const AELIN_LAST_SESSION_KEY = 'aelin:last-session-id:v1';
 const AELIN_LAST_DESK_BRIDGE_KEY = 'aelin:last-desk-bridge:v1';
 const WORKSPACES = [
@@ -161,7 +159,12 @@ const formatRunningAccounts = (labels: string[]) => {
   return `${labels[0]}、${labels[1]} 等 ${labels.length} 个账户`;
 };
 
-export default function Dashboard() {
+type DashboardProps = {
+  embedded?: boolean;
+  onRequestClose?: () => void;
+};
+
+export default function Dashboard({ embedded = false, onRequestClose }: DashboardProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
   const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
@@ -203,14 +206,8 @@ export default function Dashboard() {
   const [actionBusy, setActionBusy] = useState(false);
   const [activePanel, setActivePanel] = useState<'brief' | 'todo' | 'search' | 'memory'>('brief');
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
-  const [aelinDockOpen, setAelinDockOpen] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(AELIN_DOCK_OPEN_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState<boolean>(() => {
+    if (embedded) return true;
     try {
       const raw = localStorage.getItem(SIDEBAR_OPEN_KEY);
       if (raw === '0') return false;
@@ -327,15 +324,7 @@ export default function Dashboard() {
     } catch {
       // ignore
     }
-  }, [desktopSidebarOpen]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(AELIN_DOCK_OPEN_KEY, aelinDockOpen ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, [aelinDockOpen]);
+  }, [desktopSidebarOpen, embedded]);
 
   useEffect(() => {
     if (!isMobile) setMobilePanelOpen(false);
@@ -379,7 +368,6 @@ export default function Dashboard() {
     }
     if (bridge.fromAelin && !isMobile) {
       setDesktopSidebarOpen(true);
-      setAelinDockOpen(true);
       playHandoffFX(
         'Aelin -> Desk',
         bridge.focusQuery
@@ -746,10 +734,16 @@ export default function Dashboard() {
         // ignore storage failures
       }
     }
-    navigate('/desk', { replace: true });
-  }, [navigate]);
+    if (!embedded) {
+      navigate('/', { replace: true });
+    }
+  }, [embedded, navigate]);
 
   const returnToAelin = useCallback(() => {
+    if (embedded) {
+      onRequestClose?.();
+      return;
+    }
     const fallbackSessionId = (() => {
       try {
         return localStorage.getItem(AELIN_LAST_SESSION_KEY) || '';
@@ -783,45 +777,7 @@ export default function Dashboard() {
       focusQuery ? `带着主题“${focusQuery.slice(0, 36)}”返回聊天` : '将观察结果带回聊天'
     );
     window.setTimeout(() => navigate(to), 140);
-  }, [bridgeContext, navigate, playHandoffFX, searchQuery, selectedContact?.id]);
-
-  const handleAelinOpenDesk = useCallback((payload: AelinDeskBridgePayload) => {
-    const nextBridge: AelinBridgeContext = {
-      fromAelin: true,
-      sessionId: (payload.sessionId || '').trim(),
-      workspace: (payload.workspace || activeWorkspace || 'default').trim() || 'default',
-      focusMessageId: payload.messageId && Number.isFinite(payload.messageId) ? Math.floor(payload.messageId) : null,
-      focusContactId: payload.contactId && Number.isFinite(payload.contactId) ? Math.floor(payload.contactId) : null,
-      focusQuery: (payload.focusQuery || '').trim(),
-      highlightSource: (payload.highlightSource || '').trim(),
-      resumePrompt: (payload.resumePrompt || '').trim(),
-    };
-    setBridgeContext(nextBridge);
-    if (typeof window !== 'undefined') {
-      try {
-        window.sessionStorage.setItem(AELIN_LAST_DESK_BRIDGE_KEY, JSON.stringify(nextBridge));
-      } catch {
-        // ignore storage failures
-      }
-    }
-    if (nextBridge.workspace && nextBridge.workspace !== activeWorkspace) {
-      setActiveWorkspace(nextBridge.workspace);
-    }
-    if (nextBridge.focusMessageId) {
-      setPendingFocusMessageId(nextBridge.focusMessageId);
-      setActivePanel('search');
-    } else if (nextBridge.focusContactId) {
-      setPendingFocusContactId(nextBridge.focusContactId);
-    }
-    if (nextBridge.focusQuery) {
-      setSearchQuery(nextBridge.focusQuery);
-      setActivePanel('search');
-    }
-    playHandoffFX(
-      'Aelin 内联联动',
-      nextBridge.focusQuery ? `已聚焦“${nextBridge.focusQuery.slice(0, 36)}”` : '已切换为观察模式'
-    );
-  }, [activeWorkspace, playHandoffFX]);
+  }, [bridgeContext, embedded, navigate, onRequestClose, playHandoffFX, searchQuery, selectedContact?.id]);
 
   const handleCardAction = useCallback(async (contact: Contact, action: 'summarize' | 'draft' | 'todo') => {
     const text = [
@@ -1076,19 +1032,21 @@ export default function Dashboard() {
   return (
     <Box
       component={motion.div}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -10 }}
-      transition={{ duration: 0.4 }}
-      sx={{ minHeight: '100vh', bgcolor: 'transparent', pb: 8 }}
+      initial={embedded ? undefined : { opacity: 0, y: 10 }}
+      animate={embedded ? undefined : { opacity: 1, y: 0 }}
+      exit={embedded ? undefined : { opacity: 0, y: -10 }}
+      transition={embedded ? undefined : { duration: 0.4 }}
+      sx={{ minHeight: embedded ? '100%' : '100vh', bgcolor: 'transparent', pb: embedded ? 2 : 8 }}
     >
-      <TopBar
-        onRefresh={handleSyncAll}
-        onSearch={setSearchQuery}
-        loading={syncing}
-      />
+      {!embedded ? (
+        <TopBar
+          onRefresh={handleSyncAll}
+          onSearch={setSearchQuery}
+          loading={syncing}
+        />
+      ) : null}
 
-      <Container maxWidth="xl" sx={{ mt: { xs: 2.2, md: 3.2 } }}>
+      <Container maxWidth="xl" sx={{ mt: embedded ? { xs: 0.8, md: 1.2 } : { xs: 2.2, md: 3.2 } }}>
         {bridgeContext?.fromAelin ? (
           <Paper
             variant="outlined"
@@ -1133,9 +1091,11 @@ export default function Dashboard() {
                 重新定位焦点
               </Button>
             ) : null}
-            <Button size="small" variant="contained" startIcon={<KeyboardReturnIcon />} onClick={returnToAelin}>
-              回到 Aelin 续聊
-            </Button>
+            {!embedded ? (
+              <Button size="small" variant="contained" startIcon={<KeyboardReturnIcon />} onClick={returnToAelin}>
+                回到 Aelin 续聊
+              </Button>
+            ) : null}
             <Button size="small" color="inherit" onClick={clearBridgeContext}>
               退出观察模式
             </Button>
@@ -1336,42 +1296,44 @@ export default function Dashboard() {
         </Box>
       ) : null}
 
-      <Tooltip title={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}>
-        <Button
-          size="small"
-          variant={panelToggleOpen ? 'contained' : 'outlined'}
-          aria-label={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}
-          onClick={() => {
-            if (isMobile) {
-              setMobilePanelOpen((prev) => !prev);
-              return;
-            }
-            setDesktopSidebarOpen((prev) => !prev);
-          }}
-          sx={{
-            position: 'fixed',
-            right: { xs: 10, lg: 12 },
-            top: { xs: 'auto', lg: '50%' },
-            bottom: { xs: 88, lg: 'auto' },
-            transform: { xs: 'none', lg: 'translateY(-50%)' },
-            zIndex: 1320,
-            minWidth: 0,
-            width: 44,
-            height: 44,
-            px: 0,
-            borderRadius: 999,
-            boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
-            transition: prefersReducedMotion ? 'none' : 'transform 200ms ease, box-shadow 200ms ease',
-            '&:hover': {
-              transform: { xs: 'none', lg: 'translateY(-50%) translateX(-1px)' },
-            },
-          }}
-        >
-          {panelToggleOpen ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
-        </Button>
-      </Tooltip>
+      {!embedded ? (
+        <Tooltip title={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}>
+          <Button
+            size="small"
+            variant={panelToggleOpen ? 'contained' : 'outlined'}
+            aria-label={isMobile ? (mobilePanelOpen ? '收起 AI 面板' : '展开 AI 面板') : (desktopSidebarOpen ? '收起 AI 右边栏' : '展开 AI 右边栏')}
+            onClick={() => {
+              if (isMobile) {
+                setMobilePanelOpen((prev) => !prev);
+                return;
+              }
+              setDesktopSidebarOpen((prev) => !prev);
+            }}
+            sx={{
+              position: 'fixed',
+              right: { xs: 10, lg: 12 },
+              top: { xs: 'auto', lg: '50%' },
+              bottom: { xs: 88, lg: 'auto' },
+              transform: { xs: 'none', lg: 'translateY(-50%)' },
+              zIndex: 1320,
+              minWidth: 0,
+              width: 44,
+              height: 44,
+              px: 0,
+              borderRadius: 999,
+              boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
+              transition: prefersReducedMotion ? 'none' : 'transform 200ms ease, box-shadow 200ms ease',
+              '&:hover': {
+                transform: { xs: 'none', lg: 'translateY(-50%) translateX(-1px)' },
+              },
+            }}
+          >
+            {panelToggleOpen ? <ChevronRightIcon /> : <AutoAwesomeIcon />}
+          </Button>
+        </Tooltip>
+      ) : null}
 
-      {bridgeContext && (bridgeContext.fromAelin || Boolean(bridgeContext.sessionId)) ? (
+      {!embedded && bridgeContext && (bridgeContext.fromAelin || Boolean(bridgeContext.sessionId)) ? (
         <Tooltip title="回到 Aelin 并继续当前主题">
           <Button
             size="small"
@@ -1408,50 +1370,6 @@ export default function Dashboard() {
         {panelTabs}
         <Divider sx={{ my: 1 }} />
         {panelBody}
-      </Drawer>
-
-      <Tooltip title={aelinDockOpen ? '收起 Aelin' : '展开 Aelin'}>
-        <Button
-          size="small"
-          variant={aelinDockOpen ? 'contained' : 'outlined'}
-          onClick={() => setAelinDockOpen((prev) => !prev)}
-          sx={{
-            position: 'fixed',
-            right: { xs: 10, lg: 66 },
-            bottom: { xs: 88, lg: 18 },
-            zIndex: 1320,
-            minWidth: 0,
-            width: 44,
-            height: 44,
-            px: 0,
-            borderRadius: 999,
-            boxShadow: '0 6px 16px rgba(0,0,0,0.14)',
-          }}
-        >
-          <AutoAwesomeIcon fontSize="small" />
-        </Button>
-      </Tooltip>
-
-      <Drawer
-        anchor="right"
-        open={aelinDockOpen}
-        onClose={() => setAelinDockOpen(false)}
-        PaperProps={{
-          sx: {
-            width: { xs: '100%', sm: 520, lg: 560 },
-            borderLeft: '1px solid',
-            borderColor: 'divider',
-          },
-        }}
-      >
-        <Box sx={{ height: '100%' }}>
-          <Aelin
-            embedded
-            workspace={activeWorkspace}
-            onOpenDesk={handleAelinOpenDesk}
-            onRequestClose={() => setAelinDockOpen(false)}
-          />
-        </Box>
       </Drawer>
 
       <ConversationDrawer

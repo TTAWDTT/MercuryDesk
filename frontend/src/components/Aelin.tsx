@@ -52,6 +52,7 @@ import {
 } from "../api";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
+import Dashboard from "./Dashboard";
 
 type ChatMessage = {
   id: string;
@@ -1270,6 +1271,8 @@ export default function Aelin({
   const [trackingItems, setTrackingItems] = React.useState<AelinTrackingItem[]>([]);
   const [trackingBusy, setTrackingBusy] = React.useState(false);
   const [trackingError, setTrackingError] = React.useState("");
+  const [deskOpen, setDeskOpen] = React.useState(false);
+  const [deskPanelKey, setDeskPanelKey] = React.useState(0);
   const [handoffFX, setHandoffFX] = React.useState<HandoffFXState | null>(null);
   const [latestSparkMessageId, setLatestSparkMessageId] = React.useState<string>("");
   const dismissedTrackTargetsRef = React.useRef<Record<string, true>>({});
@@ -1332,16 +1335,6 @@ export default function Aelin({
       const focusQuery = (args?.focusQuery || "").trim();
       const resumePrompt = (args?.resumePrompt || "").trim();
 
-      const qs = new URLSearchParams();
-      qs.set("from", "aelin");
-      qs.set("workspace", workspaceScope);
-      if (sid) qs.set("session_id", sid);
-      if (Number.isFinite(messageNum) && messageNum > 0) qs.set("focus_message_id", String(Math.floor(messageNum)));
-      if (Number.isFinite(contactNum) && contactNum > 0) qs.set("focus_contact_id", String(Math.floor(contactNum)));
-      if (focusQuery) qs.set("focus_query", focusQuery.slice(0, 180));
-      if (source) qs.set("highlight_source", source.slice(0, 40));
-      if (resumePrompt) qs.set("resume_prompt", resumePrompt.slice(0, 240));
-
       if (typeof window !== "undefined") {
         try {
           if (sid) window.localStorage.setItem(AELIN_LAST_SESSION_KEY, sid);
@@ -1384,10 +1377,11 @@ export default function Aelin({
         focusQuery ? `正在定位主题“${focusQuery.slice(0, 36)}”` : "正在打开观察视图"
       );
       window.setTimeout(() => {
-        navigate(`/desk?${qs.toString()}`);
+        setDeskPanelKey((prev) => prev + 1);
+        setDeskOpen(true);
       }, 140);
     },
-    [activeSession?.id, activeSessionId, navigate, onOpenDesk, playHandoffFX, workspaceScope]
+    [activeSession?.id, activeSessionId, onOpenDesk, playHandoffFX, workspaceScope]
   );
 
   const refreshContext = React.useCallback(async () => {
@@ -1424,6 +1418,14 @@ export default function Aelin({
   React.useEffect(() => {
     void refreshTracking();
   }, [refreshTracking]);
+
+  React.useEffect(() => {
+    if (embedded) return;
+    const panel = new URLSearchParams(location.search || "").get("panel") || "";
+    if (panel.trim().toLowerCase() === "desk") {
+      setDeskOpen(true);
+    }
+  }, [embedded, location.search]);
 
   React.useEffect(() => {
     return () => {
@@ -1978,6 +1980,11 @@ export default function Aelin({
                 </Badge>
               </IconButton>
             </Tooltip>
+            <Tooltip title="打开观察台">
+              <IconButton onClick={() => setDeskOpen(true)}>
+                <TravelExploreIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="设置">
               <IconButton onClick={() => navigate("/settings")}>
                 <SettingsIcon fontSize="small" />
@@ -2485,6 +2492,25 @@ export default function Aelin({
           )}
         </Box>
       </Dialog>
+
+      <Drawer
+        anchor="right"
+        open={deskOpen}
+        onClose={() => setDeskOpen(false)}
+        PaperProps={{
+          sx: {
+            width: { xs: "100%", sm: "min(100vw, 1320px)" },
+            maxWidth: "100vw",
+            borderLeft: "1px solid",
+            borderColor: "divider",
+            bgcolor: theme.palette.background.default,
+          },
+        }}
+      >
+        <Box sx={{ height: "100dvh", overflow: "auto" }}>
+          <Dashboard key={`embedded-desk-${deskPanelKey}`} embedded onRequestClose={() => setDeskOpen(false)} />
+        </Box>
+      </Drawer>
 
       {trackingSheet ? (
         <Paper

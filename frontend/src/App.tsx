@@ -10,7 +10,6 @@ import { ThemeProvider } from "./theme";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ToastProvider } from "./contexts/ToastContext";
 
-const Dashboard = React.lazy(() => import("./components/Dashboard"));
 const Aelin = React.lazy(() => import("./components/Aelin"));
 const Login = React.lazy(() => import("./components/Login"));
 const Settings = React.lazy(() => import("./components/Settings"));
@@ -38,8 +37,8 @@ function AnimatedRoutes() {
             <>
               <Route path="/" element={<Aelin />} />
               <Route path="/chat" element={<Navigate to="/" replace />} />
-              <Route path="/desk" element={<Dashboard />} />
-              <Route path="/dashboard" element={<Navigate to="/desk" replace />} />
+              <Route path="/desk" element={<Navigate to="/?panel=desk" replace />} />
+              <Route path="/dashboard" element={<Navigate to="/?panel=desk" replace />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="*" element={<NotFound />} />
             </>
