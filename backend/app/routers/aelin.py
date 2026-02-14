@@ -4532,7 +4532,6 @@ def poll_aelin_proactive_events(
     if not isinstance(top_updates, list):
         top_updates = []
 
-    current_focus_ids: list[int] = []
     for row in top_updates[:10]:
         if not isinstance(row, dict):
             continue
@@ -4542,7 +4541,6 @@ def poll_aelin_proactive_events(
             message_id = 0
         if message_id <= 0:
             continue
-        current_focus_ids.append(message_id)
         if message_id in seen_focus_set:
             continue
         title = str(row.get("title") or "").strip()
