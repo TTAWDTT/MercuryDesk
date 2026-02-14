@@ -170,6 +170,7 @@ class AelinChatRequest(BaseModel):
     workspace: str = Field(default="default", min_length=1, max_length=64)
     images: list["AelinImageInput"] = Field(default_factory=list, max_length=4)
     history: list["AelinChatHistoryTurn"] = Field(default_factory=list, max_length=20)
+    search_mode: str = Field(default="auto", min_length=1, max_length=16)
 
 
 class AelinChatHistoryTurn(BaseModel):
@@ -205,6 +206,7 @@ class AelinToolStep(BaseModel):
     status: str = "completed"
     detail: str = ""
     count: int = 0
+    ts: int = 0
 
 
 class AelinTodoItem(BaseModel):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import time
 
@@ -145,6 +146,56 @@ def test_aelin_context_and_chat_endpoints():
     assert isinstance(chat_smalltalk_data.get("tool_trace"), list)
 
 
+def test_aelin_chat_stream_emits_trace_and_final():
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    with client.stream(
+        "POST",
+        "/api/v1/aelin/chat/stream",
+        json={
+            "query": "你好，帮我看看最近重点",
+            "use_memory": True,
+            "max_citations": 6,
+            "workspace": "life",
+            "images": [],
+        },
+        headers=headers,
+    ) as resp:
+        assert resp.status_code == 200, resp.text
+        body = "".join(resp.iter_text())
+
+    blocks = [b for b in body.replace("\r\n", "\n").split("\n\n") if b.strip() and not b.strip().startswith(":")]
+    parsed_events: list[tuple[str, dict]] = []
+    for block in blocks:
+        event = "message"
+        data_line = ""
+        for line in block.split("\n"):
+            if line.startswith("event:"):
+                event = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data_line = line.split(":", 1)[1].strip()
+        if not data_line:
+            continue
+        try:
+            parsed_events.append((event, json.loads(data_line)))
+        except Exception:
+            continue
+
+    names = [name for name, _ in parsed_events]
+    assert "start" in names
+    assert "trace" in names
+    assert "final" in names
+    trace_payload = next(payload for name, payload in parsed_events if name == "trace")
+    first_step = trace_payload.get("step") or {}
+    assert isinstance(first_step.get("ts"), int)
+    assert int(first_step.get("ts") or 0) > 0
+    final_payload = next(payload for name, payload in parsed_events if name == "final")
+    result = final_payload.get("result") or {}
+    assert isinstance(result.get("answer"), str) and result.get("answer")
+    assert isinstance(result.get("tool_trace"), list)
+
+
 def test_aelin_track_confirm_endpoint(monkeypatch):
     client = _create_test_client()
     headers = _auth_headers(client)
@@ -260,9 +311,497 @@ def test_aelin_chat_can_use_web_search_plan(monkeypatch):
     assert isinstance(data.get("expression"), str) and data.get("expression").startswith("exp-")
     assert isinstance(data.get("citations"), list)
     assert isinstance(data.get("tool_trace"), list)
+    trace_stages = {str(it.get("stage") or "") for it in (data.get("tool_trace") or [])}
+    assert "main_agent" in trace_stages
+    assert "reply_agent" in trace_stages
     assert any((it.get("stage") == "web_search") for it in data.get("tool_trace") or [])
+    assert "reply_verifier" in trace_stages
+    assert "trace_agent" in trace_stages
     assert any((it.get("source") == "web") for it in data.get("citations") or [])
     assert any((it.get("kind") == "confirm_track") for it in data.get("actions") or [])
+
+
+def test_aelin_chat_verifier_can_trigger_web_retry(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": False,
+            "web_queries": [],
+            "track_suggestion": None,
+            "reason": "test_no_web_initial",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 130-119 Spurs",
+                url="https://example.com/nba/box",
+                snippet="Curry drops 30 with 6 threes.",
+                fetched_excerpt="Warriors 130-119 Spurs. Curry 30 with 6 threes.",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "今天勇士和马刺比分是多少？", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert isinstance(data.get("answer"), str) and data.get("answer")
+    assert any((it.get("source") == "web") for it in (data.get("citations") or []))
+    assert any((it.get("stage") == "web_search") for it in (data.get("tool_trace") or []))
+    assert any((it.get("stage") == "reply_verifier") for it in (data.get("tool_trace") or []))
+
+
+def test_aelin_chat_llm_planner_trace_route_not_overridden(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "chat",
+            "intent_type": "chat",
+            "time_scope": "any",
+            "freshness_hours": 720,
+            "requires_citations": False,
+            "requires_factuality": False,
+            "sports_result_intent": False,
+            "tracking_intent": False,
+            "ambiguities": [],
+            "confidence": 0.9,
+            "reason": "test_intent_chat",
+            "intent_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [],
+            "track_suggestion": None,
+            "route": {
+                "reply_agent": True,
+                "trace_agent": False,
+                "allow_web_retry": False,
+            },
+            "reason": "test_planner_disable_trace",
+            "planner_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": True,
+            "issues": [],
+            "patch": None,
+            "reason": "test_critic_accept",
+            "critic_source": "llm",
+        },
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "Please track this topic for me", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    trace_agent_step = next(
+        (it for it in (data.get("tool_trace") or []) if (it.get("stage") == "trace_agent")),
+        None,
+    )
+    assert isinstance(trace_agent_step, dict)
+    assert trace_agent_step.get("status") == "skipped"
+    assert not any((it.get("kind") == "confirm_track") for it in (data.get("actions") or []))
+
+
+def test_aelin_chat_llm_planner_retry_not_overridden(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "chat",
+            "intent_type": "chat",
+            "time_scope": "any",
+            "freshness_hours": 720,
+            "requires_citations": False,
+            "requires_factuality": False,
+            "sports_result_intent": False,
+            "tracking_intent": False,
+            "ambiguities": [],
+            "confidence": 0.9,
+            "reason": "test_intent_chat",
+            "intent_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [],
+            "track_suggestion": None,
+            "route": {
+                "reply_agent": True,
+                "trace_agent": False,
+                "allow_web_retry": False,
+            },
+            "reason": "test_planner_disable_retry",
+            "planner_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": True,
+            "issues": [],
+            "patch": None,
+            "reason": "test_critic_accept",
+            "critic_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 130-119 Spurs",
+                url="https://example.com/nba/box",
+                snippet="Curry drops 30 with 6 threes.",
+                fetched_excerpt="Warriors 130-119 Spurs. Curry 30 with 6 threes.",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "today warriors score", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert not any((it.get("source") == "web") for it in (data.get("citations") or []))
+    web_step = next(
+        (it for it in (data.get("tool_trace") or []) if (it.get("stage") == "web_search")),
+        None,
+    )
+    assert isinstance(web_step, dict)
+    assert web_step.get("status") == "skipped"
+
+
+def test_aelin_chat_parallel_web_subagent_accepts_keyword_only_search(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": True,
+            "web_queries": ["minimax 大语言模型 最新", "minimax 模型 发布", "minimax 模型 更新"],
+            "context_boundaries": [
+                {"kind": "web", "query": "minimax 大语言模型 最新", "scope": "news"},
+                {"kind": "web", "query": "minimax 模型 发布", "scope": "release"},
+                {"kind": "web", "query": "minimax 模型 更新", "scope": "update"},
+            ],
+            "track_suggestion": None,
+            "reason": "test_context_boundary_parallel",
+        },
+    )
+
+    def _keyword_only_search(query: str, *, max_results: int = 6, fetch_top_k: int = 3):
+        return [
+            WebSearchResult(
+                title=f"{query} - result",
+                url=f"https://example.com/{abs(hash(query)) % 100000}",
+                snippet="keyword-only web search result",
+                fetched_excerpt="keyword-only web search result fetched excerpt",
+            )
+        ]
+
+    monkeypatch.setattr(aelin_router._web_search, "search_and_fetch", _keyword_only_search)
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "我想知道 minimax 最新模型是什么", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert isinstance(data.get("answer"), str) and data.get("answer")
+    assert any((it.get("source") == "web") for it in (data.get("citations") or []))
+    stages = [str(it.get("stage") or "") for it in (data.get("tool_trace") or [])]
+    assert any(stage.startswith("web_search_subagent_") for stage in stages)
+
+
+def test_aelin_chat_all_models_retrieval_guard(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    class _FakeAnyModelService:
+        def __init__(self):
+            self.config = type(
+                "Cfg",
+                (),
+                {
+                    "model": "gpt-4o-mini",
+                    "base_url": "https://api.openai.com/v1",
+                },
+            )()
+
+        def is_configured(self) -> bool:
+            return True
+
+        def _chat(self, messages, max_tokens=520, stream=False):
+            return "你可以在多个网站查询到这个结果。"
+
+    monkeypatch.setattr(aelin_router, "_resolve_llm_service", lambda db, user: (_FakeAnyModelService(), "openai"))
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": True,
+            "web_queries": ["NBA 马刺 勇士 比分"],
+            "track_suggestion": None,
+            "reason": "test_generic_web",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 130-119 Spurs",
+                url="https://example.com/nba/box",
+                snippet="Warriors beat Spurs 130-119, Curry scored 30 points.",
+                fetched_excerpt="Warriors beat Spurs 130-119, Curry scored 30 points.",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "今天马刺和勇士比分是多少？", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert isinstance(data.get("answer"), str) and data.get("answer")
+    assert "我先联网检索了" in str(data.get("answer") or "")
+    assert any((it.get("source") == "web") for it in (data.get("citations") or []))
+    assert any(
+        ("retrieval evidence guard applied" in str(it.get("detail") or ""))
+        for it in (data.get("tool_trace") or [])
+        if it.get("stage") == "generation"
+    )
+
+
+def test_time_sensitive_detection_covers_recent_sports_query():
+    assert aelin_router._is_time_sensitive_query("NBA最近打了什么比赛")
+    assert aelin_router._is_sports_result_query("NBA最近打了什么比赛")
+
+
+def test_plan_tool_usage_invalid_json_fallback_still_dispatches_web():
+    class _FakePlannerService:
+        def is_configured(self) -> bool:
+            return True
+
+        def _chat(self, messages, max_tokens=420, stream=False):
+            return "not a json payload"
+
+    plan = aelin_router._plan_tool_usage(
+        query="NBA最近打了什么比赛",
+        service=_FakePlannerService(),
+        provider="openai",
+        memory_summary="有一些历史记忆",
+        tracking_snapshot={"active_items": [], "matched_items": []},
+    )
+    assert plan.get("planner_source") == "fallback"
+    assert plan.get("need_web_search") is True
+    assert any((it.get("kind") == "web") for it in (plan.get("context_boundaries") or []))
+    route = plan.get("route") or {}
+    assert route.get("allow_web_retry") is True
+
+
+def test_aelin_chat_rule_based_recent_query_triggers_web(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 117-112 Suns",
+                url="https://example.com/nba/recent",
+                snippet="Warriors 117-112 Suns, Curry scored 32.",
+                fetched_excerpt="Warriors 117-112 Suns, Curry scored 32.",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "NBA最近打了什么比赛", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert any((it.get("source") == "web") for it in (data.get("citations") or []))
+    web_step = next((it for it in (data.get("tool_trace") or []) if (it.get("stage") == "web_search")), None)
+    assert isinstance(web_step, dict)
+    assert web_step.get("status") in {"completed", "failed"}
+
+
+def test_build_intent_contract_fallback_for_recent_sports_query():
+    class _FakeService:
+        def is_configured(self) -> bool:
+            return False
+
+    intent = aelin_router._build_intent_contract(
+        query="nba recent results",
+        service=_FakeService(),
+        provider="openai",
+        memory_summary="",
+        tracking_snapshot={"active_count": 0, "matched_count": 0},
+    )
+    assert intent.get("intent_source") == "fallback"
+    assert intent.get("requires_citations") is True
+    assert intent.get("sports_result_intent") is True
+    assert str(intent.get("time_scope") or "") in {"recent", "today"}
+
+
+def test_plan_critic_can_patch_missing_web_path():
+    class _FakeService:
+        def is_configured(self) -> bool:
+            return False
+
+    critic = aelin_router._critic_tool_plan(
+        query="nba recent results",
+        intent_contract={
+            "intent_type": "retrieval",
+            "requires_citations": True,
+            "sports_result_intent": True,
+            "tracking_intent": False,
+        },
+        tool_plan={
+            "need_local_search": True,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [{"kind": "local", "query": "nba", "scope": "local"}],
+            "route": {"reply_agent": True, "trace_agent": False, "allow_web_retry": False},
+        },
+        service=_FakeService(),
+        provider="rule_based",
+    )
+    assert critic.get("accepted") is False
+    patch = critic.get("patch") or {}
+    assert patch.get("need_web_search") is True
+    assert isinstance(patch.get("web_queries"), list) and patch.get("web_queries")
+
+
+def test_aelin_chat_critic_patch_can_enable_web_retrieval(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "nba recent results",
+            "intent_type": "retrieval",
+            "time_scope": "recent",
+            "freshness_hours": 24,
+            "requires_citations": True,
+            "requires_factuality": True,
+            "sports_result_intent": True,
+            "tracking_intent": False,
+            "ambiguities": [],
+            "confidence": 0.9,
+            "reason": "test_intent",
+            "intent_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": True,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [{"kind": "local", "query": "nba", "scope": "local"}],
+            "track_suggestion": None,
+            "route": {"reply_agent": True, "trace_agent": False, "allow_web_retry": False},
+            "reason": "test_plan_without_web",
+            "planner_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": False,
+            "issues": ["missing_web_for_citation_intent"],
+            "patch": {
+                "need_web_search": True,
+                "web_queries": ["nba recent results latest score"],
+                "context_boundaries": [
+                    {"kind": "local", "query": "nba", "scope": "local"},
+                    {"kind": "web", "query": "nba recent results latest score", "scope": "score"},
+                ],
+                "route": {"reply_agent": True, "trace_agent": False, "allow_web_retry": True},
+            },
+            "reason": "test_patch",
+            "critic_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title="Warriors 130-119 Spurs",
+                url="https://example.com/nba/box",
+                snippet="Warriors 130-119 Spurs",
+                fetched_excerpt="Warriors 130-119 Spurs",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "nba recent results", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert any((it.get("source") == "web") for it in (data.get("citations") or []))
+    stages = [str(it.get("stage") or "") for it in (data.get("tool_trace") or [])]
+    assert "plan_critic" in stages
+    assert any(stage.startswith("web_search_subagent_") for stage in stages)
 
 
 def test_expression_tag_parsing_and_normalization():
@@ -276,3 +815,243 @@ def test_expression_tag_parsing_and_normalization():
 
     fallback = aelin_router._pick_expression("今天这事为什么这样？", "先别急，我来解释。")
     assert fallback in aelin_router._AELIN_EXPRESSION_IDS
+
+def test_aelin_chat_local_subagents_execute_in_parallel(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "local retrieval",
+            "intent_type": "retrieval",
+            "time_scope": "any",
+            "freshness_hours": 720,
+            "requires_citations": False,
+            "requires_factuality": False,
+            "sports_result_intent": False,
+            "tracking_intent": False,
+            "ambiguities": [],
+            "confidence": 0.8,
+            "reason": "test_intent",
+            "intent_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": True,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [
+                {"kind": "local", "query": "topic a", "scope": "A"},
+                {"kind": "local", "query": "topic b", "scope": "B"},
+                {"kind": "local", "query": "topic c", "scope": "C"},
+            ],
+            "trace_context_boundaries": [],
+            "track_suggestion": None,
+            "route": {"reply_agent": True, "trace_agent": False, "allow_web_retry": False},
+            "reason": "test_local_parallel",
+            "planner_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": True,
+            "issues": [],
+            "patch": None,
+            "reason": "test_critic_accept",
+            "critic_source": "llm",
+        },
+    )
+
+    original_build_context_bundle = aelin_router._build_context_bundle
+
+    def _slow_local_bundle(db, user_id, *, workspace: str, query: str):
+        bundle = original_build_context_bundle(db, user_id, workspace=workspace, query=query)
+        if query.strip():
+            time.sleep(0.24)
+            return {
+                "workspace": bundle.get("workspace", workspace),
+                "summary": bundle.get("summary", ""),
+                "focus_items": [],
+                "focus_items_raw": [],
+                "notes": [],
+                "notes_count": 0,
+                "todos": bundle.get("todos", []),
+                "pin_recommendations": bundle.get("pin_recommendations", []),
+                "daily_brief": bundle.get("daily_brief"),
+                "layout_cards": bundle.get("layout_cards", []),
+            }
+        return bundle
+
+    monkeypatch.setattr(aelin_router, "_build_context_bundle", _slow_local_bundle)
+
+    started = time.perf_counter()
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "帮我从本地记忆里找重点", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    elapsed = time.perf_counter() - started
+
+    assert resp.status_code == 200, resp.text
+    assert elapsed < 0.62
+    stages = [str(it.get("stage") or "") for it in (resp.json().get("tool_trace") or [])]
+    assert any(stage.startswith("local_search_subagent_") for stage in stages)
+
+
+def test_aelin_chat_trace_agent_dispatches_local_and_web_subagents(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "tracking",
+            "intent_type": "tracking",
+            "time_scope": "recent",
+            "freshness_hours": 24,
+            "requires_citations": False,
+            "requires_factuality": True,
+            "sports_result_intent": False,
+            "tracking_intent": True,
+            "ambiguities": [],
+            "confidence": 0.9,
+            "reason": "test_intent_tracking",
+            "intent_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [],
+            "trace_context_boundaries": [
+                {"kind": "local", "query": "minimax memory", "scope": "memory"},
+                {"kind": "web", "query": "minimax latest model release", "scope": "release"},
+            ],
+            "track_suggestion": {
+                "target": "minimax 模型更新",
+                "source": "web",
+                "reason": "test_trace_dispatch",
+            },
+            "route": {"reply_agent": True, "trace_agent": True, "allow_web_retry": False},
+            "reason": "test_trace_route",
+            "planner_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": True,
+            "issues": [],
+            "patch": None,
+            "reason": "test_critic_accept",
+            "critic_source": "llm",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router._web_search,
+        "search_and_fetch",
+        lambda query, max_results=6, fetch_top_k=3: [
+            WebSearchResult(
+                title=f"{query} - result",
+                url=f"https://example.com/{abs(hash(query)) % 100000}",
+                snippet="trace web result",
+                fetched_excerpt="trace web result fetched excerpt",
+            )
+        ],
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "帮我持续追踪 minimax 模型更新", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    stages = [str(it.get("stage") or "") for it in (data.get("tool_trace") or [])]
+    assert "trace_dispatch" in stages
+    assert any(stage.startswith("trace_local_subagent_") for stage in stages)
+    assert any(stage.startswith("trace_web_subagent_") for stage in stages)
+    assert any((it.get("kind") == "confirm_track") for it in (data.get("actions") or []))
+
+
+def test_aelin_chat_fallback_route_is_not_force_overridden(monkeypatch):
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    monkeypatch.setattr(
+        aelin_router,
+        "_build_intent_contract",
+        lambda **kwargs: {
+            "goal": "chat",
+            "intent_type": "chat",
+            "time_scope": "any",
+            "freshness_hours": 720,
+            "requires_citations": False,
+            "requires_factuality": False,
+            "sports_result_intent": False,
+            "tracking_intent": False,
+            "ambiguities": [],
+            "confidence": 0.9,
+            "reason": "test_intent_chat",
+            "intent_source": "fallback",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_plan_tool_usage",
+        lambda **kwargs: {
+            "need_local_search": False,
+            "need_web_search": False,
+            "web_queries": [],
+            "context_boundaries": [],
+            "trace_context_boundaries": [{"kind": "web", "query": "nba today result", "scope": "score"}],
+            "track_suggestion": None,
+            "route": {"reply_agent": True, "trace_agent": False, "allow_web_retry": False},
+            "reason": "test_no_hard_override",
+            "planner_source": "fallback",
+        },
+    )
+    monkeypatch.setattr(
+        aelin_router,
+        "_critic_tool_plan",
+        lambda **kwargs: {
+            "accepted": True,
+            "issues": [],
+            "patch": None,
+            "reason": "test_critic_accept",
+            "critic_source": "llm",
+        },
+    )
+
+    resp = client.post(
+        "/api/v1/aelin/chat",
+        json={"query": "please track today's nba result", "use_memory": True, "workspace": "default"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    trace_agent_step = next(
+        (it for it in (data.get("tool_trace") or []) if (it.get("stage") == "trace_agent")),
+        None,
+    )
+    assert isinstance(trace_agent_step, dict)
+    assert trace_agent_step.get("status") == "skipped"
+    web_step = next(
+        (it for it in (data.get("tool_trace") or []) if (it.get("stage") == "web_search")),
+        None,
+    )
+    assert isinstance(web_step, dict)
+    assert web_step.get("status") == "skipped"

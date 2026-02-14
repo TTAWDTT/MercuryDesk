@@ -44,6 +44,7 @@ import {
   AelinToolStep,
   MessageDetail,
   aelinChat,
+  aelinChatStream,
   aelinConfirmTrack,
   getAelinTracking,
   getAelinContext,
@@ -300,6 +301,25 @@ function formatIsoTime(raw: string | null | undefined) {
   });
 }
 
+function traceParallelLane(stage: string): string | null {
+  const normalized = (stage || "").toLowerCase().trim();
+  if (normalized.startsWith("web_search_subagent_")) return "reply_web";
+  if (normalized.startsWith("local_search_subagent_")) return "reply_local";
+  if (normalized.startsWith("trace_web_subagent_")) return "trace_web";
+  if (normalized.startsWith("trace_local_subagent_")) return "trace_local";
+  return null;
+}
+
+function traceParallelLabel(lane: string): string {
+  const map: Record<string, string> = {
+    reply_web: "Reply/Web",
+    reply_local: "Reply/Local",
+    trace_web: "Trace/Web",
+    trace_local: "Trace/Local",
+  };
+  return map[lane] || lane;
+}
+
 function normalizeExpressionId(raw: string | null | undefined): AelinExpressionId | undefined {
   const text = String(raw || "").trim().toLowerCase();
   if (!text) return undefined;
@@ -418,22 +438,101 @@ function toPersistedMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 function normalizeTraceStep(step: AelinToolStep): AelinToolStep {
+  const rawTs = Number(step.ts || 0);
+  const safeTs = Number.isFinite(rawTs) && rawTs > 0 ? Math.floor(rawTs) : 0;
   return {
     stage: (step.stage || "stage").toLowerCase(),
     status: (step.status || "completed").toLowerCase(),
     detail: step.detail || "",
     count: Number(step.count || 0),
+    ts: safeTs,
   };
 }
 
+function upsertTraceStep(steps: AelinToolStep[], incoming: AelinToolStep): AelinToolStep[] {
+  const next = normalizeTraceStep(incoming);
+  const base = (steps || []).map(normalizeTraceStep);
+  const idx = base.findIndex((item) => item.stage === next.stage);
+  if (idx >= 0) {
+    const prev = base[idx];
+    const prevTs = Number(prev.ts || 0);
+    const nextTs = Number(next.ts || 0);
+    base[idx] = {
+      ...next,
+      ts: nextTs > 0 ? nextTs : prevTs > 0 ? prevTs : Date.now(),
+    };
+  } else {
+    const nextTs = Number(next.ts || 0);
+    base.push({
+      ...next,
+      ts: nextTs > 0 ? nextTs : Date.now(),
+    });
+  }
+  base.sort((a, b) => {
+    const ta = Number(a.ts || 0);
+    const tb = Number(b.ts || 0);
+    if (ta > 0 && tb > 0 && ta !== tb) return ta - tb;
+    if (ta > 0 && tb <= 0) return -1;
+    if (ta <= 0 && tb > 0) return 1;
+    return a.stage.localeCompare(b.stage);
+  });
+  return base.slice(-64);
+}
+
+function mergeCitations(existing: AelinCitation[], incoming: AelinCitation[], limit = 12): AelinCitation[] {
+  const out: AelinCitation[] = [];
+  const seen = new Set<string>();
+  for (const row of [...(existing || []), ...(incoming || [])]) {
+    const key = `${row.message_id || 0}:${row.source || ""}:${row.title || ""}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 function toolStepLabel(stage: string): string {
+  const normalized = (stage || "").toLowerCase().trim();
+  if (normalized.startsWith("web_search_subagent_")) {
+    const idx = Number(normalized.split("web_search_subagent_")[1] || "");
+    return Number.isFinite(idx) && idx > 0 ? `Reply Web Subagent ${idx}` : "Reply Web Subagent";
+  }
+  if (normalized.startsWith("local_search_subagent_")) {
+    const idx = Number(normalized.split("local_search_subagent_")[1] || "");
+    return Number.isFinite(idx) && idx > 0 ? `Reply Local Subagent ${idx}` : "Reply Local Subagent";
+  }
+  if (normalized.startsWith("trace_agent_prefetch_")) {
+    const idx = Number(normalized.split("trace_agent_prefetch_")[1] || "");
+    return Number.isFinite(idx) && idx > 0 ? `Trace Prefetch ${idx}` : "Trace Prefetch";
+  }
+  if (normalized.startsWith("trace_web_subagent_")) {
+    const idx = Number(normalized.split("trace_web_subagent_")[1] || "");
+    return Number.isFinite(idx) && idx > 0 ? `Trace Web Subagent ${idx}` : "Trace Web Subagent";
+  }
+  if (normalized.startsWith("trace_local_subagent_")) {
+    const idx = Number(normalized.split("trace_local_subagent_")[1] || "");
+    return Number.isFinite(idx) && idx > 0 ? `Trace Local Subagent ${idx}` : "Trace Local Subagent";
+  }
   const map: Record<string, string> = {
-    planner: "规划",
-    local_search: "本地检索",
-    web_search: "联网搜索",
-    generation: "生成回答",
+    planner: "Planner",
+    intent_lens: "Intent Lens",
+    main_agent: "Main Agent",
+    plan_critic: "Plan Critic",
+    query_decomposer: "Query Decomposer",
+    reply_agent: "Reply Agent",
+    reply_dispatch: "Reply Dispatch",
+    local_search: "Local Search",
+    web_search: "Web Search",
+    message_hub: "Message Hub",
+    generation: "Generation",
+    grounding_judge: "Grounding Judge",
+    coverage_verifier: "Coverage Verifier",
+    reply_verifier: "Reply Verifier",
+    trace_agent: "Trace Agent",
+    trace_dispatch: "Trace Dispatch",
   };
-  return map[stage] || stage;
+  return map[normalized] || stage;
 }
 
 function parseScoreCards(text: string): ResultCard[] {
@@ -808,41 +907,130 @@ const CitationPill = React.memo(function CitationPill({
 });
 
 const ToolTraceRow = React.memo(function ToolTraceRow({ steps }: { steps: AelinToolStep[] }) {
-  const normalized = (steps || []).map(normalizeTraceStep).slice(0, 6);
+  const normalized = React.useMemo(() => {
+    const rows = (steps || [])
+      .map(normalizeTraceStep)
+      .filter((it) => String(it.stage || "").trim().length > 0)
+      .sort((a, b) => {
+        const ta = Number(a.ts || 0);
+        const tb = Number(b.ts || 0);
+        if (ta > 0 && tb > 0 && ta !== tb) return ta - tb;
+        if (ta > 0 && tb <= 0) return -1;
+        if (ta <= 0 && tb > 0) return 1;
+        return a.stage.localeCompare(b.stage);
+      });
+    return rows.slice(-64);
+  }, [steps]);
   if (!normalized.length) return null;
+  const parallelGroups = React.useMemo(() => {
+    const bucket = new Map<string, { total: number; running: number; failed: number }>();
+    for (const step of normalized) {
+      const lane = traceParallelLane(step.stage);
+      if (!lane) continue;
+      const prev = bucket.get(lane) || { total: 0, running: 0, failed: 0 };
+      prev.total += 1;
+      if (step.status === "running") prev.running += 1;
+      if (step.status === "failed") prev.failed += 1;
+      bucket.set(lane, prev);
+    }
+    return Array.from(bucket.entries()).map(([lane, info]) => ({ lane, ...info }));
+  }, [normalized]);
   return (
-    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mb: 0.55, px: 0.2 }}>
-      {normalized.map((step, idx) => {
-        const done = step.status === "completed";
-        const running = step.status === "running";
-        const failed = step.status === "failed";
-        const skipped = step.status === "skipped";
-        const color = failed ? "#d1495b" : done ? "#2a9d8f" : skipped ? "#7c7c7c" : "#f4a261";
-        return (
-          <Chip
-            key={`${step.stage}-${idx}`}
-            size="small"
-            variant="outlined"
-            label={`${toolStepLabel(step.stage)}${step.count ? ` ${step.count}` : ""}`}
-            sx={{
-              borderColor: alpha(color, 0.45),
-              color,
-              bgcolor: alpha(color, 0.1),
-              "& .MuiChip-label": { px: 1, fontSize: "0.68rem", fontWeight: 700 },
-              ...(running
-                ? {
-                    "@keyframes tracePulse": {
-                      "0%, 100%": { transform: "scale(1)", filter: "saturate(1)" },
-                      "50%": { transform: "scale(1.04)", filter: "saturate(1.2)" },
-                    },
-                    animation: "tracePulse 900ms ease-in-out infinite",
-                  }
-                : {}),
-            }}
-            title={step.detail || ""}
-          />
-        );
-      })}
+    <Stack spacing={0.4} sx={{ mb: 0.58, px: 0.2 }}>
+      {parallelGroups.length ? (
+        <Stack direction="row" spacing={0.45} flexWrap="wrap" useFlexGap>
+          {parallelGroups.map((group) => {
+            const busy = group.running > 0;
+            const color = group.failed > 0 ? "#d1495b" : busy ? "#f4a261" : "#2a9d8f";
+            const suffix = busy ? ` running ${group.running}` : group.failed ? ` failed ${group.failed}` : " done";
+            return (
+              <Chip
+                key={group.lane}
+                size="small"
+                variant="outlined"
+                label={`${traceParallelLabel(group.lane)} x${group.total}${suffix}`}
+                sx={{
+                  borderColor: alpha(color, 0.45),
+                  color,
+                  bgcolor: alpha(color, 0.1),
+                  "& .MuiChip-label": { px: 0.8, fontSize: "0.66rem", fontWeight: 700 },
+                }}
+              />
+            );
+          })}
+        </Stack>
+      ) : null}
+
+      <Stack spacing={0.34}>
+        {normalized.map((step, idx) => {
+          const done = step.status === "completed";
+          const running = step.status === "running";
+          const failed = step.status === "failed";
+          const skipped = step.status === "skipped";
+          const color = failed ? "#d1495b" : done ? "#2a9d8f" : skipped ? "#7c7c7c" : "#f4a261";
+          return (
+            <Box
+              key={`${step.stage}-${idx}-${Number(step.ts || 0) || 0}`}
+              title={failed ? step.detail || "" : ""}
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "10px 1fr",
+                alignItems: "flex-start",
+                gap: 0.58,
+                px: 0.48,
+                py: 0.32,
+                borderRadius: 1,
+                border: "1px solid",
+                borderColor: alpha(color, 0.2),
+                bgcolor: alpha(color, 0.06),
+              }}
+            >
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: color,
+                  mt: 0.45,
+                  ...(running
+                    ? {
+                        "@keyframes tracePulseDot": {
+                          "0%, 100%": { transform: "scale(1)", opacity: 0.7 },
+                          "50%": { transform: "scale(1.25)", opacity: 1 },
+                        },
+                        animation: "tracePulseDot 900ms ease-in-out infinite",
+                      }
+                    : {}),
+                }}
+              />
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="caption" sx={{ display: "block", fontWeight: 700, fontSize: "0.69rem", lineHeight: 1.2 }}>
+                  {toolStepLabel(step.stage)}
+                  {step.count ? ` ${step.count}` : ""}
+                </Typography>
+                {failed && step.detail ? (
+                  <Typography
+                    variant="caption"
+                    color="error.main"
+                    sx={{
+                      display: "-webkit-box",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      lineHeight: 1.22,
+                      fontSize: "0.64rem",
+                      mt: 0.08,
+                    }}
+                  >
+                    {step.detail}
+                  </Typography>
+                ) : null}
+              </Box>
+            </Box>
+          );
+        })}
+      </Stack>
     </Stack>
   );
 });
@@ -1696,7 +1884,7 @@ export default function Aelin({
                     content: "",
                     ts: nowTs + 1,
                     pending: true,
-                    tool_trace: [{ stage: "planner", status: "running", detail: "正在规划工具链路", count: 0 }],
+                    tool_trace: [{ stage: "main_agent", status: "running", detail: "主控已接收请求", count: 0, ts: nowTs + 1 }],
                   },
                 ],
                 title: deriveSessionTitle([
@@ -1709,47 +1897,235 @@ export default function Aelin({
         )
       );
 
+      let finalResult: {
+        answer: string;
+        expression: string;
+        citations: AelinCitation[];
+        actions: AelinAction[];
+        tool_trace: AelinToolStep[];
+      } | null = null;
+
       try {
-        const result = await aelinChat(requestQuery, {
+        const stream = aelinChatStream(requestQuery, {
           use_memory: true,
           max_citations: 8,
           workspace: workspaceScope,
           images: imagesForSend,
           history: historyForSend,
+          search_mode: "auto",
         });
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.id === sessionIdAtSend
-              ? {
-                  ...session,
-                  messages: session.messages.map((item) =>
-                        item.id === assistantId
-                      ? {
-                          ...item,
-                          pending: false,
-                          content: result.answer || "当前未生成文本回答。",
-                          expression: normalizeExpressionId(result.expression),
-                          citations: result.citations || [],
-                          actions: result.actions || [],
-                          tool_trace: (result.tool_trace || []).map(normalizeTraceStep),
-                        }
-                      : item
-                  ),
-                  updated_at: Date.now(),
-                }
-              : session
-          )
-        );
-        setLatestSparkMessageId(assistantId);
-        const trackAction = (result.actions || []).find((it) => it.kind === "confirm_track");
-        if (trackAction) {
-          const target = (trackAction.payload.target || "").trim().toLowerCase();
-          if (!dismissedTrackTargetsRef.current[target]) {
-            setTrackingSheet({ action: trackAction, messageId: assistantId });
+
+        for await (const evt of stream) {
+          if (evt.type === "start") {
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionIdAtSend
+                  ? {
+                      ...session,
+                      messages: session.messages.map((item) =>
+                        item.id === assistantId && item.pending
+                          ? {
+                              ...item,
+                              tool_trace: upsertTraceStep(item.tool_trace || [], {
+                                stage: "main_agent",
+                                status: "running",
+                                detail: "主控开始编排子任务",
+                                count: 1,
+                              }),
+                            }
+                          : item
+                      ),
+                    }
+                  : session
+              )
+            );
+            continue;
           }
-        } else {
-          setTrackingSheet(null);
+
+          if (evt.type === "trace") {
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionIdAtSend
+                  ? {
+                      ...session,
+                      messages: session.messages.map((item) =>
+                        item.id === assistantId && item.pending
+                          ? {
+                              ...item,
+                              tool_trace: upsertTraceStep(item.tool_trace || [], evt.step),
+                            }
+                          : item
+                      ),
+                    }
+                  : session
+              )
+            );
+            continue;
+          }
+
+          if (evt.type === "evidence") {
+            const citation = evt.citation;
+            const queryText = (evt.query || "").trim() || "检索子任务";
+            const queryIndex = Number(evt.progress?.query_index || 0);
+            const queryTotal = Number(evt.progress?.query_total || 0);
+            const evidenceCount = Number(evt.progress?.evidence_count || 0);
+            const sourceBits = [evt.provider || "", evt.fetch_mode || ""].filter((x) => !!x.trim()).join("/");
+            const progressText =
+              queryTotal > 0
+                ? ` (${Math.min(Math.max(queryIndex, 1), queryTotal)}/${queryTotal})`
+                : "";
+            const sourceText = sourceBits ? ` [${sourceBits}]` : "";
+            const detail = `证据命中：${queryText}${progressText}${sourceText}`;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionIdAtSend
+                  ? {
+                      ...session,
+                      messages: session.messages.map((item) =>
+                        item.id === assistantId && item.pending
+                          ? {
+                              ...item,
+                              citations: mergeCitations(item.citations || [], [citation], 12),
+                              tool_trace: upsertTraceStep(
+                                upsertTraceStep(item.tool_trace || [], {
+                                  stage: "web_search",
+                                  status: "running",
+                                  detail,
+                                  count: evidenceCount,
+                                }),
+                                {
+                                  stage: "message_hub",
+                                  status: "running",
+                                  detail: "证据汇聚中",
+                                  count: evidenceCount,
+                                }
+                              ),
+                            }
+                          : item
+                      ),
+                    }
+                  : session
+              )
+            );
+            continue;
+          }
+
+          if (evt.type === "confirmed") {
+            const target = (evt.items || [])[0] || "";
+            const sourceCount = Number(evt.source_count || 0);
+            const detail = target
+              ? `建议追踪：${target}${sourceCount > 0 ? `（来源 ${sourceCount}）` : ""}`
+              : "识别到可追踪主题";
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionIdAtSend
+                  ? {
+                      ...session,
+                      messages: session.messages.map((item) =>
+                        item.id === assistantId && item.pending
+                          ? {
+                              ...item,
+                              tool_trace: upsertTraceStep(item.tool_trace || [], {
+                                stage: "trace_agent",
+                                status: "completed",
+                                detail,
+                                count: Number((evt.items || []).length || 0),
+                              }),
+                            }
+                          : item
+                      ),
+                    }
+                  : session
+              )
+            );
+            continue;
+          }
+
+          if (evt.type === "final") {
+            finalResult = evt.result;
+            setSessions((prev) =>
+              prev.map((session) =>
+                session.id === sessionIdAtSend
+                  ? {
+                      ...session,
+                      messages: session.messages.map((item) =>
+                        item.id === assistantId
+                          ? {
+                              ...item,
+                              pending: false,
+                              content: evt.result.answer || "当前未生成文本回答。",
+                              expression: normalizeExpressionId(evt.result.expression),
+                              citations: mergeCitations(item.citations || [], evt.result.citations || [], 12),
+                              actions: evt.result.actions || [],
+                              tool_trace: (evt.result.tool_trace || []).map(normalizeTraceStep),
+                            }
+                          : item
+                      ),
+                      updated_at: Date.now(),
+                    }
+                  : session
+              )
+            );
+            continue;
+          }
+
+          if (evt.type === "error") {
+            throw new Error(evt.message || "stream error");
+          }
+
+          if (evt.type === "done") {
+            continue;
+          }
         }
+
+        if (!finalResult) {
+          const result = await aelinChat(requestQuery, {
+            use_memory: true,
+            max_citations: 8,
+            workspace: workspaceScope,
+            images: imagesForSend,
+            history: historyForSend,
+            search_mode: "auto",
+          });
+          finalResult = result;
+          setSessions((prev) =>
+            prev.map((session) =>
+              session.id === sessionIdAtSend
+                ? {
+                    ...session,
+                    messages: session.messages.map((item) =>
+                      item.id === assistantId
+                        ? {
+                            ...item,
+                            pending: false,
+                            content: result.answer || "当前未生成文本回答。",
+                            expression: normalizeExpressionId(result.expression),
+                            citations: mergeCitations(item.citations || [], result.citations || [], 12),
+                            actions: result.actions || [],
+                            tool_trace: (result.tool_trace || []).map(normalizeTraceStep),
+                          }
+                        : item
+                    ),
+                    updated_at: Date.now(),
+                  }
+                : session
+            )
+          );
+        }
+
+        if (finalResult) {
+          setLatestSparkMessageId(assistantId);
+          const trackAction = (finalResult.actions || []).find((it) => it.kind === "confirm_track");
+          if (trackAction) {
+            const target = (trackAction.payload.target || "").trim().toLowerCase();
+            if (!dismissedTrackTargetsRef.current[target]) {
+              setTrackingSheet({ action: trackAction, messageId: assistantId });
+            }
+          } else {
+            setTrackingSheet(null);
+          }
+        }
+
         void refreshContext();
       } catch (error) {
         setSessions((prev) =>
@@ -1758,7 +2134,7 @@ export default function Aelin({
               ? {
                   ...session,
                   messages: session.messages.map((item) =>
-                        item.id === assistantId
+                    item.id === assistantId
                       ? {
                           ...item,
                           pending: false,
@@ -1767,15 +2143,20 @@ export default function Aelin({
                               ? `请求失败：${error.message}`
                               : "请求失败，请稍后重试。",
                           expression: "exp-07",
-                          tool_trace: [
-                            { stage: "planner", status: "completed", detail: "request prepared", count: 1 },
+                          tool_trace: upsertTraceStep(
+                            upsertTraceStep(item.tool_trace || [], {
+                              stage: "main_agent",
+                              status: "completed",
+                              detail: "请求已发出",
+                              count: 1,
+                            }),
                             {
                               stage: "generation",
                               status: "failed",
                               detail: error instanceof Error ? error.message : "request failed",
                               count: 0,
-                            },
-                          ],
+                            }
+                          ),
                         }
                       : item
                   ),

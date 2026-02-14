@@ -133,7 +133,10 @@ export type AelinToolStep = {
   status: string;
   detail?: string;
   count?: number;
+  ts?: number;
 };
+
+export type AelinSearchMode = "auto" | "local_only" | "web_only";
 
 export type AelinImageInput = {
   data_url: string;
@@ -167,6 +170,23 @@ export type AelinChatResponse = {
   memory_summary: string;
   generated_at: string;
 };
+
+export type AelinChatStreamEvent =
+  | { type: "start"; payload: Record<string, unknown> }
+  | { type: "trace"; step: AelinToolStep }
+  | {
+      type: "evidence";
+      citation: AelinCitation;
+      snippet?: string;
+      query?: string;
+      provider?: string;
+      fetch_mode?: string;
+      progress?: { query_index?: number; query_total?: number; evidence_count?: number };
+    }
+  | { type: "confirmed"; items: string[]; source_count?: number; sources?: string[] }
+  | { type: "final"; result: AelinChatResponse }
+  | { type: "error"; message: string }
+  | { type: "done"; payload: Record<string, unknown> };
 
 export type AelinTrackConfirmResponse = {
   status: string;
@@ -620,6 +640,34 @@ async function* streamFetch(path: string, init: RequestInit = {}, signal?: Abort
   }
 }
 
+async function* streamSSE(
+  path: string,
+  init: RequestInit = {},
+  signal?: AbortSignal
+): AsyncGenerator<{ event: string; data: string }, void, unknown> {
+  let buffer = "";
+  for await (const chunk of streamFetch(path, init, signal)) {
+    buffer += chunk.replace(/\r\n/g, "\n");
+    while (true) {
+      const sep = buffer.indexOf("\n\n");
+      if (sep < 0) break;
+      const block = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      if (!block.trim()) continue;
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event:")) {
+          event = line.slice(6).trim() || "message";
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trimStart());
+        }
+      }
+      yield { event, data: dataLines.join("\n") };
+    }
+  }
+}
+
 export async function* agentSummarizeStream(text: string, signal?: AbortSignal): AsyncGenerator<string, void, unknown> {
   yield* streamFetch("/api/v1/agent/summarize/stream", {
     method: "POST",
@@ -675,6 +723,7 @@ export async function aelinChat(
     workspace?: string;
     images?: AelinImageInput[];
     history?: AelinChatHistoryTurn[];
+    search_mode?: AelinSearchMode;
   }
 ): Promise<AelinChatResponse> {
   return await fetchJson<AelinChatResponse>("/api/v1/aelin/chat", {
@@ -696,8 +745,114 @@ export async function aelinChat(
           role: item.role,
           content: String(item.content || "").trim(),
         })),
+      search_mode: options?.search_mode || "auto",
     }),
   });
+}
+
+export async function* aelinChatStream(
+  query: string,
+  options?: {
+    use_memory?: boolean;
+    max_citations?: number;
+    workspace?: string;
+    images?: AelinImageInput[];
+    history?: AelinChatHistoryTurn[];
+    search_mode?: AelinSearchMode;
+  },
+  signal?: AbortSignal
+): AsyncGenerator<AelinChatStreamEvent, void, unknown> {
+  const body = JSON.stringify({
+    query,
+    use_memory: options?.use_memory ?? true,
+    max_citations: options?.max_citations ?? 6,
+    workspace: options?.workspace?.trim() || "default",
+    images: (options?.images || []).slice(0, 4).map((item) => ({
+      data_url: item.data_url,
+      name: item.name || "",
+    })),
+    history: (options?.history || [])
+      .filter((item) => item && (item.role === "user" || item.role === "assistant") && String(item.content || "").trim())
+      .slice(-12)
+      .map((item) => ({
+        role: item.role,
+        content: String(item.content || "").trim(),
+      })),
+    search_mode: options?.search_mode || "auto",
+  });
+
+  for await (const packet of streamSSE(
+    "/api/v1/aelin/chat/stream",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    },
+    signal
+  )) {
+    let parsed: any = {};
+    if ((packet.data || "").trim()) {
+      try {
+        parsed = JSON.parse(packet.data);
+      } catch {
+        parsed = {};
+      }
+    }
+    if (packet.event === "start") {
+      yield { type: "start", payload: (parsed || {}) as Record<string, unknown> };
+      continue;
+    }
+    if (packet.event === "trace") {
+      const step = parsed?.step;
+      if (step && typeof step === "object" && typeof step.stage === "string") {
+        yield { type: "trace", step: step as AelinToolStep };
+      }
+      continue;
+    }
+    if (packet.event === "evidence") {
+      const citation = parsed?.citation;
+      if (citation && typeof citation === "object" && typeof citation.source === "string") {
+        yield {
+          type: "evidence",
+          citation: citation as AelinCitation,
+          snippet: typeof parsed?.snippet === "string" ? parsed.snippet : "",
+          query: typeof parsed?.query === "string" ? parsed.query : "",
+          provider: typeof parsed?.provider === "string" ? parsed.provider : "",
+          fetch_mode: typeof parsed?.fetch_mode === "string" ? parsed.fetch_mode : "",
+          progress: (parsed?.progress && typeof parsed.progress === "object")
+            ? (parsed.progress as { query_index?: number; query_total?: number; evidence_count?: number })
+            : undefined,
+        };
+      }
+      continue;
+    }
+    if (packet.event === "confirmed") {
+      const items = Array.isArray(parsed?.items) ? parsed.items.filter((x: unknown) => typeof x === "string") as string[] : [];
+      yield {
+        type: "confirmed",
+        items,
+        source_count: Number(parsed?.source_count || 0) || 0,
+        sources: Array.isArray(parsed?.sources) ? parsed.sources.filter((x: unknown) => typeof x === "string") as string[] : [],
+      };
+      continue;
+    }
+    if (packet.event === "final") {
+      const result = parsed?.result;
+      if (result && typeof result === "object" && typeof result.answer === "string") {
+        yield { type: "final", result: result as AelinChatResponse };
+      }
+      continue;
+    }
+    if (packet.event === "error") {
+      const message = String(parsed?.message || "stream error").trim() || "stream error";
+      yield { type: "error", message };
+      continue;
+    }
+    if (packet.event === "done") {
+      yield { type: "done", payload: (parsed || {}) as Record<string, unknown> };
+      continue;
+    }
+  }
 }
 
 export async function aelinConfirmTrack(payload: {

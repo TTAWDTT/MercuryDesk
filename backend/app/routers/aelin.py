@@ -2,17 +2,24 @@ from __future__ import annotations
 
 import json
 import hashlib
+import queue
 import re
-from datetime import datetime, timezone
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections import Counter
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import crud
+from app.db import create_session
 from app.connectors.douyin import _extract_sec_uid as extract_douyin_uid
 from app.connectors.xiaohongshu import _extract_user_id as extract_xhs_uid
 from app.connectors.weibo import _extract_uid as extract_weibo_uid
@@ -63,6 +70,10 @@ _TRACKABLE_SOURCES = {
     "bilibili",
     "email",
 }
+
+_MAX_WEB_SUBAGENTS = 5
+_MAX_LOCAL_SUBAGENTS = 5
+_MAX_CONTEXT_BOUNDARIES = 10
 
 _AELIN_EXPRESSION_IDS = {
     "exp-01",
@@ -487,6 +498,27 @@ def _parse_json_object(raw: str) -> dict[str, Any] | None:
         return None
 
 
+def _parse_json_payload(raw: str) -> Any | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Accept fenced JSON payloads and both object/array roots.
+    for pattern in (r"\{[\s\S]*\}", r"\[[\s\S]*\]"):
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        try:
+            return json.loads(match.group(0))
+        except Exception:
+            continue
+    return None
+
+
 def _normalize_track_source(raw: str) -> str:
     src = (raw or "").strip().lower()
     alias = {
@@ -502,19 +534,998 @@ def _normalize_track_source(raw: str) -> str:
     return "auto"
 
 
-def _normalize_web_queries(query: str, items: Any) -> list[str]:
+def _normalize_web_queries(query: str, items: Any, *, limit: int = _MAX_WEB_SUBAGENTS) -> list[str]:
+    safe_limit = max(1, min(_MAX_WEB_SUBAGENTS, int(limit or _MAX_WEB_SUBAGENTS)))
     out: list[str] = []
+    seen: set[str] = set()
+    seen_sig: set[str] = set()
+
+    def _query_sig(text: str) -> str:
+        base = str(text or "").strip().lower()
+        if not base:
+            return ""
+        normalized = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", base)
+        for phrase in (
+            "latest",
+            "recent",
+            "today",
+            "yesterday",
+            "now",
+            "current",
+            "\u6700\u65b0",  # 最新
+            "\u6700\u8fd1",  # 最近
+            "\u4eca\u5929",  # 今天
+            "\u6628\u5929",  # 昨天
+            "\u524d\u5929",  # 前天
+            "\u521a\u521a",  # 刚刚
+            "\u5b9e\u65f6",  # 实时
+            "\u76ee\u524d",  # 目前
+            "\u6709\u4ec0\u4e48",  # 有什么
+            "\u6709\u54ea\u4e9b",  # 有哪些
+            "\u6709\u5565",  # 有啥
+            "\u6709\u6ca1\u6709",  # 有没有
+            "\u8bf7\u95ee",  # 请问
+            "\u5e2e\u6211",  # 帮我
+            "\u544a\u8bc9\u6211",  # 告诉我
+        ):
+            normalized = normalized.replace(phrase, " ")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        normalized = re.sub(r"[\u6709\u662f\u4e86\u5417\u5462\u5427\u5440\u554a\u4e48\u561b]+$", "", normalized).strip()
+        return normalized or base
+
     if isinstance(items, list):
         for it in items:
-            text = str(it or "").strip()
+            text = str(it or "").strip()[:180]
             if not text:
                 continue
-            out.append(text[:180])
-            if len(out) >= 3:
+            key = text.lower()
+            if key in seen:
+                continue
+            sig = _query_sig(text)
+            if sig and sig in seen_sig:
+                continue
+            seen.add(key)
+            if sig:
+                seen_sig.add(sig)
+            out.append(text)
+            if len(out) >= safe_limit:
                 break
     if not out and query.strip():
         out.append(query.strip()[:180])
-    return out[:3]
+    return out[:safe_limit]
+
+
+def _is_cjk_text(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff]", text or ""))
+
+
+def _extract_search_subject_dynamic(query: str) -> str:
+    text = (query or "").strip()
+    if not text:
+        return ""
+
+    cleaned = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", text)
+    lowered = cleaned.lower()
+    stop_phrases_cjk = [
+        "\u6700\u8fd1",
+        "\u6700\u65b0",
+        "\u4eca\u5929",
+        "\u6628\u5929",
+        "\u524d\u5929",
+        "\u521a\u521a",
+        "\u5b9e\u65f6",
+        "\u6253\u4e86",
+        "\u6253\u4ec0\u4e48",
+        "\u8fdb\u884c\u4e86",
+        "\u6709\u4ec0\u4e48",
+        "\u6709\u54ea\u4e9b",
+        "\u6709\u5565",
+        "\u6709\u6ca1\u6709",
+        "\u6709\u5426",
+        "\u4ec0\u4e48",
+        "\u54ea\u4e9b",
+        "\u51e0\u573a",
+        "\u6bd4\u8d5b",
+        "\u8d5b\u679c",
+        "\u6bd4\u5206",
+        "\u7ed3\u679c",
+        "\u60c5\u51b5",
+        "\u662f\u591a\u5c11",
+        "\u591a\u5c11",
+        "\u544a\u8bc9\u6211",
+        "\u5e2e\u6211",
+        "\u4e00\u4e0b",
+        "\u8bf7\u95ee",
+        "\u600e\u4e48",
+        "\u5982\u4f55",
+    ]
+    stop_phrases_en = [
+        "who won",
+        "what",
+        "latest",
+        "recent",
+        "today",
+        "yesterday",
+        "result",
+        "results",
+        "score",
+        "scores",
+        "game",
+        "games",
+        "match",
+        "matches",
+    ]
+    subject = lowered
+    for phrase in stop_phrases_cjk:
+        subject = subject.replace(phrase, " ")
+    for phrase in stop_phrases_en:
+        subject = re.sub(rf"\b{re.escape(phrase)}\b", " ", subject)
+    subject = re.sub(r"\s+", " ", subject).strip()
+    # Drop dangling one-letter latin leftovers such as the trailing "s" from "games".
+    subject = " ".join(token for token in subject.split(" ") if (len(token) > 1 or bool(re.search(r"[\u4e00-\u9fff]", token))))
+    subject = re.sub(r"[\u6709\u662f\u4e86\u5417\u5462\u5427\u5440\u554a\u4e48\u561b]+$", "", subject).strip()
+    if len(subject) >= 2:
+        return subject[:90]
+
+    leagues = re.findall(r"\b(?:nba|wnba|cba|nfl|nhl|mlb|epl)\b", lowered, flags=re.I)
+    if leagues:
+        uniq: list[str] = []
+        seen: set[str] = set()
+        for row in leagues:
+            key = row.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(row.upper())
+        return " ".join(uniq)[:90]
+
+    tokens = re.findall(r"[A-Za-z0-9]{2,}|[\u4e00-\u9fff]{2,}", cleaned)
+    if tokens:
+        return " ".join(tokens[:4])[:90]
+    return text[:90]
+
+
+def _build_web_query_pack_dynamic(
+    *,
+    query: str,
+    base_queries: list[str] | None,
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None = None,
+    limit: int = _MAX_WEB_SUBAGENTS,
+) -> list[str]:
+    query_text = (query or "").strip()
+    if not query_text:
+        return []
+
+    is_cjk = _is_cjk_text(query_text)
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+
+    time_scope = str(contract.get("time_scope") or "").strip().lower()
+    sports_intent = bool(contract.get("sports_result_intent")) or _is_sports_result_query(query_text)
+    requires_citations = bool(contract.get("requires_citations"))
+    freshness_hours = max(1, min(720, _safe_int(contract.get("freshness_hours"), 72)))
+    time_sensitive = time_scope in {"today", "recent", "realtime"} or _is_time_sensitive_query(query_text)
+
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    subject = _extract_search_subject_dynamic(query_text) or query_text
+    focused = subject if len(subject) >= 2 else query_text
+
+    seeds: list[str] = []
+    if focused and focused != query_text:
+        seeds.append(focused[:180])
+
+    # Put one recency-aware facet early so it survives top-k truncation.
+    if time_sensitive:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} \u4eca\u5929",
+                    f"{focused} {today}",
+                ]
+            )
+        else:
+            seeds.extend(
+                [
+                    f"{focused} today",
+                    f"{focused} {today}",
+                    f"{focused} latest",
+                ]
+            )
+
+    if sports_intent:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} \u6bd4\u8d5b\u7ed3\u679c",
+                    f"{focused} \u8d5b\u7a0b",
+                    f"{focused} \u6218\u62a5",
+                    f"{focused} \u5b98\u65b9 \u8d5b\u7a0b",
+                    f"{focused} box score",
+                    f"{focused} game recap",
+                    f"{focused} {today} \u6bd4\u8d5b\u7ed3\u679c",
+                ]
+            )
+        else:
+            seeds.extend(
+                [
+                    f"{focused} match result",
+                    f"{focused} fixtures",
+                    f"{focused} recap",
+                    f"{focused} official schedule",
+                    f"{focused} box score",
+                    f"{focused} game recap",
+                    f"{focused} {today} result",
+                ]
+            )
+
+    if time_sensitive:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} \u6700\u65b0",
+                    f"{focused} \u4eca\u5929",
+                    f"{focused} {today}",
+                    f"{focused} {yesterday}",
+                ]
+            )
+            if freshness_hours <= 48:
+                seeds.append(f"{focused} \u6700\u8fd124\u5c0f\u65f6")
+        else:
+            seeds.extend(
+                [
+                    f"{focused} latest",
+                    f"{focused} today",
+                    f"{focused} {today}",
+                    f"{focused} {yesterday}",
+                ]
+            )
+            if freshness_hours <= 48:
+                seeds.append(f"{focused} last 24 hours")
+
+    if requires_citations:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} \u5b98\u65b9",
+                    f"{focused} \u6570\u636e",
+                    f"{focused} \u6765\u6e90",
+                ]
+            )
+        else:
+            seeds.extend([f"{focused} official", f"{focused} data", f"{focused} source"])
+
+    matched_items = tracking.get("matched_items") if isinstance(tracking.get("matched_items"), list) else []
+    for row in matched_items[:2]:
+        target = str(row.get("target") or row.get("query") or "").strip()[:140]
+        if not target:
+            continue
+        if is_cjk:
+            seeds.append(f"{target} \u6700\u65b0")
+        else:
+            seeds.append(f"{target} latest")
+
+    if isinstance(base_queries, list):
+        seeds.extend(str(it or "").strip()[:180] for it in base_queries if str(it or "").strip())
+    seeds.append(query_text[:180])
+
+    return _normalize_web_queries(query_text, seeds, limit=limit)
+
+
+def _decompose_web_context_boundaries_dynamic(
+    *,
+    query: str,
+    web_boundaries: list[dict[str, str]],
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None,
+    service: LLMService,
+    provider: str,
+) -> dict[str, Any]:
+    query_text = (query or "").strip()
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+    base_queries = [str(it.get("query") or "").strip() for it in web_boundaries if str(it.get("query") or "").strip()]
+
+    fallback_queries = _build_web_query_pack_dynamic(
+        query=query_text,
+        base_queries=base_queries or [query_text],
+        intent_contract=contract,
+        tracking_snapshot=tracking,
+        limit=_MAX_WEB_SUBAGENTS,
+    )
+    scope_map = {
+        str(it.get("query") or "").strip().lower(): str(it.get("scope") or "").strip()
+        for it in web_boundaries
+        if str(it.get("query") or "").strip()
+    }
+    fallback_boundaries = [
+        {"kind": "web", "query": q, "scope": (scope_map.get(q.lower()) or q)[:120]}
+        for q in fallback_queries
+    ]
+
+    if provider == "rule_based" or not service.is_configured():
+        return {
+            "source": "fallback",
+            "reason": "decomposer_unavailable",
+            "boundaries": fallback_boundaries,
+        }
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    prompt = (
+        "You are Aelin Query Decomposer Agent.\n"
+        "Dynamically create temporary web-search subagents (facets) for this request.\n"
+        "Return strict JSON only with schema:\n"
+        "{"
+        "\"facets\": [{\"scope\": string, \"query\": string, \"priority\": number, \"why\": string}],"
+        "\"reason\": string"
+        "}\n"
+        "Rules:\n"
+        "- Create 3 to 5 facets when possible.\n"
+        "- Queries must be short search-ready strings.\n"
+        "- Avoid near-duplicate paraphrases.\n"
+        "- Cover direct answer + verification + authoritative source.\n"
+        "- If time-sensitive, include explicit date/recency facets.\n"
+    )
+    user_msg = (
+        f"user_query: {query_text}\n"
+        f"intent_contract: {json.dumps(contract, ensure_ascii=False, separators=(',', ':'))[:1200]}\n"
+        f"existing_web_queries: {json.dumps(base_queries, ensure_ascii=False, separators=(',', ':'))[:600]}\n"
+        f"matched_tracking_count: {_safe_int(tracking.get('matched_count'), 0)}\n"
+        f"current_utc: {now_utc}\n"
+        "Return JSON only."
+    )
+
+    parsed_payload: Any | None = None
+    retry_used = False
+    try:
+        raw = service._chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=420,
+            stream=False,
+        )
+        parsed_payload = _parse_json_payload(str(raw or ""))
+    except Exception:
+        parsed_payload = None
+
+    if parsed_payload is None:
+        retry_used = True
+        retry_prompt = (
+            "Return JSON only. Root can be {\"facets\": [...], \"reason\": \"...\"} "
+            "or a JSON array of facets."
+        )
+        retry_msg = (
+            f"user_query: {query_text}\n"
+            f"intent_contract: {json.dumps(contract, ensure_ascii=False, separators=(',', ':'))[:800]}\n"
+            f"fallback_candidates: {json.dumps(fallback_queries, ensure_ascii=False, separators=(',', ':'))[:600]}\n"
+            "Generate 3-5 orthogonal facets and return JSON only."
+        )
+        try:
+            raw_retry = service._chat(
+                messages=[
+                    {"role": "system", "content": retry_prompt},
+                    {"role": "user", "content": retry_msg},
+                ],
+                max_tokens=320,
+                stream=False,
+            )
+            parsed_payload = _parse_json_payload(str(raw_retry or ""))
+        except Exception:
+            parsed_payload = None
+
+    if parsed_payload is None:
+        return {
+            "source": "fallback",
+            "reason": "decomposer_invalid_json_retry_failed",
+            "boundaries": fallback_boundaries,
+        }
+
+    parsed_reason = "decomposer_llm"
+    if isinstance(parsed_payload, dict):
+        parsed_reason = str(parsed_payload.get("reason") or "").strip()[:180] or parsed_reason
+
+    raw_facets: Any = None
+    if isinstance(parsed_payload, dict):
+        raw_facets = (
+            parsed_payload.get("facets")
+            or parsed_payload.get("queries")
+            or parsed_payload.get("boundaries")
+            or parsed_payload.get("tasks")
+        )
+    elif isinstance(parsed_payload, list):
+        raw_facets = parsed_payload
+
+    if not isinstance(raw_facets, list):
+        return {
+            "source": "fallback",
+            "reason": "decomposer_no_facets",
+            "boundaries": fallback_boundaries,
+        }
+
+    normalized: list[tuple[int, dict[str, str]]] = []
+    seen: set[str] = set()
+    seen_sig: set[str] = set()
+
+    def _facet_sig(text: str) -> str:
+        base = str(text or "").strip().lower()
+        if not base:
+            return ""
+        normalized_text = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]+", " ", base)
+        for phrase in (
+            "latest",
+            "recent",
+            "today",
+            "yesterday",
+            "now",
+            "current",
+            "\u6700\u65b0",
+            "\u6700\u8fd1",
+            "\u4eca\u5929",
+            "\u6628\u5929",
+            "\u524d\u5929",
+            "\u5b9e\u65f6",
+            "\u521a\u521a",
+            "\u6709\u4ec0\u4e48",
+            "\u6709\u54ea\u4e9b",
+            "\u6709\u5565",
+            "\u6709\u6ca1\u6709",
+            "\u8bf7\u95ee",
+            "\u5e2e\u6211",
+        ):
+            normalized_text = normalized_text.replace(phrase, " ")
+        normalized_text = re.sub(r"\s+", " ", normalized_text).strip()
+        normalized_text = re.sub(r"[\u6709\u662f\u4e86\u5417\u5462\u5427\u5440\u554a\u4e48\u561b]+$", "", normalized_text).strip()
+        return normalized_text or base
+
+    for idx, row in enumerate(raw_facets):
+        if isinstance(row, str):
+            q = str(row or "").strip()[:180]
+            scope = q[:120]
+            priority = idx + 1
+        elif isinstance(row, dict):
+            q = str(
+                row.get("query")
+                or row.get("search_query")
+                or row.get("q")
+                or row.get("task")
+                or ""
+            ).strip()[:180]
+            scope = str(
+                row.get("scope")
+                or row.get("facet")
+                or row.get("goal")
+                or row.get("why")
+                or q
+            ).strip()[:120]
+            priority = max(1, min(9, _safe_int(row.get("priority"), idx + 1)))
+        else:
+            continue
+        if not q:
+            continue
+        key = q.lower()
+        if key in seen:
+            continue
+        sig = _facet_sig(q)
+        if sig and sig in seen_sig:
+            continue
+        seen.add(key)
+        if sig:
+            seen_sig.add(sig)
+        normalized.append((priority, {"kind": "web", "query": q, "scope": scope or q[:120]}))
+        if len(normalized) >= _MAX_WEB_SUBAGENTS:
+            break
+
+    if not normalized:
+        return {
+            "source": "fallback",
+            "reason": "decomposer_empty",
+            "boundaries": fallback_boundaries,
+        }
+
+    normalized.sort(key=lambda it: it[0])
+    boundaries = [row for _, row in normalized][:_MAX_WEB_SUBAGENTS]
+    reason = parsed_reason
+    if retry_used:
+        reason = f"{reason};retry=1"
+    return {
+        "source": "llm",
+        "reason": reason,
+        "boundaries": boundaries,
+    }
+
+
+def _extract_search_subject(query: str) -> str:
+    return _extract_search_subject_dynamic(query)
+
+
+def _extract_search_subject_legacy(query: str) -> str:
+    text = (query or "").strip()
+    if not text:
+        return ""
+    cleaned = re.sub(r"[?？!！,，。;；:：()（）【】\\[\\]\"'`]+", " ", text)
+    lowered = cleaned.lower()
+    stop_phrases = [
+        "最近",
+        "最新",
+        "今天",
+        "昨日",
+        "昨天",
+        "前天",
+        "刚刚",
+        "实时",
+        "打了",
+        "进行了",
+        "什么",
+        "哪些",
+        "几场",
+        "比赛",
+        "赛果",
+        "比分",
+        "结果",
+        "情况",
+        "是多少",
+        "多少",
+        "告诉我",
+        "帮我",
+        "一下",
+        "请问",
+        "有没有",
+        "怎么",
+        "如何",
+        "who won",
+        "what",
+        "latest",
+        "recent",
+        "today",
+        "yesterday",
+        "result",
+        "results",
+        "score",
+        "scores",
+        "game",
+        "games",
+        "match",
+        "matches",
+    ]
+    subject = lowered
+    for phrase in stop_phrases:
+        subject = subject.replace(phrase, " ")
+    subject = re.sub(r"\s+", " ", subject).strip()
+    if len(subject) >= 2:
+        return subject[:90]
+
+    leagues = re.findall(r"\b(?:nba|wnba|cba|nfl|nhl|mlb|epl)\b", lowered, flags=re.I)
+    if leagues:
+        uniq: list[str] = []
+        seen: set[str] = set()
+        for row in leagues:
+            key = row.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(row.upper())
+        return " ".join(uniq)[:90]
+
+    tokens = re.findall(r"[A-Za-z0-9]{2,}|[\u4e00-\u9fff]{2,}", cleaned)
+    if tokens:
+        return " ".join(tokens[:4])[:90]
+    return text[:90]
+
+
+def _build_web_query_pack(
+    *,
+    query: str,
+    base_queries: list[str] | None,
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None = None,
+    limit: int = _MAX_WEB_SUBAGENTS,
+) -> list[str]:
+    return _build_web_query_pack_dynamic(
+        query=query,
+        base_queries=base_queries,
+        intent_contract=intent_contract,
+        tracking_snapshot=tracking_snapshot,
+        limit=limit,
+    )
+
+
+def _build_web_query_pack_legacy(
+    *,
+    query: str,
+    base_queries: list[str] | None,
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None = None,
+    limit: int = _MAX_WEB_SUBAGENTS,
+) -> list[str]:
+    query_text = (query or "").strip()
+    if not query_text:
+        return []
+
+    is_cjk = _is_cjk_text(query_text)
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+
+    time_scope = str(contract.get("time_scope") or "").strip().lower()
+    sports_intent = bool(contract.get("sports_result_intent")) or _is_sports_result_query(query_text)
+    requires_citations = bool(contract.get("requires_citations"))
+    freshness_hours = max(1, min(720, _safe_int(contract.get("freshness_hours"), 72)))
+    time_sensitive = time_scope in {"today", "recent", "realtime"} or _is_time_sensitive_query(query_text)
+
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    subject = _extract_search_subject(query_text) or query_text
+    focused = subject if len(subject) >= 2 else query_text
+
+    seeds: list[str] = []
+    if focused and focused != query_text:
+        seeds.append(focused[:180])
+
+    if sports_intent:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} 最新 比分",
+                    f"{focused} 比分",
+                    f"{focused} 赛果",
+                    f"{focused} box score",
+                    f"{focused} game recap",
+                    f"{focused} {today} 比分",
+                ]
+            )
+        else:
+            seeds.extend(
+                [
+                    f"{focused} latest score",
+                    f"{focused} score",
+                    f"{focused} result",
+                    f"{focused} box score",
+                    f"{focused} game recap",
+                    f"{focused} {today} score",
+                ]
+            )
+
+    if time_sensitive:
+        if is_cjk:
+            seeds.extend(
+                [
+                    f"{focused} 最新",
+                    f"{focused} 今天",
+                    f"{focused} {today}",
+                    f"{focused} {yesterday}",
+                ]
+            )
+            if freshness_hours <= 48:
+                seeds.append(f"{focused} 最近24小时")
+        else:
+            seeds.extend(
+                [
+                    f"{focused} latest",
+                    f"{focused} today",
+                    f"{focused} {today}",
+                    f"{focused} {yesterday}",
+                ]
+            )
+            if freshness_hours <= 48:
+                seeds.append(f"{focused} last 24 hours")
+
+    if requires_citations:
+        if is_cjk:
+            seeds.extend([f"{focused} 官方", f"{focused} 数据", f"{focused} 来源"])
+        else:
+            seeds.extend([f"{focused} official", f"{focused} data", f"{focused} source"])
+
+    matched_items = tracking.get("matched_items") if isinstance(tracking.get("matched_items"), list) else []
+    for row in matched_items[:2]:
+        target = str(row.get("target") or row.get("query") or "").strip()[:140]
+        if not target:
+            continue
+        if is_cjk:
+            seeds.append(f"{target} 最新")
+        else:
+            seeds.append(f"{target} latest")
+
+    if isinstance(base_queries, list):
+        seeds.extend(str(it or "").strip()[:180] for it in base_queries if str(it or "").strip())
+    seeds.append(query_text[:180])
+
+    return _normalize_web_queries(query_text, seeds, limit=limit)
+
+
+def _decompose_web_context_boundaries(
+    *,
+    query: str,
+    web_boundaries: list[dict[str, str]],
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None,
+    service: LLMService,
+    provider: str,
+) -> dict[str, Any]:
+    return _decompose_web_context_boundaries_dynamic(
+        query=query,
+        web_boundaries=web_boundaries,
+        intent_contract=intent_contract,
+        tracking_snapshot=tracking_snapshot,
+        service=service,
+        provider=provider,
+    )
+
+
+def _decompose_web_context_boundaries_legacy(
+    *,
+    query: str,
+    web_boundaries: list[dict[str, str]],
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None,
+    service: LLMService,
+    provider: str,
+) -> dict[str, Any]:
+    query_text = (query or "").strip()
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+    base_queries = [str(it.get("query") or "").strip() for it in web_boundaries if str(it.get("query") or "").strip()]
+
+    fallback_queries = _build_web_query_pack(
+        query=query_text,
+        base_queries=base_queries or [query_text],
+        intent_contract=contract,
+        tracking_snapshot=tracking,
+        limit=_MAX_WEB_SUBAGENTS,
+    )
+    scope_map = {
+        str(it.get("query") or "").strip().lower(): str(it.get("scope") or "").strip()
+        for it in web_boundaries
+        if str(it.get("query") or "").strip()
+    }
+    fallback_boundaries = [
+        {"kind": "web", "query": q, "scope": (scope_map.get(q.lower()) or q)[:120]}
+        for q in fallback_queries
+    ]
+
+    if provider == "rule_based" or not service.is_configured():
+        return {
+            "source": "fallback",
+            "reason": "decomposer_unavailable",
+            "boundaries": fallback_boundaries,
+        }
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    prompt = (
+        "You are Aelin Query Decomposer.\n"
+        "Decompose one user retrieval request into multiple orthogonal web-search facets.\n"
+        "Return strict JSON only with schema:\n"
+        "{"
+        "\"facets\": [{\"scope\": string, \"query\": string, \"priority\": number, \"why\": string}],"
+        "\"reason\": string"
+        "}\n"
+        "Rules:\n"
+        "- Create 3 to 5 facets when possible.\n"
+        "- Queries must be short search-ready strings, not one long user sentence.\n"
+        "- Avoid near-duplicate paraphrases.\n"
+        "- Cover direct answer facet + verification facet + authoritative source facet.\n"
+        "- If time-sensitive, include explicit date/recency angle.\n"
+    )
+    user_msg = (
+        f"user_query: {query_text}\n"
+        f"intent_contract: {json.dumps(contract, ensure_ascii=False, separators=(',', ':'))[:1200]}\n"
+        f"existing_web_queries: {json.dumps(base_queries, ensure_ascii=False, separators=(',', ':'))[:600]}\n"
+        f"matched_tracking_count: {_safe_int(tracking.get('matched_count'), 0)}\n"
+        f"current_utc: {now_utc}\n"
+        "Return JSON only."
+    )
+
+    try:
+        raw = service._chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=420,
+            stream=False,
+        )
+        parsed = _parse_json_object(str(raw or ""))
+    except Exception:
+        parsed = None
+
+    if not isinstance(parsed, dict):
+        return {
+            "source": "fallback",
+            "reason": "decomposer_invalid_json",
+            "boundaries": fallback_boundaries,
+        }
+
+    raw_facets = parsed.get("facets")
+    if not isinstance(raw_facets, list):
+        return {
+            "source": "fallback",
+            "reason": "decomposer_no_facets",
+            "boundaries": fallback_boundaries,
+        }
+
+    normalized: list[tuple[int, dict[str, str]]] = []
+    seen: set[str] = set()
+    for idx, row in enumerate(raw_facets):
+        if isinstance(row, str):
+            q = str(row or "").strip()[:180]
+            scope = q[:120]
+            priority = idx + 1
+        elif isinstance(row, dict):
+            q = str(
+                row.get("query")
+                or row.get("search_query")
+                or row.get("q")
+                or row.get("task")
+                or ""
+            ).strip()[:180]
+            scope = str(
+                row.get("scope")
+                or row.get("facet")
+                or row.get("goal")
+                or row.get("why")
+                or q
+            ).strip()[:120]
+            priority = max(1, min(9, _safe_int(row.get("priority"), idx + 1)))
+        else:
+            continue
+        if not q:
+            continue
+        key = q.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append((priority, {"kind": "web", "query": q, "scope": scope or q[:120]}))
+        if len(normalized) >= _MAX_WEB_SUBAGENTS:
+            break
+
+    if not normalized:
+        return {
+            "source": "fallback",
+            "reason": "decomposer_empty",
+            "boundaries": fallback_boundaries,
+        }
+
+    normalized.sort(key=lambda it: it[0])
+    boundaries = [row for _, row in normalized][:_MAX_WEB_SUBAGENTS]
+
+    if len(boundaries) > 1:
+        direct_idx = next(
+            (i for i, row in enumerate(boundaries) if str(row.get("query") or "").strip().lower() == query_text.lower()),
+            -1,
+        )
+        if direct_idx > 0:
+            direct = boundaries.pop(direct_idx)
+            boundaries.append(direct)
+
+    reason = str(parsed.get("reason") or "").strip()[:180] or "decomposer_llm"
+    return {
+        "source": "llm",
+        "reason": reason,
+        "boundaries": boundaries,
+    }
+
+
+def _normalize_context_boundaries(
+    query: str,
+    raw_boundaries: Any,
+    *,
+    need_local_search: bool,
+    need_web_search: bool,
+    web_queries: list[str],
+) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def count_kind(kind: str) -> int:
+        return sum(1 for it in out if it["kind"] == kind)
+
+    def push(kind: str, q: str, scope: str = "") -> None:
+        k = (kind or "").strip().lower()
+        if k not in {"local", "web"}:
+            return
+        if k == "local" and count_kind("local") >= _MAX_LOCAL_SUBAGENTS:
+            return
+        if k == "web" and count_kind("web") >= _MAX_WEB_SUBAGENTS:
+            return
+        text = (q or "").strip()[:180]
+        if not text:
+            return
+        key = (k, text.lower())
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"kind": k, "query": text, "scope": (scope or text).strip()[:120]})
+
+    if isinstance(raw_boundaries, list):
+        for row in raw_boundaries:
+            if len(out) >= _MAX_CONTEXT_BOUNDARIES:
+                break
+            if isinstance(row, str):
+                push("web", row, row)
+                continue
+            if not isinstance(row, dict):
+                continue
+            kind = str(row.get("kind") or row.get("type") or row.get("source") or "").strip().lower()
+            query_text = str(
+                row.get("query") or row.get("facet") or row.get("task") or row.get("goal") or ""
+            ).strip()
+            scope = str(row.get("scope") or row.get("label") or "").strip()
+            if kind in {"local_search", "local"}:
+                push("local", query_text or query, scope)
+            elif kind in {"web_search", "web"}:
+                push("web", query_text or query, scope)
+
+    if need_local_search and not any(it["kind"] == "local" for it in out):
+        push("local", query, "local context")
+    if need_web_search and not any(it["kind"] == "web" for it in out):
+        for q in (web_queries or [query]):
+            if len(out) >= _MAX_CONTEXT_BOUNDARIES:
+                break
+            push("web", q, q)
+
+    out.sort(key=lambda x: 0 if x["kind"] == "local" else 1)
+    return out[:_MAX_CONTEXT_BOUNDARIES]
+
+
+def _build_trace_context_boundaries(
+    *,
+    query: str,
+    raw_boundaries: Any,
+    need_local_search: bool,
+    need_web_search: bool,
+    web_queries: list[str],
+    intent_contract: dict[str, Any] | None,
+    tracking_snapshot: dict[str, Any] | None,
+    max_local: int = 2,
+    max_web: int = 3,
+) -> list[dict[str, str]]:
+    local_cap = max(0, min(_MAX_LOCAL_SUBAGENTS, int(max_local or 2)))
+    web_cap = max(0, min(_MAX_WEB_SUBAGENTS, int(max_web or 3)))
+    boundaries = _normalize_context_boundaries(
+        query,
+        raw_boundaries,
+        need_local_search=need_local_search,
+        need_web_search=need_web_search,
+        web_queries=web_queries,
+    )
+    local = [it for it in boundaries if str(it.get("kind") or "") == "local"][:local_cap]
+    web = [it for it in boundaries if str(it.get("kind") or "") == "web"][:web_cap]
+
+    # When trace route is enabled but planner does not provide explicit boundaries,
+    # synthesize lightweight web facets so Trace Agent can verify trackability.
+    if need_web_search and (not web):
+        seeds = _build_web_query_pack(
+            query=(query or "").strip(),
+            base_queries=web_queries or [(query or "").strip()],
+            intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+            tracking_snapshot=tracking_snapshot if isinstance(tracking_snapshot, dict) else None,
+            limit=web_cap,
+        )
+        for q in seeds[:web_cap]:
+            web.append({"kind": "web", "query": q[:180], "scope": q[:120]})
+
+    if need_local_search and (not local) and query.strip() and local_cap > 0:
+        local.append(
+            {
+                "kind": "local",
+                "query": query.strip()[:180],
+                "scope": "trace local context",
+            }
+        )
+
+    return [*local[:local_cap], *web[:web_cap]][:_MAX_CONTEXT_BOUNDARIES]
+
+
+def _normalize_search_mode(raw: str) -> str:
+    text = (raw or "").strip().lower()
+    if text in {"local", "localonly", "local_only", "only_local"}:
+        return "local_only"
+    if text in {"web", "webonly", "web_only", "only_web", "force_web"}:
+        return "web_only"
+    return "auto"
 
 
 def _is_smalltalk_query(query: str) -> bool:
@@ -539,53 +1550,453 @@ def _is_smalltalk_query(query: str) -> bool:
     return any(sig in text for sig in signals)
 
 
+def _normalize_match_text(text: str) -> str:
+    return re.sub(r"\s+", "", (text or "").strip().lower())
+
+
+def _build_planner_tracking_snapshot(db: Session, *, user_id: int, query: str) -> dict[str, Any]:
+    try:
+        events = _load_tracking_events(db, user_id=user_id, limit=80)
+    except Exception:
+        return {"active_items": [], "matched_items": [], "active_count": 0, "matched_count": 0}
+
+    active_items = sorted(
+        [it for it in (events or {}).values() if str(it.get("target") or "").strip()],
+        key=lambda it: str(it.get("updated_at") or ""),
+        reverse=True,
+    )
+    q_norm = _normalize_match_text(query)
+    matched_items: list[dict[str, Any]] = []
+    if q_norm:
+        for it in active_items:
+            target_norm = _normalize_match_text(str(it.get("target") or ""))
+            if not target_norm:
+                continue
+            if target_norm in q_norm or q_norm in target_norm:
+                matched_items.append(it)
+                if len(matched_items) >= 5:
+                    break
+                continue
+            query_norm = _normalize_match_text(str(it.get("query") or ""))
+            if query_norm and (query_norm in q_norm or q_norm in query_norm):
+                matched_items.append(it)
+            if len(matched_items) >= 5:
+                break
+    return {
+        "active_items": active_items[:8],
+        "matched_items": matched_items[:5],
+        "active_count": len(active_items),
+        "matched_count": len(matched_items),
+    }
+
+
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return int(default)
+
+
+def _safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return float(default)
+
+
+def _fallback_intent_contract(
+    *,
+    query: str,
+    memory_summary: str,
+    tracking_snapshot: dict[str, Any] | None,
+    reason: str,
+) -> dict[str, Any]:
+    query_text = (query or "").strip()
+    smalltalk = _is_smalltalk_query(query_text)
+    time_sensitive = _is_time_sensitive_query(query_text)
+    sports_result_intent = _is_sports_result_query(query_text)
+    tracking_intent = _is_tracking_intent_query(query_text)
+    matched_count = 0
+    if isinstance(tracking_snapshot, dict):
+        matched_count = _safe_int(tracking_snapshot.get("matched_count"), 0)
+
+    intent_type = "chat"
+    if tracking_intent:
+        intent_type = "tracking"
+    elif not smalltalk:
+        intent_type = "retrieval"
+    time_scope = "any"
+    if time_sensitive:
+        time_scope = "recent"
+    if "today" in query_text.lower():
+        time_scope = "today"
+    freshness_hours = 720
+    if time_scope == "today":
+        freshness_hours = 24
+    elif time_scope == "recent":
+        freshness_hours = 72
+    if sports_result_intent:
+        freshness_hours = min(freshness_hours, 24)
+
+    requires_citations = bool((not smalltalk) and (time_sensitive or sports_result_intent))
+    requires_factuality = not smalltalk
+
+    ambiguities: list[str] = []
+    if len(query_text) <= 6:
+        ambiguities.append("query_too_short")
+    if intent_type == "retrieval" and matched_count > 0 and not time_sensitive:
+        ambiguities.append("could_use_existing_tracking_only")
+    if intent_type == "retrieval" and not (memory_summary or "").strip():
+        ambiguities.append("limited_personal_memory_context")
+
+    return {
+        "goal": query_text[:240] or "chat",
+        "intent_type": intent_type,
+        "time_scope": time_scope,
+        "freshness_hours": max(1, min(720, int(freshness_hours))),
+        "requires_citations": requires_citations,
+        "requires_factuality": requires_factuality,
+        "sports_result_intent": sports_result_intent,
+        "tracking_intent": tracking_intent,
+        "ambiguities": ambiguities[:4],
+        "confidence": 0.62 if not smalltalk else 0.8,
+        "reason": reason[:180],
+        "intent_source": "fallback",
+    }
+
+
+def _normalize_intent_contract(
+    *,
+    raw: dict[str, Any] | None,
+    query: str,
+    fallback: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(fallback)
+    if not isinstance(raw, dict):
+        return out
+
+    goal = str(raw.get("goal") or "").strip()
+    if goal:
+        out["goal"] = goal[:240]
+
+    intent_type = str(raw.get("intent_type") or "").strip().lower()
+    if intent_type in {"chat", "retrieval", "tracking", "analysis"}:
+        out["intent_type"] = intent_type
+
+    time_scope = str(raw.get("time_scope") or "").strip().lower()
+    if time_scope in {"any", "today", "recent", "historical", "realtime"}:
+        out["time_scope"] = time_scope
+
+    freshness_hours = _safe_int(raw.get("freshness_hours"), _safe_int(out.get("freshness_hours"), 72))
+    out["freshness_hours"] = max(1, min(720, freshness_hours))
+
+    if raw.get("requires_citations") is not None:
+        out["requires_citations"] = bool(raw.get("requires_citations"))
+    if raw.get("requires_factuality") is not None:
+        out["requires_factuality"] = bool(raw.get("requires_factuality"))
+
+    out["sports_result_intent"] = bool(raw.get("sports_result_intent")) or _is_sports_result_query(query)
+    out["tracking_intent"] = bool(raw.get("tracking_intent")) or _is_tracking_intent_query(query)
+
+    ambiguities = raw.get("ambiguities")
+    if isinstance(ambiguities, list):
+        normalized_ambiguities: list[str] = []
+        for row in ambiguities:
+            text = str(row or "").strip()
+            if not text:
+                continue
+            normalized_ambiguities.append(text[:120])
+            if len(normalized_ambiguities) >= 4:
+                break
+        out["ambiguities"] = normalized_ambiguities
+
+    confidence = _safe_float(raw.get("confidence"), _safe_float(out.get("confidence"), 0.62))
+    out["confidence"] = max(0.0, min(1.0, confidence))
+
+    reason = str(raw.get("reason") or "").strip()
+    if reason:
+        out["reason"] = reason[:180]
+    return out
+
+
+def _build_intent_contract(
+    *,
+    query: str,
+    service: LLMService,
+    provider: str,
+    memory_summary: str,
+    tracking_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    fallback = _fallback_intent_contract(
+        query=query,
+        memory_summary=memory_summary,
+        tracking_snapshot=tracking_snapshot,
+        reason="intent_fallback",
+    )
+    if provider == "rule_based" or not service.is_configured():
+        fallback_reason = "intent_planner_unavailable"
+        if provider == "rule_based":
+            fallback_reason = "intent_rule_based"
+        elif not service.is_configured():
+            fallback_reason = "intent_not_configured"
+        fallback["reason"] = fallback_reason
+        return fallback
+
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+    active_count = _safe_int(tracking.get("active_count"), 0)
+    matched_count = _safe_int(tracking.get("matched_count"), 0)
+    now_utc = datetime.now(timezone.utc).isoformat()
+
+    prompt = (
+        "You are Aelin Intent Lens Agent.\n"
+        "Infer user intent with explicit time understanding and factuality requirements.\n"
+        "Return strict JSON only with schema:\n"
+        "{"
+        "\"goal\": string,"
+        "\"intent_type\": \"chat|retrieval|tracking|analysis\","
+        "\"time_scope\": \"any|today|recent|historical|realtime\","
+        "\"freshness_hours\": number,"
+        "\"requires_citations\": boolean,"
+        "\"requires_factuality\": boolean,"
+        "\"sports_result_intent\": boolean,"
+        "\"tracking_intent\": boolean,"
+        "\"ambiguities\": string[],"
+        "\"confidence\": number,"
+        "\"reason\": string"
+        "}\n"
+        "If user uses relative time words like today/recent/latest, convert them into explicit time_scope and freshness."
+    )
+    user_msg = (
+        f"user_query: {query.strip()}\n"
+        f"memory_summary_available: {'yes' if bool((memory_summary or '').strip()) else 'no'}\n"
+        f"active_tracking_count: {active_count}\n"
+        f"matched_tracking_count: {matched_count}\n"
+        f"current_utc: {now_utc}\n"
+        "Return JSON only."
+    )
+    try:
+        raw = service._chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=320,
+            stream=False,
+        )
+        parsed = _parse_json_object(str(raw or ""))
+        normalized = _normalize_intent_contract(raw=parsed if isinstance(parsed, dict) else None, query=query, fallback=fallback)
+        normalized["intent_source"] = "llm"
+        if not isinstance(parsed, dict):
+            normalized["reason"] = "intent_invalid_json"
+            normalized["intent_source"] = "fallback"
+        return normalized
+    except Exception:
+        fallback["reason"] = "intent_error"
+        return fallback
+
+
 def _plan_tool_usage(
     *,
     query: str,
     service: LLMService,
     provider: str,
     memory_summary: str,
+    tracking_snapshot: dict[str, Any] | None = None,
+    intent_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    default_plan = {
-        "need_local_search": False,
-        "need_web_search": False,
-        "web_queries": [],
-        "track_suggestion": None,
-        "reason": "planner_unavailable:chat_only",
-    }
-    if _is_smalltalk_query(query):
-        return {**default_plan, "reason": "smalltalk:chat_only"}
+    def _fallback_plan(reason: str) -> dict[str, Any]:
+        contract = intent_contract if isinstance(intent_contract, dict) else {}
+        contract_intent_type = str(contract.get("intent_type") or "").strip().lower()
+        contract_time_scope = str(contract.get("time_scope") or "").strip().lower()
+        contract_requires_citations = bool(contract.get("requires_citations"))
+        contract_sports_intent = bool(contract.get("sports_result_intent"))
+        contract_tracking_intent = bool(contract.get("tracking_intent"))
+
+        tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+        active_items = tracking.get("active_items") if isinstance(tracking.get("active_items"), list) else []
+        matched_items = tracking.get("matched_items") if isinstance(tracking.get("matched_items"), list) else []
+
+        query_text = (query or "").strip()
+        conversational = _is_smalltalk_query(query_text)
+        time_sensitive = contract_time_scope in {"today", "recent", "realtime"} or _is_time_sensitive_query(query_text)
+        has_memory = bool((memory_summary or "").strip())
+        has_tracking_match = bool(matched_items)
+
+        recent_tracking_match = False
+        now = datetime.now(timezone.utc)
+        for it in matched_items[:5]:
+            updated_raw = str(it.get("updated_at") or "").strip()
+            if not updated_raw:
+                continue
+            try:
+                updated_at = datetime.fromisoformat(updated_raw.replace("Z", "+00:00"))
+            except Exception:
+                continue
+            if updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            if (now - updated_at).total_seconds() <= 36 * 3600:
+                recent_tracking_match = True
+                break
+
+        retrieval_like = bool(query_text) and (not conversational)
+        if contract_intent_type == "chat":
+            retrieval_like = False
+        elif contract_intent_type in {"retrieval", "tracking", "analysis"}:
+            retrieval_like = True
+        sports_result_intent = bool(contract_sports_intent or _is_sports_result_query(query_text))
+        need_local = retrieval_like and (has_memory or has_tracking_match or bool(active_items))
+        need_web = False
+        if retrieval_like:
+            if time_sensitive or sports_result_intent or contract_requires_citations:
+                need_web = not recent_tracking_match
+            elif (not has_memory) and (not has_tracking_match):
+                need_web = True
+
+        web_seed: list[str] = []
+        if need_web:
+            web_seed.append(query_text)
+            if sports_result_intent:
+                web_seed.extend(
+                    [
+                        f"{query_text} \u6700\u65b0 \u6bd4\u5206",
+                        f"{query_text} \u8d5b\u679c",
+                        f"{query_text} box score",
+                        f"{query_text} game recap",
+                    ]
+                )
+            for it in matched_items[:2]:
+                target = str(it.get("target") or it.get("query") or "").strip()[:120]
+                if target:
+                    web_seed.append(f"{target} latest")
+        web_queries = _normalize_web_queries(query_text, web_seed, limit=_MAX_WEB_SUBAGENTS) if need_web else []
+        context_boundaries = _normalize_context_boundaries(
+            query_text,
+            [],
+            need_local_search=need_local,
+            need_web_search=need_web,
+            web_queries=web_queries,
+        )
+        need_local = any(str(it.get("kind") or "") == "local" for it in context_boundaries)
+        need_web = any(str(it.get("kind") or "") == "web" for it in context_boundaries)
+        web_queries = (
+            _normalize_web_queries(
+                query_text,
+                [it.get("query") for it in context_boundaries if str(it.get("kind") or "") == "web"],
+            )
+            if need_web
+            else []
+        )
+
+        trace_agent = bool((contract_tracking_intent or _is_tracking_intent_query(query_text)) and not recent_tracking_match)
+        track_suggestion = None
+        if trace_agent and query_text:
+            track_suggestion = {
+                "target": query_text[:240],
+                "source": "web" if need_web else "auto",
+                "reason": "fallback planner detected potential long-running tracking intent",
+            }
+        trace_context_boundaries = _build_trace_context_boundaries(
+            query=query_text,
+            raw_boundaries=[],
+            need_local_search=trace_agent and need_local,
+            need_web_search=trace_agent and bool(need_web or query_text),
+            web_queries=web_queries,
+            intent_contract=contract,
+            tracking_snapshot=tracking,
+        )
+        reason_bits = [reason]
+        if conversational:
+            reason_bits.append("smalltalk")
+        if time_sensitive:
+            reason_bits.append("time_sensitive")
+        if sports_result_intent:
+            reason_bits.append("sports_result_intent")
+        if recent_tracking_match:
+            reason_bits.append("tracking_match_recent")
+        elif has_tracking_match:
+            reason_bits.append("tracking_match_stale")
+        if need_local:
+            reason_bits.append("local_context")
+        if need_web:
+            reason_bits.append("web_context")
+        return {
+            "need_local_search": need_local,
+            "need_web_search": need_web,
+            "web_queries": web_queries,
+            "context_boundaries": context_boundaries,
+            "trace_context_boundaries": trace_context_boundaries,
+            "track_suggestion": track_suggestion,
+            "route": {
+                "reply_agent": True,
+                "trace_agent": trace_agent,
+                "allow_web_retry": bool(need_web and time_sensitive),
+            },
+            "reason": ";".join(reason_bits),
+            "planner_source": "fallback",
+        }
+
     if provider == "rule_based" or not service.is_configured():
-        return default_plan
+        fallback_reason = "planner_unavailable"
+        if provider == "rule_based":
+            fallback_reason = "planner_rule_based"
+        elif not service.is_configured():
+            fallback_reason = "planner_not_configured"
+        return _fallback_plan(fallback_reason)
+
+    tracking = tracking_snapshot if isinstance(tracking_snapshot, dict) else {}
+    active_items = tracking.get("active_items") if isinstance(tracking.get("active_items"), list) else []
+    matched_items = tracking.get("matched_items") if isinstance(tracking.get("matched_items"), list) else []
 
     planning_prompt = (
-        "你是 Aelin 的工具规划器。"
-        "你可以决定是否调用两个工具："
-        "1) local_search：检索用户本地已同步的消息/帖子/邮件；"
-        "2) web_search：联网搜索公开信息。"
-        "同时判断是否应建议用户开启长期跟踪。"
-        "仅输出 JSON，不要输出其他文本。"
-        "JSON 格式："
+        "You are Aelin Main Agent planner.\n"
+        "Decide dynamic dispatch by context boundaries.\n"
+        "You must obey intent contract constraints from Intent Lens Agent.\n"
+        "Do not rely on rigid keyword-only rules; decide from query + memory + tracking context.\n"
+        "Both local and web subagents are optional.\n"
+        "You may dispatch up to 5 web subagents and up to 5 local subagents in parallel.\n"
+        "If existing tracking already covers the asked topic, you may skip web retrieval.\n"
+        "Return strict JSON only with schema:\n"
         "{"
         "\"need_local_search\": boolean,"
         "\"need_web_search\": boolean,"
         "\"web_queries\": string[],"
+        "\"context_boundaries\": [{\"kind\":\"local|web\",\"query\":\"string\",\"scope\":\"string\"}],"
+        "\"trace_context_boundaries\": [{\"kind\":\"local|web\",\"query\":\"string\",\"scope\":\"string\"}],"
+        "\"reply_agent\": boolean,"
+        "\"trace_agent\": boolean,"
+        "\"allow_web_retry\": boolean,"
         "\"should_suggest_tracking\": boolean,"
         "\"tracking_target\": string,"
         "\"tracking_source\": \"auto|web|rss|x|douyin|xiaohongshu|weibo|bilibili|email\","
         "\"tracking_reason\": string,"
         "\"reason\": string"
-        "}"
-        "规划原则："
-        "A) 普通聊天、观点讨论、情绪支持、创作请求 => 两个工具都关闭；"
-        "B) 事实性、时效性问题（比赛、新闻、价格、政策、实时数据）=> 优先打开 web_search；"
-        "C) 当问题明显依赖用户历史同步内容时才打开 local_search；"
-        "D) 除非确定用户存在长期跟踪意图，否则不要建议跟踪。"
+        "}\n"
+        "context_boundaries is the primary dispatch plan.\n"
+        "reply_agent defaults to true and can be omitted unless you want it disabled."
     )
+    matched_lines = [
+        f"- {str(it.get('target') or '').strip()} ({str(it.get('source') or 'auto').strip()} / {str(it.get('updated_at') or '').strip()})"
+        for it in matched_items[:5]
+        if str(it.get("target") or "").strip()
+    ]
+    active_lines = [
+        f"- {str(it.get('target') or '').strip()} ({str(it.get('source') or 'auto').strip()})"
+        for it in active_items[:5]
+        if str(it.get("target") or "").strip()
+    ]
     user_msg = (
-        f"用户问题：{query.strip()}\n"
-        f"已有长期记忆摘要：{'是' if bool((memory_summary or '').strip()) else '否'}\n"
-        "请输出 JSON。"
+        f"user_query: {query.strip()}\n"
+        + (
+            f"intent_contract: {json.dumps(intent_contract, ensure_ascii=False, separators=(',', ':'))[:1200]}\n"
+            if isinstance(intent_contract, dict)
+            else ""
+        )
+        +
+        f"memory_summary_available: {'yes' if bool((memory_summary or '').strip()) else 'no'}\n"
+        f"active_tracking_count: {len(active_items)}\n"
+        + ("matched_tracking:\n" + "\n".join(matched_lines) + "\n" if matched_lines else "matched_tracking: none\n")
+        + ("recent_tracking:\n" + "\n".join(active_lines) + "\n" if active_lines else "recent_tracking: none\n")
+        + "Return JSON only."
     )
     try:
         raw = service._chat(
@@ -593,21 +2004,38 @@ def _plan_tool_usage(
                 {"role": "system", "content": planning_prompt},
                 {"role": "user", "content": user_msg},
             ],
-            max_tokens=260,
+            max_tokens=420,
             stream=False,
         )
         parsed = _parse_json_object(str(raw or ""))
         if not isinstance(parsed, dict):
-            return {**default_plan, "reason": "planner_invalid_json:chat_only"}
+            return _fallback_plan("planner_invalid_json")
 
-        need_local = bool(parsed.get("need_local_search"))
-        need_web = bool(parsed.get("need_web_search"))
+        need_local_hint = bool(parsed.get("need_local_search"))
+        need_web_hint = bool(parsed.get("need_web_search"))
         web_queries = _normalize_web_queries(query, parsed.get("web_queries"))
+        context_boundaries = _normalize_context_boundaries(
+            query,
+            parsed.get("context_boundaries"),
+            need_local_search=need_local_hint,
+            need_web_search=need_web_hint,
+            web_queries=web_queries,
+        )
+        need_local = any(str(it.get("kind") or "") == "local" for it in context_boundaries)
+        need_web = any(str(it.get("kind") or "") == "web" for it in context_boundaries)
+        web_queries = _normalize_web_queries(
+            query,
+            [it.get("query") for it in context_boundaries if str(it.get("kind") or "") == "web"] or web_queries,
+        )
         should_track = bool(parsed.get("should_suggest_tracking"))
         track_target = str(parsed.get("tracking_target") or "").strip()[:240]
         track_source = _normalize_track_source(str(parsed.get("tracking_source") or "auto"))
         track_reason = str(parsed.get("tracking_reason") or "").strip()[:220]
         reason = str(parsed.get("reason") or "").strip()[:200] or "llm_planner"
+        reply_agent = bool(parsed.get("reply_agent", True))
+        trace_agent = bool(parsed.get("trace_agent"))
+        allow_web_retry_raw = parsed.get("allow_web_retry")
+        allow_web_retry = bool(allow_web_retry_raw) if allow_web_retry_raw is not None else need_web
 
         track_suggestion = None
         if should_track and track_target:
@@ -616,6 +2044,17 @@ def _plan_tool_usage(
                 "source": track_source,
                 "reason": track_reason or "Aelin 判断该主题值得持续跟踪。",
             }
+            trace_agent = True
+
+        trace_context_boundaries = _build_trace_context_boundaries(
+            query=query,
+            raw_boundaries=parsed.get("trace_context_boundaries"),
+            need_local_search=trace_agent and need_local,
+            need_web_search=trace_agent and bool(need_web or track_suggestion),
+            web_queries=web_queries,
+            intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+            tracking_snapshot=tracking_snapshot if isinstance(tracking_snapshot, dict) else None,
+        )
 
         if need_web and not web_queries:
             web_queries = [query.strip()[:180]] if query.strip() else []
@@ -623,11 +2062,611 @@ def _plan_tool_usage(
             "need_local_search": need_local,
             "need_web_search": need_web,
             "web_queries": web_queries,
+            "context_boundaries": context_boundaries,
+            "trace_context_boundaries": trace_context_boundaries,
             "track_suggestion": track_suggestion,
+            "route": {
+                "reply_agent": reply_agent,
+                "trace_agent": trace_agent,
+                "allow_web_retry": allow_web_retry,
+            },
             "reason": f"llm:{reason}",
+            "planner_source": "llm",
         }
     except Exception:
-        return {**default_plan, "reason": "planner_error:chat_only"}
+        return _fallback_plan("planner_error")
+
+
+def _critic_tool_plan(
+    *,
+    query: str,
+    intent_contract: dict[str, Any] | None,
+    tool_plan: dict[str, Any],
+    service: LLMService,
+    provider: str,
+) -> dict[str, Any]:
+    def _fallback_critic(reason: str) -> dict[str, Any]:
+        contract = intent_contract if isinstance(intent_contract, dict) else {}
+        requires_citations = bool(contract.get("requires_citations"))
+        intent_type = str(contract.get("intent_type") or "").strip().lower()
+        sports_result_intent = bool(contract.get("sports_result_intent")) or _is_sports_result_query(query)
+        tracking_intent = bool(contract.get("tracking_intent")) or _is_tracking_intent_query(query)
+
+        need_local = bool(tool_plan.get("need_local_search"))
+        need_web = bool(tool_plan.get("need_web_search"))
+        web_queries = _normalize_web_queries(query, tool_plan.get("web_queries"))
+        boundaries = _normalize_context_boundaries(
+            query,
+            tool_plan.get("context_boundaries"),
+            need_local_search=need_local,
+            need_web_search=need_web,
+            web_queries=web_queries,
+        )
+        has_local = any(str(it.get("kind") or "") == "local" for it in boundaries)
+        has_web = any(str(it.get("kind") or "") == "web" for it in boundaries)
+        route = tool_plan.get("route") if isinstance(tool_plan.get("route"), dict) else {}
+        issues: list[str] = []
+        patch: dict[str, Any] = {}
+
+        retrieval_intent = intent_type in {"retrieval", "tracking", "analysis"} or (not _is_smalltalk_query(query))
+        if retrieval_intent and (not has_local) and (not has_web):
+            issues.append("no_retrieval_path")
+            patch["need_local_search"] = True
+            patch["context_boundaries"] = [{"kind": "local", "query": query.strip()[:180], "scope": "critic_local_context"}]
+
+        if (requires_citations or sports_result_intent) and (not has_web):
+            issues.append("missing_web_path_for_factual_intent")
+            patch["need_web_search"] = True
+            patch["web_queries"] = _normalize_web_queries(
+                query,
+                [
+                    query.strip()[:180],
+                    f"{query.strip()[:160]} 最新",
+                    f"{query.strip()[:160]} 比分" if sports_result_intent else f"{query.strip()[:160]} 官方",
+                ],
+                limit=_MAX_WEB_SUBAGENTS,
+            )
+            patch_boundaries = patch.get("context_boundaries")
+            if not isinstance(patch_boundaries, list):
+                patch_boundaries = list(boundaries)
+            patch_boundaries.extend(
+                {"kind": "web", "query": q, "scope": q}
+                for q in patch.get("web_queries", [])[:2]
+            )
+            patch["context_boundaries"] = patch_boundaries
+
+        if tracking_intent and (not bool(route.get("trace_agent"))):
+            issues.append("missing_trace_route")
+            patch["route"] = {
+                "reply_agent": bool(route.get("reply_agent", True)),
+                "trace_agent": True,
+                "allow_web_retry": bool(route.get("allow_web_retry", False) or requires_citations or sports_result_intent),
+            }
+            patch["trace_context_boundaries"] = _build_trace_context_boundaries(
+                query=query,
+                raw_boundaries=tool_plan.get("trace_context_boundaries"),
+                need_local_search=has_local,
+                need_web_search=bool(has_web or patch.get("need_web_search")),
+                web_queries=patch.get("web_queries") if isinstance(patch.get("web_queries"), list) else web_queries,
+                intent_contract=contract,
+                tracking_snapshot=None,
+            )
+
+        accepted = not issues
+        return {
+            "accepted": accepted,
+            "issues": issues,
+            "patch": patch if patch else None,
+            "reason": reason if accepted else f"{reason}:{','.join(issues)}",
+            "critic_source": "fallback",
+        }
+
+    if provider == "rule_based" or not service.is_configured():
+        fallback_reason = "critic_unavailable"
+        if provider == "rule_based":
+            fallback_reason = "critic_rule_based"
+        elif not service.is_configured():
+            fallback_reason = "critic_not_configured"
+        return _fallback_critic(fallback_reason)
+
+    contract_payload = intent_contract if isinstance(intent_contract, dict) else {}
+    prompt = (
+        "You are Aelin Plan Critic Agent.\n"
+        "Evaluate whether dispatch plan fully covers intent contract.\n"
+        "If weak, provide a corrective patch.\n"
+        "Return strict JSON only with schema:\n"
+        "{"
+        "\"accepted\": boolean,"
+        "\"issues\": string[],"
+        "\"patch\": {"
+        "\"need_local_search\": boolean,"
+        "\"need_web_search\": boolean,"
+        "\"web_queries\": string[],"
+        "\"context_boundaries\": [{\"kind\":\"local|web\",\"query\":\"string\",\"scope\":\"string\"}],"
+        "\"trace_context_boundaries\": [{\"kind\":\"local|web\",\"query\":\"string\",\"scope\":\"string\"}],"
+        "\"route\": {\"reply_agent\": boolean,\"trace_agent\": boolean,\"allow_web_retry\": boolean}"
+        "},"
+        "\"reason\": string"
+        "}\n"
+        "Rules:\n"
+        "- For time-sensitive factual intents, ensure evidence path exists.\n"
+        "- For sports result intents, prefer web path with score/result oriented queries.\n"
+        "- Keep patch minimal and deterministic."
+    )
+    user_msg = (
+        f"user_query: {query.strip()}\n"
+        f"intent_contract: {json.dumps(contract_payload, ensure_ascii=False, separators=(',', ':'))[:1200]}\n"
+        f"tool_plan: {json.dumps(tool_plan, ensure_ascii=False, separators=(',', ':'))[:1800]}\n"
+        "Return JSON only."
+    )
+    try:
+        raw = service._chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=320,
+            stream=False,
+        )
+        parsed = _parse_json_object(str(raw or ""))
+        if not isinstance(parsed, dict):
+            return _fallback_critic("critic_invalid_json")
+        accepted = bool(parsed.get("accepted"))
+        issues_raw = parsed.get("issues")
+        issues: list[str] = []
+        if isinstance(issues_raw, list):
+            for row in issues_raw:
+                text = str(row or "").strip()
+                if not text:
+                    continue
+                issues.append(text[:120])
+                if len(issues) >= 6:
+                    break
+        patch_raw = parsed.get("patch")
+        patch: dict[str, Any] | None = None
+        if isinstance(patch_raw, dict):
+            patch = {}
+            if patch_raw.get("need_local_search") is not None:
+                patch["need_local_search"] = bool(patch_raw.get("need_local_search"))
+            if patch_raw.get("need_web_search") is not None:
+                patch["need_web_search"] = bool(patch_raw.get("need_web_search"))
+            if patch_raw.get("web_queries") is not None:
+                patch["web_queries"] = _normalize_web_queries(query, patch_raw.get("web_queries"), limit=_MAX_WEB_SUBAGENTS)
+            if isinstance(patch_raw.get("context_boundaries"), list):
+                patch["context_boundaries"] = patch_raw.get("context_boundaries")
+            if isinstance(patch_raw.get("trace_context_boundaries"), list):
+                patch["trace_context_boundaries"] = patch_raw.get("trace_context_boundaries")
+            if isinstance(patch_raw.get("route"), dict):
+                route_raw = patch_raw.get("route") or {}
+                patch["route"] = {
+                    "reply_agent": bool(route_raw.get("reply_agent", True)),
+                    "trace_agent": bool(route_raw.get("trace_agent", False)),
+                    "allow_web_retry": bool(route_raw.get("allow_web_retry", False)),
+                }
+        reason = str(parsed.get("reason") or "").strip()[:180] or "critic_llm"
+        if (not accepted) and (not patch):
+            fallback = _fallback_critic(f"critic_patch_missing:{reason}")
+            fallback["critic_source"] = "fallback"
+            return fallback
+        return {
+            "accepted": accepted,
+            "issues": issues,
+            "patch": patch,
+            "reason": reason,
+            "critic_source": "llm",
+        }
+    except Exception:
+        return _fallback_critic("critic_error")
+
+
+def _apply_plan_patch(
+    *,
+    query: str,
+    tool_plan: dict[str, Any],
+    patch: dict[str, Any],
+) -> dict[str, Any]:
+    out = dict(tool_plan or {})
+    need_local = bool(patch.get("need_local_search", out.get("need_local_search")))
+    need_web = bool(patch.get("need_web_search", out.get("need_web_search")))
+    web_queries_seed = patch.get("web_queries") if patch.get("web_queries") is not None else out.get("web_queries")
+    web_queries = _normalize_web_queries(query, web_queries_seed, limit=_MAX_WEB_SUBAGENTS)
+    context_seed = patch.get("context_boundaries") if isinstance(patch.get("context_boundaries"), list) else out.get("context_boundaries")
+    context_boundaries = _normalize_context_boundaries(
+        query,
+        context_seed,
+        need_local_search=need_local,
+        need_web_search=need_web,
+        web_queries=web_queries,
+    )
+    need_local = any(str(it.get("kind") or "") == "local" for it in context_boundaries)
+    need_web = any(str(it.get("kind") or "") == "web" for it in context_boundaries)
+    web_queries = _normalize_web_queries(
+        query,
+        [it.get("query") for it in context_boundaries if str(it.get("kind") or "") == "web"] or web_queries,
+        limit=_MAX_WEB_SUBAGENTS,
+    )
+
+    base_route = out.get("route") if isinstance(out.get("route"), dict) else {}
+    patch_route = patch.get("route") if isinstance(patch.get("route"), dict) else {}
+    merged_route = {
+        "reply_agent": bool(patch_route.get("reply_agent", base_route.get("reply_agent", True))),
+        "trace_agent": bool(patch_route.get("trace_agent", base_route.get("trace_agent", False))),
+        "allow_web_retry": bool(patch_route.get("allow_web_retry", base_route.get("allow_web_retry", need_web))),
+    }
+    trace_seed = patch.get("trace_context_boundaries") if isinstance(patch.get("trace_context_boundaries"), list) else out.get("trace_context_boundaries")
+    trace_enabled = bool(merged_route.get("trace_agent")) or bool(out.get("track_suggestion"))
+    trace_context_boundaries = _build_trace_context_boundaries(
+        query=query,
+        raw_boundaries=trace_seed,
+        need_local_search=trace_enabled and need_local,
+        need_web_search=trace_enabled and bool(need_web or merged_route.get("allow_web_retry")),
+        web_queries=web_queries,
+        intent_contract=None,
+        tracking_snapshot=None,
+    )
+
+    out["need_local_search"] = need_local
+    out["need_web_search"] = need_web
+    out["web_queries"] = web_queries
+    out["context_boundaries"] = context_boundaries
+    out["trace_context_boundaries"] = trace_context_boundaries
+    out["route"] = merged_route
+    out["planner_source"] = str(out.get("planner_source") or "fallback") + "+critic_patch"
+    out["reason"] = str(out.get("reason") or "planner") + ";critic_patch"
+    return out
+
+
+def _is_tracking_intent_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+    signals = [
+        "\u8ffd\u8e2a",
+        "\u8ddf\u8e2a",
+        "\u540e\u7eed",
+        "\u6301\u7eed",
+        "\u8ba2\u9605",
+        "\u63d0\u9192",
+        "\u76d1\u63a7",
+        "watch",
+        "follow",
+        "track",
+    ]
+    return any(sig in text for sig in signals)
+
+
+def _is_sports_result_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+    signals = [
+        "nba",
+        "wnba",
+        "cba",
+        "nfl",
+        "nhl",
+        "mlb",
+        "epl",
+        "\u6bd4\u8d5b",
+        "\u6bd4\u5206",
+        "\u8d5b\u7a0b",
+        "\u8d5b\u679c",
+        "\u6218\u7ee9",
+        "\u6253\u4e86\u4ec0\u4e48",
+        "\u8c01\u8d62\u4e86",
+        "\u5bf9\u9635",
+        "\u5b63\u540e\u8d5b",
+        "\u5e38\u89c4\u8d5b",
+        "score",
+        "box score",
+        "result",
+        "results",
+        "fixture",
+        "fixtures",
+        "match",
+        "matches",
+        "who won",
+        "standings",
+        "game recap",
+    ]
+    return any(sig in text for sig in signals)
+
+
+def _is_time_sensitive_query(query: str) -> bool:
+    text = (query or "").strip().lower()
+    if not text:
+        return False
+    signals = [
+        "\u4eca\u5929",
+        "\u6628\u5929",
+        "\u524d\u5929",
+        "\u521a\u521a",
+        "\u6700\u65b0",
+        "\u6700\u8fd1",
+        "\u8fd1\u671f",
+        "\u8fd1\u51e0\u5929",
+        "\u5b9e\u65f6",
+        "\u5373\u65f6",
+        "\u76ee\u524d",
+        "\u6bd4\u5206",
+        "\u6218\u7ee9",
+        "\u8d5b\u679c",
+        "\u65b0\u95fb",
+        "\u80a1\u4ef7",
+        "\u4ef7\u683c",
+        "\u6c47\u7387",
+        "now",
+        "today",
+        "yesterday",
+        "latest",
+        "recent",
+        "recently",
+        "breaking",
+        "live",
+        "score",
+        "result",
+        "results",
+        "price",
+        "quote",
+        "this week",
+        "last week",
+        "past",
+    ]
+    if any(sig in text for sig in signals):
+        return True
+    if re.search(r"\b(last|past)\s+(24|48|72)\s*(h|hour|hours|d|day|days)\b", text):
+        return True
+    if re.search(r"\b(last|past|recent)\s+\d+\s*(day|days|week|weeks|month|months)\b", text):
+        return True
+    return False
+
+
+def _main_agent_route(
+    *,
+    need_local_search: bool,
+    need_web_search: bool,
+    planned_track_suggestion: dict[str, str] | None,
+    planned_route: dict[str, Any] | None,
+) -> dict[str, Any]:
+    reply_agent = True
+    trace_agent = bool(planned_track_suggestion)
+    allow_web_retry = bool(need_web_search)
+    if isinstance(planned_route, dict):
+        reply_agent = bool(planned_route.get("reply_agent", True))
+        trace_agent = bool(planned_route.get("trace_agent", trace_agent))
+        allow_web_retry = bool(planned_route.get("allow_web_retry", allow_web_retry))
+    multi_agent = bool((reply_agent and (need_local_search or need_web_search)) or trace_agent)
+    reasons: list[str] = []
+    if isinstance(planned_route, dict):
+        reasons.append("planner_route")
+    if need_local_search:
+        reasons.append("local_context")
+    if need_web_search:
+        reasons.append("web_facts")
+    if trace_agent:
+        reasons.append("trace_intent")
+    if not reasons:
+        reasons.append("chat_only")
+    return {
+        "multi_agent": multi_agent,
+        "reply_agent": reply_agent,
+        "trace_agent": trace_agent,
+        "allow_web_retry": allow_web_retry,
+        "reason": ",".join(reasons),
+    }
+
+
+def _answer_has_fact_signal(answer: str) -> bool:
+    text = (answer or "").strip()
+    if not text:
+        return False
+    if re.search(r"\d{1,4}\s*[:：-]\s*\d{1,4}", text):
+        return True
+    if re.search(r"\d+(?:\.\d+)?\s*(?:%|元|美元|万|亿|分|秒|点|年|月|日)", text):
+        return True
+    signals = ["截至", "目前", "官方", "数据显示", "来源", "北京时间", "更新于"]
+    return any(sig in text for sig in signals)
+
+
+def _verify_reply_answer(
+    *,
+    query: str,
+    answer: str,
+    need_web_search: bool,
+    citations: list[AelinCitation],
+) -> tuple[bool, str]:
+    text = (answer or "").strip()
+    if not text:
+        return False, "empty_answer"
+    needs_evidence = bool(need_web_search or (_is_time_sensitive_query(query) and not _is_smalltalk_query(query)))
+    if needs_evidence and not citations:
+        return False, "evidence_missing"
+    if needs_evidence and _looks_like_link_dump_answer(text):
+        return False, "link_dump_answer"
+    if needs_evidence and citations and not _answer_has_fact_signal(text):
+        return False, "fact_sparse"
+    return True, "pass"
+
+
+def _check_evidence_coverage(
+    *,
+    query: str,
+    intent_contract: dict[str, Any] | None,
+    answer: str,
+    citations: list[AelinCitation],
+    web_results: list[WebSearchResult],
+) -> tuple[bool, str]:
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    requires_citations = bool(contract.get("requires_citations"))
+    if not requires_citations:
+        requires_citations = bool(_is_time_sensitive_query(query) and not _is_smalltalk_query(query))
+
+    if requires_citations and not citations:
+        return False, "missing_evidence"
+
+    freshness_hours = max(1, min(720, _safe_int(contract.get("freshness_hours"), 72)))
+    if requires_citations and freshness_hours <= 48:
+        has_web = any(str(it.source or "").strip().lower() == "web" for it in citations)
+        if not has_web:
+            return False, "freshness_unmet_no_web"
+
+    sports_result_intent = bool(contract.get("sports_result_intent")) or _is_sports_result_query(query)
+    if sports_result_intent:
+        has_score = bool(_extract_score_clues(answer))
+        if not has_score:
+            for row in web_results[:10]:
+                blob = f"{row.title} {row.snippet} {(getattr(row, 'fetched_excerpt', '') or '')}".strip()
+                if _extract_score_clues(blob):
+                    has_score = True
+                    break
+        if not has_score:
+            for cite in citations[:10]:
+                if _extract_score_clues(str(cite.title or "")):
+                    has_score = True
+                    break
+        if not has_score:
+            return False, "missing_score_evidence"
+
+    return True, "coverage_pass"
+
+
+def _judge_answer_grounding(
+    *,
+    query: str,
+    answer: str,
+    citations: list[AelinCitation],
+    intent_contract: dict[str, Any] | None,
+    service: LLMService,
+    provider: str,
+) -> tuple[bool, str]:
+    text = (answer or "").strip()
+    if not text:
+        return False, "empty_answer"
+    contract = intent_contract if isinstance(intent_contract, dict) else {}
+    requires_factuality = bool(contract.get("requires_factuality"))
+    requires_citations = bool(contract.get("requires_citations"))
+    if not requires_factuality:
+        requires_factuality = not _is_smalltalk_query(query)
+    if requires_citations and not citations:
+        return False, "missing_citations"
+    if not requires_factuality:
+        return True, "chat_mode"
+
+    def _heuristic_judge() -> tuple[bool, str]:
+        if _looks_like_link_dump_answer(text):
+            return False, "link_dump"
+        if citations and _answer_has_fact_signal(text):
+            return True, "heuristic_grounded"
+        if citations and (not _is_time_sensitive_query(query)):
+            return True, "heuristic_non_time_sensitive"
+        if citations:
+            return False, "fact_signal_missing"
+        return False, "no_citation_grounding"
+
+    if provider == "rule_based" or not service.is_configured():
+        return _heuristic_judge()
+
+    evidence_lines = [
+        f"- [{it.source}] {it.title} ({it.received_at})"
+        for it in citations[:8]
+    ]
+    prompt = (
+        "You are Aelin Grounding Judge.\n"
+        "Decide whether answer is grounded by provided evidence.\n"
+        "Return strict JSON only with schema: {\"grounded\": boolean, \"reason\": string, \"risk\": \"low|medium|high\"}.\n"
+        "High risk if answer makes factual claims unsupported by evidence or asks user to search manually despite evidence."
+    )
+    user_msg = (
+        f"user_query: {query.strip()}\n"
+        f"answer: {text[:1600]}\n"
+        + (f"evidence:\n{chr(10).join(evidence_lines)}\n" if evidence_lines else "evidence: none\n")
+        + "Return JSON only."
+    )
+    try:
+        raw = service._chat(
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": user_msg},
+            ],
+            max_tokens=180,
+            stream=False,
+        )
+        parsed = _parse_json_object(str(raw or ""))
+        if not isinstance(parsed, dict):
+            return _heuristic_judge()
+        grounded = bool(parsed.get("grounded"))
+        reason = str(parsed.get("reason") or "").strip()[:160] or "judge_llm"
+        return grounded, reason
+    except Exception:
+        return _heuristic_judge()
+
+
+def _build_retry_web_queries(
+    query: str,
+    used_queries: list[str],
+    *,
+    intent_contract: dict[str, Any] | None = None,
+    tracking_snapshot: dict[str, Any] | None = None,
+) -> list[str]:
+    base = (query or "").strip()
+    if not base:
+        return []
+    used = {q.strip().lower() for q in used_queries if q.strip()}
+    query_pack = _build_web_query_pack(
+        query=base,
+        base_queries=[base],
+        intent_contract=intent_contract if isinstance(intent_contract, dict) else None,
+        tracking_snapshot=tracking_snapshot if isinstance(tracking_snapshot, dict) else None,
+        limit=min(_MAX_WEB_SUBAGENTS + 2, 7),
+    )
+    out: list[str] = []
+    for candidate in query_pack:
+        text = candidate.strip()[:180]
+        if not text:
+            continue
+        key = text.lower()
+        if key in used:
+            continue
+        used.add(key)
+        out.append(text)
+        if len(out) >= 3:
+            break
+    return out
+
+
+def _trace_agent_suggestion(
+    *,
+    query: str,
+    planned_track_suggestion: dict[str, str] | None,
+    citations: list[AelinCitation],
+    need_web_search: bool,
+) -> tuple[dict[str, str] | None, str]:
+    if planned_track_suggestion:
+        target = str(planned_track_suggestion.get("target") or "").strip()[:240]
+        source = _normalize_track_source(str(planned_track_suggestion.get("source") or "auto"))
+        reason = str(planned_track_suggestion.get("reason") or "").strip()[:220]
+        if target:
+            return (
+                {
+                    "target": target,
+                    "source": source,
+                    "reason": reason or "Trace Agent 采纳了 Reply Agent 的跟踪建议。",
+                },
+                "use_planned_track_suggestion",
+            )
+
+    if _is_tracking_intent_query(query):
+        source = "web" if (need_web_search or any(it.source == "web" for it in citations)) else "auto"
+        return (
+            {
+                "target": query.strip()[:240],
+                "source": source,
+                "reason": "Trace Agent 识别到明确的持续追踪意图。",
+            },
+            "tracking_intent_matched",
+        )
+
+    return None, "no_trace_action"
 
 
 def _domain_from_url(url: str) -> str:
@@ -887,6 +2926,1031 @@ def _expression_mapping_prompt() -> str:
     return "\n".join(lines)
 
 
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
+
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    data = json.dumps(payload, ensure_ascii=False, default=str)
+    return f"event: {event}\ndata: {data}\n\n"
+
+
+def _dedupe_citations(rows: list[AelinCitation], *, limit: int) -> list[AelinCitation]:
+    out: list[AelinCitation] = []
+    seen: set[tuple[int, str, str]] = set()
+    safe_limit = max(1, min(20, int(limit or 6)))
+    sorted_rows = sorted(rows, key=lambda it: float(it.score or 0.0), reverse=True)
+    for it in sorted_rows:
+        key = (int(it.message_id or 0), str(it.source or ""), str(it.title or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(it)
+        if len(out) >= safe_limit:
+            break
+    return out
+
+
+def _aelin_chat_impl(
+    payload: AelinChatRequest,
+    db: Session,
+    current_user: User,
+    *,
+    event_cb: Callable[[str, dict[str, Any]], None] | None = None,
+) -> AelinChatResponse:
+    tool_trace: list[AelinToolStep] = []
+    trace_index: dict[str, int] = {}
+
+    def emit(event: str, data: dict[str, Any]) -> None:
+        if event_cb is None:
+            return
+        try:
+            event_cb(event, data)
+        except Exception:
+            pass
+
+    def add_trace(stage: str, *, status: str = "completed", detail: str = "", count: int = 0) -> None:
+        safe_stage = str(stage or "stage").strip().lower()[:80] or "stage"
+        safe_status = str(status or "completed").strip().lower()[:24] or "completed"
+        safe_detail = str(detail or "").strip()[:240]
+        safe_count = max(0, int(count or 0))
+        ts = _now_ms()
+        step = AelinToolStep(
+            stage=safe_stage,
+            status=safe_status,
+            detail=safe_detail,
+            count=safe_count,
+            ts=ts,
+        )
+        idx = trace_index.get(safe_stage)
+        if idx is None:
+            trace_index[safe_stage] = len(tool_trace)
+            tool_trace.append(step)
+        else:
+            prev = tool_trace[idx]
+            step = step.model_copy(update={"ts": int(prev.ts or 0) if int(prev.ts or 0) > 0 else ts})
+            tool_trace[idx] = step
+        emit("trace", {"step": step.model_dump()})
+
+    service, provider = _resolve_llm_service(db, current_user)
+    search_mode = _normalize_search_mode(getattr(payload, "search_mode", "auto"))
+    llm_generation_failed = False
+
+    base_bundle = _build_context_bundle(
+        db,
+        current_user.id,
+        workspace=payload.workspace,
+        query="",
+    )
+    active_bundle = base_bundle
+    memory_summary = str(base_bundle.get("summary") or "")
+    brief_summary = base_bundle["daily_brief"].summary if base_bundle.get("daily_brief") else ""
+    todo_titles = [item.title for item in base_bundle.get("todos", [])]
+    images = _normalize_images(payload.images)
+    history_turns = _normalize_history(payload.history)
+
+    tracking_snapshot = _build_planner_tracking_snapshot(db, user_id=current_user.id, query=payload.query)
+    intent_contract = _build_intent_contract(
+        query=payload.query,
+        service=service,
+        provider=provider,
+        memory_summary=memory_summary,
+        tracking_snapshot=tracking_snapshot,
+    )
+    intent_source = str(intent_contract.get("intent_source") or "fallback")
+    intent_type = str(intent_contract.get("intent_type") or "retrieval")
+    time_scope = str(intent_contract.get("time_scope") or "any")
+    freshness_hours = max(1, min(720, _safe_int(intent_contract.get("freshness_hours"), 72)))
+    intent_conf = max(0.0, min(1.0, _safe_float(intent_contract.get("confidence"), 0.62)))
+    add_trace(
+        "intent_lens",
+        status="completed",
+        detail=f"type={intent_type}; scope={time_scope}; freshness_h={freshness_hours}; conf={intent_conf:.2f}; src={intent_source}",
+    )
+
+    tool_plan = _plan_tool_usage(
+        query=payload.query,
+        service=service,
+        provider=provider,
+        memory_summary=memory_summary,
+        tracking_snapshot=tracking_snapshot,
+        intent_contract=intent_contract,
+    )
+    critic = _critic_tool_plan(
+        query=payload.query,
+        intent_contract=intent_contract,
+        tool_plan=tool_plan,
+        service=service,
+        provider=provider,
+    )
+    critic_source = str(critic.get("critic_source") or "fallback")
+    critic_reason = str(critic.get("reason") or "").strip()[:180]
+    if bool(critic.get("accepted", True)):
+        add_trace("plan_critic", status="completed", detail=f"{critic_source}:{critic_reason or 'accepted'}")
+    else:
+        add_trace("plan_critic", status="failed", detail=f"{critic_source}:{critic_reason or 'rejected'}")
+        patch = critic.get("patch") if isinstance(critic.get("patch"), dict) else None
+        if isinstance(patch, dict):
+            tool_plan = _apply_plan_patch(
+                query=payload.query,
+                tool_plan=tool_plan,
+                patch=patch,
+            )
+            add_trace("plan_critic", status="completed", detail=f"{critic_source}:patched")
+
+    planner_source = str(tool_plan.get("planner_source") or "fallback").strip().lower()
+    planning_reason = str(tool_plan.get("reason") or "planner:none")
+    if planner_source:
+        planning_reason = f"{planning_reason}; planner={planner_source}"
+    if critic_reason:
+        planning_reason = f"{planning_reason}; critic={critic_reason}"
+    need_local_search = bool(tool_plan.get("need_local_search"))
+    need_web_search = bool(tool_plan.get("need_web_search"))
+    web_queries = _normalize_web_queries(payload.query, tool_plan.get("web_queries"))
+    context_boundaries = _normalize_context_boundaries(
+        payload.query,
+        tool_plan.get("context_boundaries"),
+        need_local_search=need_local_search,
+        need_web_search=need_web_search,
+        web_queries=web_queries,
+    )
+    if search_mode == "local_only":
+        context_boundaries = [it for it in context_boundaries if str(it.get("kind") or "") == "local"]
+        if not context_boundaries:
+            context_boundaries = [
+                {
+                    "kind": "local",
+                    "query": payload.query.strip()[:180],
+                    "scope": "forced local",
+                }
+            ]
+        planning_reason += ";search_mode=local_only"
+    elif search_mode == "web_only":
+        context_boundaries = [it for it in context_boundaries if str(it.get("kind") or "") == "web"]
+        if not context_boundaries:
+            fallback_web = _normalize_web_queries(payload.query, web_queries, limit=_MAX_WEB_SUBAGENTS)
+            context_boundaries = [
+                {"kind": "web", "query": q, "scope": q}
+                for q in (fallback_web or [payload.query.strip()[:180]])
+            ]
+        planning_reason += ";search_mode=web_only"
+
+    local_boundaries = [it for it in context_boundaries if str(it.get("kind") or "") == "local"][:_MAX_LOCAL_SUBAGENTS]
+    web_boundaries = [it for it in context_boundaries if str(it.get("kind") or "") == "web"][:_MAX_WEB_SUBAGENTS]
+    if web_boundaries:
+        decomposed = _decompose_web_context_boundaries(
+            query=payload.query,
+            web_boundaries=web_boundaries,
+            intent_contract=intent_contract,
+            tracking_snapshot=tracking_snapshot,
+            service=service,
+            provider=provider,
+        )
+        decompose_source = str(decomposed.get("source") or "fallback")
+        decompose_reason = str(decomposed.get("reason") or "").strip()[:180]
+        decomposed_boundaries = (
+            decomposed.get("boundaries")
+            if isinstance(decomposed.get("boundaries"), list)
+            else []
+        )
+        normalized_decomposed = _normalize_context_boundaries(
+            payload.query,
+            decomposed_boundaries,
+            need_local_search=False,
+            need_web_search=True,
+            web_queries=[str(it.get("query") or "") for it in decomposed_boundaries if isinstance(it, dict)],
+        )
+        web_boundaries = [
+            it
+            for it in normalized_decomposed
+            if str(it.get("kind") or "") == "web"
+        ][:_MAX_WEB_SUBAGENTS] or web_boundaries
+        planning_reason = f"{planning_reason};web_decomposer={decompose_source}:{len(web_boundaries)}"
+        add_trace(
+            "query_decomposer",
+            status="completed" if decompose_source == "llm" else "completed",
+            detail=f"{decompose_source}:{decompose_reason or 'ok'}; web={len(web_boundaries)}",
+            count=len(web_boundaries),
+        )
+    else:
+        add_trace("query_decomposer", status="skipped", detail="no web boundary")
+    context_boundaries = [*local_boundaries, *web_boundaries]
+    need_local_search = bool(local_boundaries)
+    need_web_search = bool(web_boundaries)
+    web_queries = [str(it.get("query") or "") for it in web_boundaries if str(it.get("query") or "").strip()]
+    planned_track_suggestion = tool_plan.get("track_suggestion") if isinstance(tool_plan.get("track_suggestion"), dict) else None
+    route = _main_agent_route(
+        need_local_search=need_local_search,
+        need_web_search=need_web_search,
+        planned_track_suggestion=planned_track_suggestion if isinstance(planned_track_suggestion, dict) else None,
+        planned_route=tool_plan.get("route") if isinstance(tool_plan.get("route"), dict) else None,
+    )
+    trace_route_enabled = bool(route.get("trace_agent")) or bool(planned_track_suggestion)
+    trace_context_boundaries = _build_trace_context_boundaries(
+        query=payload.query,
+        raw_boundaries=tool_plan.get("trace_context_boundaries"),
+        need_local_search=trace_route_enabled and need_local_search,
+        need_web_search=trace_route_enabled and bool(need_web_search or route.get("allow_web_retry")),
+        web_queries=web_queries,
+        intent_contract=intent_contract,
+        tracking_snapshot=tracking_snapshot,
+    )
+    if search_mode == "local_only":
+        trace_context_boundaries = [
+            it for it in trace_context_boundaries if str(it.get("kind") or "") == "local"
+        ]
+    elif search_mode == "web_only":
+        trace_context_boundaries = [
+            it for it in trace_context_boundaries if str(it.get("kind") or "") == "web"
+        ]
+    trace_local_boundaries = [
+        it for it in trace_context_boundaries if str(it.get("kind") or "") == "local"
+    ][:2]
+    trace_web_boundaries = [
+        it for it in trace_context_boundaries if str(it.get("kind") or "") == "web"
+    ][:3]
+
+    add_trace(
+        "main_agent",
+        status="completed",
+        detail=(
+            f"{planning_reason}; mode={search_mode}; local={len(local_boundaries)}; web={len(web_boundaries)}; "
+            f"trace_local={len(trace_local_boundaries)}; trace_web={len(trace_web_boundaries)}; "
+            f"matched_tracking={int(tracking_snapshot.get('matched_count') or 0)}"
+        ),
+    )
+    add_trace(
+        "reply_agent",
+        status="completed",
+        detail=(
+            f"route reply={1 if route.get('reply_agent') else 0}, "
+            f"trace={1 if route.get('trace_agent') else 0}, "
+            f"retry={1 if route.get('allow_web_retry') else 0}"
+        ),
+    )
+    add_trace(
+        "reply_dispatch",
+        status="completed",
+        detail=f"context_boundaries={len(context_boundaries)}; trace_boundaries={len(trace_context_boundaries)}",
+    )
+
+    local_citations: list[AelinCitation] = []
+    if need_local_search and route.get("reply_agent", True):
+        add_trace(
+            "local_search",
+            status="running",
+            detail=f"dispatching {len(local_boundaries)} local subagents",
+        )
+        best_local_count = -1
+        local_jobs: list[tuple[int, dict[str, str], str, str]] = []
+        for idx, boundary in enumerate(local_boundaries, start=1):
+            sub_query = str(boundary.get("query") or payload.query).strip()[:180]
+            sub_scope = str(boundary.get("scope") or sub_query).strip()[:120]
+            add_trace(f"local_search_subagent_{idx}", status="running", detail=sub_scope or sub_query)
+            local_jobs.append((idx, boundary, sub_query, sub_scope))
+
+        def _fetch_local_bundle(raw_query: str) -> tuple[dict[str, Any] | None, list[AelinCitation], str]:
+            local_db = create_session()
+            try:
+                bundle = _build_context_bundle(
+                    local_db,
+                    current_user.id,
+                    workspace=payload.workspace,
+                    query=raw_query,
+                )
+                cites = _to_citations(bundle["focus_items_raw"], payload.max_citations)
+                return bundle, cites, ""
+            except Exception as exc:
+                return None, [], str(exc)[:140]
+            finally:
+                try:
+                    local_db.close()
+                except Exception:
+                    pass
+
+        futures: dict[Any, tuple[int, dict[str, str], str, str]] = {}
+        max_workers = max(1, min(len(local_jobs), _MAX_LOCAL_SUBAGENTS))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for idx, boundary, sub_query, sub_scope in local_jobs:
+                futures[pool.submit(_fetch_local_bundle, sub_query)] = (idx, boundary, sub_query, sub_scope)
+
+            for fut in as_completed(futures):
+                idx, boundary, sub_query, sub_scope = futures[fut]
+                sub_stage = f"local_search_subagent_{idx}"
+                try:
+                    bundle, cites, local_error = fut.result()
+                except Exception as e:
+                    add_trace(sub_stage, status="failed", detail=f"{sub_scope or sub_query}: {str(e)[:140]}")
+                    continue
+                if local_error or (not isinstance(bundle, dict)):
+                    add_trace(sub_stage, status="failed", detail=f"{sub_scope or sub_query}: {local_error or 'local error'}")
+                    continue
+                local_citations.extend(cites)
+                if len(cites) > best_local_count:
+                    best_local_count = len(cites)
+                    active_bundle = bundle
+                add_trace(sub_stage, status="completed", detail=sub_scope or sub_query, count=len(cites))
+
+        if local_citations:
+            local_citations = _hydrate_citation_avatars(db, current_user.id, local_citations)
+        add_trace(
+            "local_search",
+            status="completed",
+            detail="local search finished",
+            count=len(local_citations),
+        )
+    else:
+        add_trace("local_search", status="skipped", detail="local search skipped by route")
+
+    web_citations: list[AelinCitation] = []
+    web_results_for_answer: list[WebSearchResult] = []
+    web_evidence_lines: list[str] = []
+    used_web_queries: list[str] = []
+    web_provider_totals: Counter[str] = Counter()
+    web_fetch_mode_totals: Counter[str] = Counter()
+
+    if need_web_search and route.get("reply_agent", True):
+        add_trace(
+            "web_search",
+            status="running",
+            detail=f"dispatching {len(web_boundaries)} web subagents",
+        )
+        total = len(web_boundaries)
+        completed = 0
+        evidence_count = 0
+        for idx, boundary in enumerate(web_boundaries, start=1):
+            add_trace(f"web_search_subagent_{idx}", status="running", detail=str(boundary.get("scope") or boundary.get("query") or ""))
+
+        def _fetch_web_rows(raw_query: str) -> list[WebSearchResult]:
+            return _web_search.search_and_fetch(raw_query, max_results=6, fetch_top_k=3)
+
+        futures: dict[Any, tuple[int, dict[str, str], str]] = {}
+        max_workers = max(1, min(len(web_boundaries), _MAX_WEB_SUBAGENTS))
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for idx, boundary in enumerate(web_boundaries, start=1):
+                q = str(boundary.get("query") or payload.query).strip()[:180]
+                used_web_queries.append(q)
+                futures[pool.submit(_fetch_web_rows, q)] = (idx, boundary, q)
+
+            for fut in as_completed(futures):
+                idx, boundary, q = futures[fut]
+                sub_stage = f"web_search_subagent_{idx}"
+                completed += 1
+                try:
+                    rows = fut.result() or []
+                except Exception as e:
+                    add_trace(sub_stage, status="failed", detail=f"{q}: {str(e)[:140]}")
+                    continue
+                if not rows:
+                    add_trace(sub_stage, status="failed", detail=f"{q}: no result")
+                    continue
+
+                web_results_for_answer.extend(rows[:5])
+                provider_counts = Counter(str(getattr(it, "provider", "") or "unknown") for it in rows[:8])
+                fetch_counts = Counter(str(getattr(it, "fetch_mode", "") or "none") for it in rows[:8])
+                web_provider_totals.update(provider_counts)
+                web_fetch_mode_totals.update(fetch_counts)
+                provider_note = ",".join(f"{name}:{count}" for name, count in provider_counts.most_common(3))
+                fetch_note = ",".join(f"{name}:{count}" for name, count in fetch_counts.most_common(3))
+                try:
+                    persisted = _persist_web_search_results(
+                        db,
+                        current_user.id,
+                        query=q,
+                        results=rows,
+                    )
+                except Exception:
+                    persisted = []
+                web_citations.extend(persisted)
+                for item in rows[:5]:
+                    host = _domain_from_url(item.url)
+                    snippet = ((getattr(item, "fetched_excerpt", "") or "").strip() or (item.snippet or "").strip())
+                    provider_name = str(getattr(item, "provider", "") or "unknown")
+                    fetch_mode = str(getattr(item, "fetch_mode", "") or "none")
+                    line = f"- [Web/{provider_name}/{fetch_mode}] {item.title} ({host})"
+                    if snippet:
+                        line += f" | {snippet}"
+                    web_evidence_lines.append(line)
+                for ridx, cite in enumerate(persisted, start=1):
+                    evidence_count += 1
+                    snippet = ""
+                    provider_name = "unknown"
+                    fetch_mode = "none"
+                    if ridx - 1 < len(rows):
+                        row = rows[ridx - 1]
+                        snippet = (
+                            (getattr(row, "fetched_excerpt", "") or "").strip()
+                            or (row.snippet or "").strip()
+                        )[:280]
+                        provider_name = str(getattr(row, "provider", "") or "unknown")
+                        fetch_mode = str(getattr(row, "fetch_mode", "") or "none")
+                    emit(
+                        "evidence",
+                        {
+                            "citation": cite.model_dump(),
+                            "snippet": snippet,
+                            "query": q,
+                            "provider": provider_name,
+                            "fetch_mode": fetch_mode,
+                            "progress": {
+                                "query_index": completed,
+                                "query_total": total,
+                                "evidence_count": evidence_count,
+                            },
+                        },
+                    )
+                add_trace(
+                    sub_stage,
+                    status="completed",
+                    detail=f"{str(boundary.get('scope') or q)}; p={provider_note or 'unknown'}; f={fetch_note or 'none'}",
+                    count=len(persisted),
+                )
+
+        provider_total_note = ",".join(f"{name}:{count}" for name, count in web_provider_totals.most_common(4))
+        fetch_total_note = ",".join(f"{name}:{count}" for name, count in web_fetch_mode_totals.most_common(4))
+        add_trace(
+            "web_search",
+            status="completed" if web_citations else "failed",
+            detail=(
+                f"web search finished; p={provider_total_note or 'none'}; f={fetch_total_note or 'none'}"
+                if web_citations
+                else "web search empty"
+            ),
+            count=len(web_citations),
+        )
+    else:
+        add_trace("web_search", status="skipped", detail="web search skipped by route")
+
+    max_citations = max(1, min(20, int(payload.max_citations or 6)))
+    citations = _dedupe_citations([*local_citations, *web_citations], limit=max_citations)
+    add_trace(
+        "message_hub",
+        status="completed",
+        detail=f"merged local={len(local_citations)} web={len(web_citations)}",
+        count=len(citations),
+    )
+
+    pin_lines = [
+        f"{item.display_name}(score {item.score:.1f}, unread {item.unread_count})"
+        for item in active_bundle.get("pin_recommendations", [])[:4]
+    ]
+    memory_prompt = _memory.build_system_memory_prompt(
+        db,
+        current_user.id,
+        query=payload.query if need_local_search else "",
+    )
+
+    add_trace("generation", status="running", detail="composing answer")
+    generation_detail = "generation completed"
+
+    if provider == "rule_based":
+        if local_citations:
+            answer = _rule_based_answer(
+                payload.query,
+                memory_summary,
+                citations,
+                brief_summary=brief_summary,
+                todo_titles=todo_titles,
+                image_count=len(images),
+            )
+            generation_detail = "rule_based with local evidence"
+        elif web_evidence_lines:
+            answer = _compose_web_first_answer(payload.query, web_results_for_answer)
+            generation_detail = "rule_based with web evidence"
+        else:
+            answer = _rule_based_chat_answer(
+                payload.query,
+                memory_summary=memory_summary,
+                brief_summary=brief_summary,
+            )
+            generation_detail = "rule_based chat-only"
+    elif not service.is_configured():
+        answer = (
+            "当前模型连接不可用，Aelin 暂时无法调用外部模型。\n\n"
+            "请先检查 Provider / Base URL / API Key 配置后重试。"
+        )
+        generation_detail = "llm not configured"
+    else:
+        evidence_block = "\n".join(
+            f"- [{it.source_label}] {it.title} ({it.sender}, {it.received_at})"
+            for it in citations[:8]
+        ) if citations else ""
+        prompt = (
+            "You are Aelin, a signal-native assistant.\n"
+            "Always answer in Simplified Chinese.\n"
+            "Answer the user's question directly first.\n"
+            "If retrieval evidence is provided, use it directly and do not ask user to search manually.\n"
+            "If evidence is weak, state uncertainty and avoid fabrication.\n"
+            "Keep response concise and practical.\n"
+            "Aelin has 11 expressions. Choose one according to semantics below:\n"
+            + _expression_mapping_prompt()
+            + "\n"
+            "You MUST append exactly one tag at the end: [expression:exp-XX]."
+        )
+        retrieval_note = (
+            f"planner={planning_reason}; "
+            f"local={'on' if need_local_search else 'off'}; "
+            f"web={'on' if need_web_search else 'off'}"
+        )
+        user_msg = (
+            f"用户问题: {payload.query.strip()}\n\n"
+            f"工具规划: {retrieval_note}\n\n"
+            + (
+                "最近对话:\n"
+                + "\n".join(
+                    f"- {'用户' if turn['role'] == 'user' else 'Aelin'}: {turn['content'][:220]}"
+                    for turn in history_turns[-6:]
+                )
+                + "\n\n"
+                if history_turns else ""
+            )
+            + f"长期记忆摘要: {memory_summary or '暂无'}\n\n"
+            + f"今日简报: {brief_summary or '暂无'}\n\n"
+            + f"待跟进事项: {'; '.join(todo_titles[:5]) if todo_titles else '暂无'}\n\n"
+            + f"置顶建议: {'; '.join(pin_lines) if pin_lines else '暂无'}\n\n"
+            + (
+                "用户上传图片:\n"
+                + "\n".join(f"- {img['name'] or 'image'}" for img in images)
+                + "\n\n"
+                if images else ""
+            )
+            + (f"本地证据:\n{evidence_block}\n\n" if evidence_block else "")
+            + (f"联网证据:\n{chr(10).join(web_evidence_lines[:8])}\n" if web_evidence_lines else "")
+        )
+        llm_messages: list[dict[str, Any]] = [{"role": "system", "content": prompt}]
+        if memory_prompt:
+            llm_messages.append({"role": "system", "content": memory_prompt})
+        if history_turns:
+            llm_messages.extend(history_turns[-10:])
+        if images:
+            user_content: list[dict[str, Any]] = [{"type": "text", "text": user_msg}]
+            for img in images:
+                user_content.append({"type": "image_url", "image_url": {"url": img["data_url"]}})
+            llm_messages.append({"role": "user", "content": user_content})
+        else:
+            llm_messages.append({"role": "user", "content": user_msg})
+
+        llm_error: str | None = None
+        answer = ""
+        try:
+            raw = service._chat(
+                messages=llm_messages,
+                max_tokens=520,
+                stream=False,
+            )
+            answer = str(raw).strip() if raw else ""
+            generation_detail = "llm generation succeeded"
+        except Exception as e:
+            llm_error = str(e)
+            llm_generation_failed = True
+            generation_detail = f"llm failed: {llm_error[:120]}"
+            if images:
+                fallback_messages: list[dict[str, Any]] = [{"role": "system", "content": prompt}]
+                if memory_prompt:
+                    fallback_messages.append({"role": "system", "content": memory_prompt})
+                fallback_messages.append({"role": "user", "content": user_msg})
+                try:
+                    raw = service._chat(
+                        messages=fallback_messages,
+                        max_tokens=520,
+                        stream=False,
+                    )
+                    maybe = str(raw).strip() if raw else ""
+                    if maybe:
+                        answer = "当前模型可能不支持图片输入，以下是基于文本上下文的回复：\n\n" + maybe
+                        generation_detail = "llm fallback text-only succeeded"
+                except Exception as e2:
+                    if not llm_error:
+                        llm_error = str(e2)
+        if not answer:
+            if citations:
+                answer = _rule_based_answer(
+                    payload.query,
+                    memory_summary,
+                    citations,
+                    brief_summary=brief_summary,
+                    todo_titles=todo_titles,
+                    image_count=len(images),
+                )
+                generation_detail = "fallback to rule_based with citations"
+            else:
+                answer = (
+                    "我刚才调用外部模型失败，先给你一个保底回复。"
+                    + (f"\n\n错误：{llm_error}" if llm_error else "")
+                    + "\n\n"
+                    + _rule_based_chat_answer(
+                        payload.query,
+                        memory_summary=memory_summary,
+                        brief_summary=brief_summary,
+                    )
+                )
+                generation_detail = "fallback to rule_based chat"
+        if answer and web_results_for_answer and _looks_like_link_dump_answer(answer):
+            guarded = _compose_web_first_answer(payload.query, web_results_for_answer)
+            if guarded:
+                answer = guarded
+            generation_detail = f"{generation_detail}; retrieval evidence guard applied"
+
+    answer, tagged_expression = _extract_expression_tag(answer)
+    expression = tagged_expression or _pick_expression(payload.query, answer, generation_failed=llm_generation_failed)
+    add_trace("generation", status="completed", detail=generation_detail, count=len(citations))
+
+    add_trace("grounding_judge", status="running", detail="checking grounding", count=len(citations))
+    grounded, grounding_reason = _judge_answer_grounding(
+        query=payload.query,
+        answer=answer,
+        citations=citations,
+        intent_contract=intent_contract,
+        service=service,
+        provider=provider,
+    )
+    add_trace(
+        "grounding_judge",
+        status="completed" if grounded else "failed",
+        detail=grounding_reason,
+        count=len(citations),
+    )
+
+    add_trace("coverage_verifier", status="running", detail="checking evidence coverage", count=len(citations))
+    coverage_ok, coverage_reason = _check_evidence_coverage(
+        query=payload.query,
+        intent_contract=intent_contract,
+        answer=answer,
+        citations=citations,
+        web_results=web_results_for_answer,
+    )
+    add_trace(
+        "coverage_verifier",
+        status="completed" if coverage_ok else "failed",
+        detail=coverage_reason,
+        count=len(citations),
+    )
+
+    add_trace("reply_verifier", status="running", detail="verifying reply quality", count=len(citations))
+    verified, verify_reason = _verify_reply_answer(
+        query=payload.query,
+        answer=answer,
+        need_web_search=need_web_search,
+        citations=citations,
+    )
+    retried_web = 0
+    has_web_evidence = any(str(it.source or "").strip().lower() == "web" for it in citations)
+    requires_citations = bool(intent_contract.get("requires_citations")) if isinstance(intent_contract, dict) else False
+    quality_failed = (not verified) or (not grounded) or (not coverage_ok)
+    allow_quality_retry = bool(route.get("allow_web_retry")) or (requires_citations and (not has_web_evidence))
+    if quality_failed and allow_quality_retry:
+        retry_queries = _build_retry_web_queries(
+            payload.query,
+            used_web_queries,
+            intent_contract=intent_contract,
+            tracking_snapshot=tracking_snapshot,
+        )
+        if retry_queries:
+            retried_web = len(retry_queries)
+            add_trace("web_search", status="running", detail=f"verifier retry x{len(retry_queries)}", count=len(web_citations))
+            base_idx = len(web_boundaries)
+            evidence_count = len(web_citations)
+            retry_provider_totals: Counter[str] = Counter()
+            retry_fetch_totals: Counter[str] = Counter()
+            for idx, rq in enumerate(retry_queries, start=1):
+                sub_stage = f"web_search_subagent_{base_idx + idx}"
+                add_trace(sub_stage, status="running", detail=rq)
+                try:
+                    rows = _web_search.search_and_fetch(rq, max_results=6, fetch_top_k=3)
+                except Exception as e:
+                    add_trace(sub_stage, status="failed", detail=f"{rq}: {str(e)[:140]}")
+                    continue
+                if not rows:
+                    add_trace(sub_stage, status="failed", detail=f"{rq}: no result")
+                    continue
+                web_results_for_answer.extend(rows[:5])
+                provider_counts = Counter(str(getattr(it, "provider", "") or "unknown") for it in rows[:8])
+                fetch_counts = Counter(str(getattr(it, "fetch_mode", "") or "none") for it in rows[:8])
+                retry_provider_totals.update(provider_counts)
+                retry_fetch_totals.update(fetch_counts)
+                web_provider_totals.update(provider_counts)
+                web_fetch_mode_totals.update(fetch_counts)
+                provider_note = ",".join(f"{name}:{count}" for name, count in provider_counts.most_common(3))
+                fetch_note = ",".join(f"{name}:{count}" for name, count in fetch_counts.most_common(3))
+                persisted = _persist_web_search_results(
+                    db,
+                    current_user.id,
+                    query=rq,
+                    results=rows,
+                )
+                web_citations.extend(persisted)
+                for ridx, cite in enumerate(persisted, start=1):
+                    evidence_count += 1
+                    snippet = ""
+                    provider_name = "unknown"
+                    fetch_mode = "none"
+                    if ridx - 1 < len(rows):
+                        row = rows[ridx - 1]
+                        snippet = (
+                            (getattr(row, "fetched_excerpt", "") or "").strip()
+                            or (row.snippet or "").strip()
+                        )[:280]
+                        provider_name = str(getattr(row, "provider", "") or "unknown")
+                        fetch_mode = str(getattr(row, "fetch_mode", "") or "none")
+                    emit(
+                        "evidence",
+                        {
+                            "citation": cite.model_dump(),
+                            "snippet": snippet,
+                            "query": rq,
+                            "provider": provider_name,
+                            "fetch_mode": fetch_mode,
+                            "progress": {
+                                "query_index": idx,
+                                "query_total": len(retry_queries),
+                                "evidence_count": evidence_count,
+                            },
+                        },
+                    )
+                add_trace(
+                    sub_stage,
+                    status="completed",
+                    detail=f"{rq}; p={provider_note or 'unknown'}; f={fetch_note or 'none'}",
+                    count=len(persisted),
+                )
+            retry_provider_note = ",".join(f"{name}:{count}" for name, count in retry_provider_totals.most_common(4))
+            retry_fetch_note = ",".join(f"{name}:{count}" for name, count in retry_fetch_totals.most_common(4))
+            add_trace(
+                "web_search",
+                status="completed" if web_citations else "failed",
+                detail=f"verifier retry finished; p={retry_provider_note or 'none'}; f={retry_fetch_note or 'none'}",
+                count=len(web_citations),
+            )
+            citations = _dedupe_citations([*local_citations, *web_citations], limit=max_citations)
+            add_trace(
+                "message_hub",
+                status="completed",
+                detail=f"post-retry merge local={len(local_citations)} web={len(web_citations)}",
+                count=len(citations),
+            )
+            if web_results_for_answer and (
+                provider == "rule_based"
+                or _looks_like_link_dump_answer(answer)
+                or not _answer_has_fact_signal(answer)
+            ):
+                guarded = _compose_web_first_answer(payload.query, web_results_for_answer)
+                if guarded:
+                    answer = guarded
+                add_trace(
+                    "generation",
+                    status="completed",
+                    detail="response refreshed after verifier retry; retrieval evidence guard applied",
+                    count=len(citations),
+                )
+            verified, verify_reason = _verify_reply_answer(
+                query=payload.query,
+                answer=answer,
+                need_web_search=bool(need_web_search or retried_web),
+                citations=citations,
+            )
+            grounded, grounding_reason = _judge_answer_grounding(
+                query=payload.query,
+                answer=answer,
+                citations=citations,
+                intent_contract=intent_contract,
+                service=service,
+                provider=provider,
+            )
+            add_trace(
+                "grounding_judge",
+                status="completed" if grounded else "failed",
+                detail=f"post_retry:{grounding_reason}",
+                count=len(citations),
+            )
+            coverage_ok, coverage_reason = _check_evidence_coverage(
+                query=payload.query,
+                intent_contract=intent_contract,
+                answer=answer,
+                citations=citations,
+                web_results=web_results_for_answer,
+            )
+            add_trace(
+                "coverage_verifier",
+                status="completed" if coverage_ok else "failed",
+                detail=f"post_retry:{coverage_reason}",
+                count=len(citations),
+            )
+
+    verifier_detail = verify_reason
+    if retried_web:
+        verifier_detail = f"{verify_reason}; retried_web={retried_web}"
+    if not grounded:
+        verifier_detail = f"{verifier_detail}; grounding={grounding_reason}"
+    if not coverage_ok:
+        verifier_detail = f"{verifier_detail}; coverage={coverage_reason}"
+    add_trace(
+        "reply_verifier",
+        status="completed" if (verified and grounded and coverage_ok) else "failed",
+        detail=verifier_detail,
+        count=len(citations),
+    )
+    answer, maybe_expression = _extract_expression_tag(answer)
+    if maybe_expression:
+        expression = maybe_expression
+
+    trace_should_run = bool(route.get("trace_agent")) or bool(planned_track_suggestion)
+    track_suggestion = planned_track_suggestion if isinstance(planned_track_suggestion, dict) else None
+    trace_local_citations: list[AelinCitation] = []
+    trace_web_citations: list[AelinCitation] = []
+    trace_web_results: list[WebSearchResult] = []
+    if trace_should_run:
+        add_trace(
+            "trace_agent",
+            status="running",
+            detail=f"dispatching local={len(trace_local_boundaries)} web={len(trace_web_boundaries)}",
+        )
+        add_trace(
+            "trace_dispatch",
+            status="completed",
+            detail=f"context_boundaries={len(trace_local_boundaries) + len(trace_web_boundaries)}",
+            count=len(trace_local_boundaries) + len(trace_web_boundaries),
+        )
+        trace_jobs: list[dict[str, Any]] = []
+        for idx, boundary in enumerate(trace_local_boundaries, start=1):
+            sub_query = str(boundary.get("query") or payload.query).strip()[:180]
+            sub_scope = str(boundary.get("scope") or sub_query).strip()[:120]
+            add_trace(f"trace_local_subagent_{idx}", status="running", detail=sub_scope or sub_query)
+            trace_jobs.append(
+                {
+                    "kind": "local",
+                    "idx": idx,
+                    "query": sub_query,
+                    "scope": sub_scope,
+                }
+            )
+        for idx, boundary in enumerate(trace_web_boundaries, start=1):
+            sub_query = str(boundary.get("query") or payload.query).strip()[:180]
+            sub_scope = str(boundary.get("scope") or sub_query).strip()[:120]
+            add_trace(f"trace_web_subagent_{idx}", status="running", detail=sub_scope or sub_query)
+            trace_jobs.append(
+                {
+                    "kind": "web",
+                    "idx": idx,
+                    "query": sub_query,
+                    "scope": sub_scope,
+                }
+            )
+
+        def _trace_local_lookup(raw_query: str) -> tuple[list[AelinCitation], str]:
+            local_db = create_session()
+            try:
+                bundle = _build_context_bundle(
+                    local_db,
+                    current_user.id,
+                    workspace=payload.workspace,
+                    query=raw_query,
+                )
+                cites = _to_citations(bundle["focus_items_raw"], payload.max_citations)
+                return cites, ""
+            except Exception as exc:
+                return [], str(exc)[:140]
+            finally:
+                try:
+                    local_db.close()
+                except Exception:
+                    pass
+
+        def _trace_web_lookup(raw_query: str) -> list[WebSearchResult]:
+            return _web_search.search_and_fetch(raw_query, max_results=5, fetch_top_k=2)
+
+        futures: dict[Any, dict[str, Any]] = {}
+        if trace_jobs:
+            max_trace_workers = max(1, min(len(trace_jobs), _MAX_LOCAL_SUBAGENTS + _MAX_WEB_SUBAGENTS))
+            with ThreadPoolExecutor(max_workers=max_trace_workers) as pool:
+                for job in trace_jobs:
+                    if job["kind"] == "local":
+                        futures[pool.submit(_trace_local_lookup, str(job["query"]))] = job
+                    else:
+                        futures[pool.submit(_trace_web_lookup, str(job["query"]))] = job
+
+                for fut in as_completed(futures):
+                    job = futures[fut]
+                    kind = str(job.get("kind") or "")
+                    idx = int(job.get("idx") or 0)
+                    query_text = str(job.get("query") or "")
+                    scope_text = str(job.get("scope") or query_text)
+                    if kind == "local":
+                        sub_stage = f"trace_local_subagent_{idx}"
+                        try:
+                            cites, trace_local_error = fut.result()
+                        except Exception as e:
+                            add_trace(sub_stage, status="failed", detail=f"{scope_text or query_text}: {str(e)[:140]}")
+                            continue
+                        if trace_local_error:
+                            add_trace(sub_stage, status="failed", detail=f"{scope_text or query_text}: {trace_local_error}")
+                            continue
+                        trace_local_citations.extend(cites or [])
+                        add_trace(sub_stage, status="completed", detail=scope_text or query_text, count=len(cites or []))
+                        continue
+
+                    sub_stage = f"trace_web_subagent_{idx}"
+                    try:
+                        rows = fut.result() or []
+                    except Exception as e:
+                        add_trace(sub_stage, status="failed", detail=f"{scope_text or query_text}: {str(e)[:140]}")
+                        continue
+                    if not rows:
+                        add_trace(sub_stage, status="failed", detail=f"{scope_text or query_text}: no result")
+                        continue
+                    trace_web_results.extend(rows[:5])
+                    provider_counts = Counter(str(getattr(it, "provider", "") or "unknown") for it in rows[:8])
+                    fetch_counts = Counter(str(getattr(it, "fetch_mode", "") or "none") for it in rows[:8])
+                    provider_note = ",".join(f"{name}:{count}" for name, count in provider_counts.most_common(3))
+                    fetch_note = ",".join(f"{name}:{count}" for name, count in fetch_counts.most_common(3))
+                    try:
+                        persisted = _persist_web_search_results(
+                            db,
+                            current_user.id,
+                            query=query_text,
+                            results=rows,
+                        )
+                    except Exception:
+                        persisted = []
+                    trace_web_citations.extend(persisted)
+                    add_trace(
+                        sub_stage,
+                        status="completed",
+                        detail=f"{scope_text or query_text}; p={provider_note or 'unknown'}; f={fetch_note or 'none'}",
+                        count=len(persisted),
+                    )
+
+        if trace_local_citations:
+            trace_local_citations = _hydrate_citation_avatars(db, current_user.id, trace_local_citations)
+        trace_merged = _dedupe_citations([*trace_local_citations, *trace_web_citations], limit=max_citations)
+        if trace_merged:
+            citations = _dedupe_citations([*citations, *trace_merged], limit=max_citations)
+            add_trace(
+                "message_hub",
+                status="completed",
+                detail=f"trace merge local={len(trace_local_citations)} web={len(trace_web_citations)}",
+                count=len(citations),
+            )
+            web_results_for_answer.extend(trace_web_results[:5])
+
+        suggestion, trace_reason = _trace_agent_suggestion(
+            query=payload.query,
+            planned_track_suggestion=track_suggestion if isinstance(track_suggestion, dict) else None,
+            citations=citations,
+            need_web_search=bool(need_web_search or retried_web or trace_web_citations),
+        )
+        if suggestion:
+            track_suggestion = suggestion
+            source_list = sorted({str(it.source or "").strip() for it in citations if str(it.source or "").strip()})
+            emit(
+                "confirmed",
+                {
+                    "items": [str(track_suggestion.get("target") or "").strip()[:240]],
+                    "source_count": len(source_list),
+                    "sources": source_list[:5],
+                },
+            )
+            add_trace("trace_agent", status="completed", detail=trace_reason, count=1)
+        else:
+            add_trace("trace_agent", status="completed", detail=trace_reason, count=0)
+    else:
+        add_trace("trace_agent", status="skipped", detail="trace route disabled")
+
+    if payload.use_memory and answer:
+        try:
+            _memory.update_after_turn(
+                db,
+                current_user.id,
+                [{"role": "user", "content": payload.query}],
+                answer,
+            )
+        except Exception:
+            pass
+    try:
+        if payload.use_memory and answer:
+            db.commit()
+        elif web_citations or trace_web_citations:
+            db.commit()
+    except Exception:
+        db.rollback()
+
+    final_memory_summary = str(active_bundle.get("summary") or memory_summary or "")
+    response = AelinChatResponse(
+        answer=answer,
+        expression=expression,
+        citations=citations,
+        actions=_build_actions(
+            payload.query,
+            citations,
+            has_todos=bool(todo_titles),
+            track_suggestion=track_suggestion if isinstance(track_suggestion, dict) else None,
+        ),
+        tool_trace=tool_trace[:64],
+        memory_summary=final_memory_summary,
+        generated_at=datetime.now(timezone.utc),
+    )
+    return response
+
+
 @router.get("/context", response_model=AelinContextResponse)
 def get_aelin_context(
     workspace: str = Query(default="default", min_length=1, max_length=64),
@@ -920,6 +3984,9 @@ def aelin_chat(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    return _aelin_chat_impl(payload, db, current_user)
+
+    # Legacy implementation kept below temporarily for reference.
     tool_trace: list[AelinToolStep] = []
 
     def add_trace(stage: str, *, status: str = "completed", detail: str = "", count: int = 0) -> None:
@@ -1191,6 +4258,54 @@ def aelin_chat(
         memory_summary=memory_summary,
         generated_at=datetime.now(timezone.utc),
     )
+
+
+@router.post("/chat/stream")
+def aelin_chat_stream(
+    payload: AelinChatRequest,
+    current_user: User = Depends(get_current_user),
+):
+    def _event_iter():
+        event_queue: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue()
+        done_token = "__done__"
+
+        def _push(event: str, data: dict[str, Any]) -> None:
+            event_queue.put((event, data))
+
+        def _worker() -> None:
+            local_db = create_session()
+            try:
+                user = local_db.get(User, int(current_user.id)) or current_user
+                result = _aelin_chat_impl(payload, local_db, user, event_cb=_push)
+                _push("final", {"result": result.model_dump()})
+            except Exception as e:
+                _push("error", {"message": str(e)[:500] or "stream error"})
+            finally:
+                try:
+                    local_db.close()
+                except Exception:
+                    pass
+                _push("done", {"ts": _now_ms(), "status": done_token})
+
+        _push(
+            "start",
+            {
+                "ts": _now_ms(),
+                "query": payload.query.strip()[:180],
+                "workspace": payload.workspace,
+                "search_mode": _normalize_search_mode(getattr(payload, "search_mode", "auto")),
+            },
+        )
+        worker = threading.Thread(target=_worker, daemon=True)
+        worker.start()
+
+        while True:
+            event, data = event_queue.get()
+            yield _sse_event(event, data)
+            if event == "done":
+                break
+
+    return StreamingResponse(_event_iter(), media_type="text/event-stream")
 
 
 def _infer_tracking_source(target: str) -> str:
