@@ -31,6 +31,11 @@ import { AppearanceSection } from './settings/sections/AppearanceSection';
 import { ProfileSection } from './settings/sections/ProfileSection';
 
 type SettingsSectionKey = 'profile' | 'appearance' | 'accounts' | 'agent';
+const CUSTOM_PROVIDER_OPTION = '__custom__';
+
+function normalizeProviderId(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -51,6 +56,8 @@ export default function Settings() {
   const [updatingProfile, setUpdatingProfile] = useState(false);
 
   const [agentProvider, setAgentProvider] = useState('rule_based');
+  const [customAgentProvider, setCustomAgentProvider] = useState('');
+  const [providerSelectValue, setProviderSelectValue] = useState<string>('rule_based');
   const [agentBaseUrl, setAgentBaseUrl] = useState('https://api.openai.com/v1');
   const [agentModel, setAgentModel] = useState('gpt-4o-mini');
   const [agentTemperature, setAgentTemperature] = useState(0.2);
@@ -59,14 +66,20 @@ export default function Settings() {
   const [testingAgent, setTestingAgent] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSectionKey>('profile');
 
-  const selectedModelProvider = useMemo(
-    () => modelCatalog?.providers.find((provider) => provider.id === agentProvider) ?? null,
-    [modelCatalog, agentProvider]
+  const catalogProviderIds = useMemo(
+    () => new Set((modelCatalog?.providers ?? []).map((provider) => provider.id)),
+    [modelCatalog]
   );
+  const selectedModelProvider = useMemo(() => {
+    const providerId = normalizeProviderId(agentProvider);
+    return modelCatalog?.providers.find((provider) => provider.id === providerId) ?? null;
+  }, [modelCatalog, agentProvider]);
+  const isCustomProvider = providerSelectValue === CUSTOM_PROVIDER_OPTION;
 
   const getDefaultBaseUrlForProvider = (providerId: string) => {
-    if (providerId === 'rule_based') return 'https://api.openai.com/v1';
-    const matched = modelCatalog?.providers.find((provider) => provider.id === providerId);
+    const normalizedProviderId = normalizeProviderId(providerId) || 'rule_based';
+    if (normalizedProviderId === 'rule_based') return 'https://api.openai.com/v1';
+    const matched = modelCatalog?.providers.find((provider) => provider.id === normalizedProviderId);
     return (matched?.api || '').trim() || 'https://api.openai.com/v1';
   };
 
@@ -82,7 +95,20 @@ export default function Settings() {
 
   useEffect(() => {
     if (!agentConfig) return;
-    setAgentProvider((agentConfig.provider || 'rule_based').toLowerCase());
+    const provider = normalizeProviderId(agentConfig.provider || 'rule_based') || 'rule_based';
+    setAgentProvider(provider);
+    if (provider === 'rule_based') {
+      setCustomAgentProvider('');
+    } else if (!catalogProviderIds.has(provider)) {
+      setCustomAgentProvider(provider);
+    }
+    if (provider === 'rule_based') {
+      setProviderSelectValue('rule_based');
+    } else if (catalogProviderIds.has(provider)) {
+      setProviderSelectValue(provider);
+    } else {
+      setProviderSelectValue(CUSTOM_PROVIDER_OPTION);
+    }
     setAgentBaseUrl(agentConfig.base_url || 'https://api.openai.com/v1');
     setAgentModel(agentConfig.model || 'gpt-4o-mini');
     setAgentTemperature(Number.isFinite(agentConfig.temperature) ? agentConfig.temperature : 0.2);
@@ -127,6 +153,23 @@ export default function Settings() {
   };
 
   const handleSaveAgent = async () => {
+    const provider = normalizeProviderId(agentProvider);
+    if (!provider) {
+      showToast('请填写服务商 ID', 'error');
+      return;
+    }
+
+    if (provider !== 'rule_based') {
+      if (!agentBaseUrl.trim()) {
+        showToast('请填写 Base URL', 'error');
+        return;
+      }
+      if (!agentModel.trim()) {
+        showToast('请填写模型 ID', 'error');
+        return;
+      }
+    }
+
     setSavingAgent(true);
     try {
       const payload: {
@@ -136,10 +179,10 @@ export default function Settings() {
         temperature: number;
         api_key?: string;
       } = {
-        provider: agentProvider,
+        provider,
         temperature: Number.isFinite(agentTemperature) ? agentTemperature : 0.2,
       };
-      if (agentProvider !== 'rule_based') {
+      if (provider !== 'rule_based') {
         payload.base_url = agentBaseUrl.trim();
         payload.model = agentModel.trim();
       }
@@ -241,6 +284,9 @@ export default function Settings() {
                 selectedModelProvider={selectedModelProvider}
                 agentConfig={agentConfig}
                 agentProvider={agentProvider}
+                providerSelectValue={providerSelectValue}
+                customProviderId={customAgentProvider}
+                isCustomProvider={isCustomProvider}
                 agentBaseUrl={agentBaseUrl}
                 agentModel={agentModel}
                 agentTemperature={agentTemperature}
@@ -249,9 +295,29 @@ export default function Settings() {
                 savingAgent={savingAgent}
                 testingAgent={testingAgent}
                 onRefreshCatalog={handleRefreshCatalog}
-                onProviderChange={(provider) => {
-                  setAgentProvider(provider);
-                  setAgentBaseUrl(getDefaultBaseUrlForProvider(provider));
+                onProviderSelectChange={(provider) => {
+                  if (provider === CUSTOM_PROVIDER_OPTION) {
+                    setProviderSelectValue(CUSTOM_PROVIDER_OPTION);
+                    setAgentProvider(normalizeProviderId(customAgentProvider));
+                    if (!agentBaseUrl.trim()) {
+                      setAgentBaseUrl('https://api.openai.com/v1');
+                    }
+                    return;
+                  }
+
+                  const normalized = normalizeProviderId(provider) || 'rule_based';
+                  setProviderSelectValue(normalized);
+                  setAgentProvider(normalized);
+                  if (normalized === 'rule_based') {
+                    setCustomAgentProvider('');
+                  }
+                  setAgentBaseUrl(getDefaultBaseUrlForProvider(normalized));
+                }}
+                onCustomProviderIdChange={(provider) => {
+                  setCustomAgentProvider(provider);
+                  if (isCustomProvider) {
+                    setAgentProvider(normalizeProviderId(provider));
+                  }
                 }}
                 onModelChange={setAgentModel}
                 onBaseUrlChange={setAgentBaseUrl}

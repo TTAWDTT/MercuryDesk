@@ -20,6 +20,8 @@ import Drawer from "@mui/material/Drawer";
 import Dialog from "@mui/material/Dialog";
 import CircularProgress from "@mui/material/CircularProgress";
 import Tooltip from "@mui/material/Tooltip";
+import Alert from "@mui/material/Alert";
+import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import AddIcon from "@mui/icons-material/Add";
 import SendIcon from "@mui/icons-material/Send";
@@ -39,6 +41,9 @@ import {
   AelinAction,
   AelinCitation,
   AelinContextResponse,
+  AgentConfig,
+  ModelCatalogResponse,
+  ModelProviderInfo,
   AelinImageInput,
   AelinTrackingItem,
   AelinToolStep,
@@ -46,9 +51,13 @@ import {
   aelinChat,
   aelinChatStream,
   aelinConfirmTrack,
+  getAgentCatalog,
+  getAgentConfig,
   getAelinTracking,
   getAelinContext,
   getMessage,
+  testAgent,
+  updateAgentConfig,
 } from "../api";
 import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
@@ -166,6 +175,11 @@ const AELIN_EXPRESSION_META: Record<AelinExpressionId, { label: string; usage: s
   "exp-10": { label: "发财得意", usage: "成果突出、搞定任务、高价值收获" },
   "exp-11": { label: "趴桌躺平", usage: "困倦、过载、精力不足、需要休息" },
 };
+const CUSTOM_PROVIDER_OPTION = "__custom__";
+
+function normalizeProviderId(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 type PlatformKey =
   | "bilibili"
@@ -1500,6 +1514,20 @@ export default function Aelin({
   const [trackingItems, setTrackingItems] = React.useState<AelinTrackingItem[]>([]);
   const [trackingBusy, setTrackingBusy] = React.useState(false);
   const [trackingError, setTrackingError] = React.useState("");
+  const [llmDialogOpen, setLlmDialogOpen] = React.useState(false);
+  const [llmLoading, setLlmLoading] = React.useState(false);
+  const [llmRefreshing, setLlmRefreshing] = React.useState(false);
+  const [llmSaving, setLlmSaving] = React.useState(false);
+  const [llmTesting, setLlmTesting] = React.useState(false);
+  const [llmCatalog, setLlmCatalog] = React.useState<ModelCatalogResponse | null>(null);
+  const [llmProvider, setLlmProvider] = React.useState("rule_based");
+  const [llmProviderSelectValue, setLlmProviderSelectValue] = React.useState<string>("rule_based");
+  const [llmCustomProviderId, setLlmCustomProviderId] = React.useState("");
+  const [llmBaseUrl, setLlmBaseUrl] = React.useState("https://api.openai.com/v1");
+  const [llmModel, setLlmModel] = React.useState("gpt-4o-mini");
+  const [llmTemperature, setLlmTemperature] = React.useState(0.2);
+  const [llmApiKey, setLlmApiKey] = React.useState("");
+  const [llmHasApiKey, setLlmHasApiKey] = React.useState(false);
   const [deskOpen, setDeskOpen] = React.useState(false);
   const [deskPanelKey, setDeskPanelKey] = React.useState(0);
   const [handoffFX, setHandoffFX] = React.useState<HandoffFXState | null>(null);
@@ -1535,6 +1563,11 @@ export default function Aelin({
   }, [embedded, location.search, nativeMobileShell]);
   const compactFramed = compactMode && !nativeMobileShell;
   const mainContainerMaxWidth = embedded ? false : compactMode ? false : "md";
+  const llmIsCustomProvider = llmProviderSelectValue === CUSTOM_PROVIDER_OPTION;
+  const llmSelectedProvider = React.useMemo<ModelProviderInfo | null>(() => {
+    const providerId = normalizeProviderId(llmProvider);
+    return llmCatalog?.providers.find((provider) => provider.id === providerId) ?? null;
+  }, [llmCatalog, llmProvider]);
   const lastAssistantCitation = React.useMemo(() => {
     const reversed = [...messages].reverse();
     for (const item of reversed) {
@@ -1642,6 +1675,122 @@ export default function Aelin({
     }
   }, []);
 
+  const getDefaultLlmBaseUrl = React.useCallback(
+    (providerId: string, catalog: ModelCatalogResponse | null = llmCatalog) => {
+      const normalizedProviderId = normalizeProviderId(providerId) || "rule_based";
+      if (normalizedProviderId === "rule_based") return "https://api.openai.com/v1";
+      const matched = (catalog?.providers ?? []).find((provider) => provider.id === normalizedProviderId);
+      return (matched?.api || "").trim() || "https://api.openai.com/v1";
+    },
+    [llmCatalog]
+  );
+
+  const hydrateLlmDialogState = React.useCallback(
+    (config: AgentConfig, catalog: ModelCatalogResponse | null) => {
+      const provider = normalizeProviderId(config.provider || "rule_based") || "rule_based";
+      const catalogIds = new Set((catalog?.providers ?? []).map((item) => item.id));
+      setLlmProvider(provider);
+      if (provider === "rule_based") {
+        setLlmProviderSelectValue("rule_based");
+        setLlmCustomProviderId("");
+      } else if (catalogIds.has(provider)) {
+        setLlmProviderSelectValue(provider);
+      } else {
+        setLlmProviderSelectValue(CUSTOM_PROVIDER_OPTION);
+        setLlmCustomProviderId(provider);
+      }
+      setLlmBaseUrl(config.base_url || getDefaultLlmBaseUrl(provider, catalog));
+      setLlmModel(config.model || "gpt-4o-mini");
+      setLlmTemperature(Number.isFinite(config.temperature) ? config.temperature : 0.2);
+      setLlmHasApiKey(Boolean(config.has_api_key));
+      setLlmApiKey("");
+    },
+    [getDefaultLlmBaseUrl]
+  );
+
+  const loadLlmDialogData = React.useCallback(async () => {
+    setLlmLoading(true);
+    try {
+      const [config, catalog] = await Promise.all([getAgentConfig(), getAgentCatalog(false)]);
+      setLlmCatalog(catalog);
+      hydrateLlmDialogState(config, catalog);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "加载模型配置失败", "error");
+    } finally {
+      setLlmLoading(false);
+    }
+  }, [hydrateLlmDialogState, showToast]);
+
+  const openLlmDialog = React.useCallback(() => {
+    setLlmDialogOpen(true);
+    void loadLlmDialogData();
+  }, [loadLlmDialogData]);
+
+  const handleLlmCatalogRefresh = React.useCallback(async () => {
+    setLlmRefreshing(true);
+    try {
+      const fresh = await getAgentCatalog(true);
+      setLlmCatalog(fresh);
+      showToast(`模型目录已刷新（${fresh.providers.length} 个服务商）`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "刷新模型目录失败", "error");
+    } finally {
+      setLlmRefreshing(false);
+    }
+  }, [showToast]);
+
+  const handleLlmSave = React.useCallback(async () => {
+    const provider = normalizeProviderId(llmProvider);
+    if (!provider) {
+      showToast("请填写服务商 ID", "error");
+      return;
+    }
+    if (provider !== "rule_based") {
+      if (!llmBaseUrl.trim()) {
+        showToast("请填写 Base URL", "error");
+        return;
+      }
+      if (!llmModel.trim()) {
+        showToast("请填写模型 ID", "error");
+        return;
+      }
+    }
+
+    setLlmSaving(true);
+    try {
+      const payload: { provider: string; base_url?: string; model?: string; temperature: number; api_key?: string } = {
+        provider,
+        temperature: Number.isFinite(llmTemperature) ? llmTemperature : 0.2,
+      };
+      if (provider !== "rule_based") {
+        payload.base_url = llmBaseUrl.trim();
+        payload.model = llmModel.trim();
+      }
+      if (llmApiKey.trim()) {
+        payload.api_key = llmApiKey.trim();
+      }
+      const updated = await updateAgentConfig(payload);
+      hydrateLlmDialogState(updated, llmCatalog);
+      showToast("Aelin 模型配置已保存", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "保存模型配置失败", "error");
+    } finally {
+      setLlmSaving(false);
+    }
+  }, [hydrateLlmDialogState, llmApiKey, llmBaseUrl, llmCatalog, llmModel, llmProvider, llmTemperature, showToast]);
+
+  const handleLlmTest = React.useCallback(async () => {
+    setLlmTesting(true);
+    try {
+      const ret = await testAgent();
+      showToast(`测试通过：${ret.message || "OK"}`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "测试失败", "error");
+    } finally {
+      setLlmTesting(false);
+    }
+  }, [showToast]);
+
   React.useEffect(() => {
     void refreshContext();
   }, [refreshContext]);
@@ -1654,6 +1803,16 @@ export default function Aelin({
   React.useEffect(() => {
     void refreshTracking();
   }, [refreshTracking]);
+
+  React.useEffect(() => {
+    if (llmProvider === "rule_based" || llmIsCustomProvider || !llmSelectedProvider) return;
+    if (
+      llmSelectedProvider.models.length > 0 &&
+      !llmSelectedProvider.models.some((model) => model.id === llmModel)
+    ) {
+      setLlmModel(llmSelectedProvider.models[0].id);
+    }
+  }, [llmIsCustomProvider, llmModel, llmProvider, llmSelectedProvider]);
 
   React.useEffect(() => {
     if (embedded) return;
@@ -2190,7 +2349,12 @@ export default function Aelin({
         return;
       }
       if (action.kind === "open_settings") {
-        navigate(action.payload.path || "/settings");
+        const targetPath = (action.payload.path || "/settings").trim() || "/settings";
+        if (targetPath === "/settings") {
+          openLlmDialog();
+        } else {
+          navigate(targetPath);
+        }
         return;
       }
       if (action.kind === "open_message") {
@@ -2213,7 +2377,7 @@ export default function Aelin({
         setTrackingSheet({ action, messageId: nextMessageId() });
       }
     },
-    [lastAssistantCitation?.source_label, navigate, openDeskWithContext, showToast]
+    [lastAssistantCitation?.source_label, navigate, openDeskWithContext, openLlmDialog, showToast]
   );
 
   const handleCitationOpen = React.useCallback(
@@ -2277,11 +2441,11 @@ export default function Aelin({
         if (ret.status === "needs_config") {
           const goSettings = await confirm({
             title: "需要先配置数据源",
-            message: `当前缺少 ${ret.provider || "对应"} 配置，是否现在前往设置？`,
-            confirmLabel: "去设置",
+            message: `当前缺少 ${ret.provider || "对应"} 配置，是否现在配置模型？`,
+            confirmLabel: "立即配置",
             cancelLabel: "稍后",
           });
-          if (goSettings) navigate("/settings");
+          if (goSettings) openLlmDialog();
         } else {
           showToast("已开启持续跟踪", "success");
         }
@@ -2289,7 +2453,7 @@ export default function Aelin({
         showToast(error instanceof Error ? error.message : "跟踪开启失败", "error");
       }
     },
-    [confirm, navigate, refreshContext, refreshTracking, showToast, trackingSheet, updateActiveMessages]
+    [confirm, openLlmDialog, refreshContext, refreshTracking, showToast, trackingSheet, updateActiveMessages]
   );
 
   const runStoryMode = React.useCallback(async () => {
@@ -2456,7 +2620,7 @@ export default function Aelin({
               </IconButton>
             </Tooltip>
             <Tooltip title="设置">
-              <IconButton onClick={() => navigate("/settings")}>
+              <IconButton onClick={openLlmDialog}>
                 <SettingsIcon fontSize="small" />
               </IconButton>
             </Tooltip>
@@ -2803,6 +2967,188 @@ export default function Aelin({
           </Paper>
         </Container>
       </Box>
+
+      <Dialog
+        open={llmDialogOpen}
+        onClose={() => setLlmDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: "hidden",
+            bgcolor: alpha(theme.palette.background.paper, 0.98),
+            backdropFilter: "blur(10px)",
+          },
+        }}
+      >
+        <Box sx={{ px: 1.2, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+              Aelin 模型设置
+            </Typography>
+            <Stack direction="row" spacing={0.4}>
+              <Tooltip title="刷新模型目录">
+                <span>
+                  <IconButton size="small" onClick={() => void handleLlmCatalogRefresh()} disabled={llmRefreshing || llmLoading}>
+                    {llmRefreshing ? <CircularProgress size={14} /> : <RefreshIcon fontSize="small" />}
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <IconButton size="small" onClick={() => setLlmDialogOpen(false)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          </Stack>
+        </Box>
+
+        <Box sx={{ px: 1.2, py: 1.1 }}>
+          {llmLoading ? (
+            <Stack direction="row" spacing={0.8} alignItems="center" sx={{ py: 2.6 }}>
+              <CircularProgress size={18} />
+              <Typography variant="body2" color="text.secondary">
+                正在加载模型配置...
+              </Typography>
+            </Stack>
+          ) : (
+            <Stack spacing={1.1}>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="服务商"
+                value={llmProviderSelectValue}
+                onChange={(event) => {
+                  const value = String(event.target.value || "");
+                  if (value === CUSTOM_PROVIDER_OPTION) {
+                    setLlmProviderSelectValue(CUSTOM_PROVIDER_OPTION);
+                    setLlmProvider(normalizeProviderId(llmCustomProviderId));
+                    if (!llmBaseUrl.trim()) {
+                      setLlmBaseUrl("https://api.openai.com/v1");
+                    }
+                    return;
+                  }
+                  const normalized = normalizeProviderId(value) || "rule_based";
+                  setLlmProviderSelectValue(normalized);
+                  setLlmProvider(normalized);
+                  if (normalized === "rule_based") {
+                    setLlmCustomProviderId("");
+                  }
+                  setLlmBaseUrl(getDefaultLlmBaseUrl(normalized));
+                }}
+                SelectProps={{ native: true }}
+              >
+                <option value="rule_based">内置规则（免费）</option>
+                {(llmCatalog?.providers ?? []).map((provider) => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.name} ({provider.id})
+                  </option>
+                ))}
+                <option value={CUSTOM_PROVIDER_OPTION}>自定义提供商（手动填写）</option>
+              </TextField>
+
+              {llmIsCustomProvider ? (
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="自定义 Provider ID"
+                  value={llmCustomProviderId}
+                  onChange={(event) => {
+                    const value = String(event.target.value || "");
+                    setLlmCustomProviderId(value);
+                    setLlmProvider(normalizeProviderId(value));
+                  }}
+                  placeholder="例如：deepseek / groq / my-private-llm"
+                />
+              ) : null}
+
+              {llmProvider !== "rule_based" ? (
+                <>
+                  {llmSelectedProvider?.models?.length && !llmIsCustomProvider ? (
+                    <TextField
+                      select
+                      fullWidth
+                      size="small"
+                      label="模型"
+                      value={llmModel}
+                      onChange={(event) => setLlmModel(String(event.target.value || ""))}
+                      SelectProps={{ native: true }}
+                    >
+                      {llmSelectedProvider.models.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.name} ({model.id})
+                        </option>
+                      ))}
+                    </TextField>
+                  ) : (
+                    <TextField
+                      fullWidth
+                      size="small"
+                      label="模型"
+                      value={llmModel}
+                      onChange={(event) => setLlmModel(String(event.target.value || ""))}
+                      placeholder="输入模型 ID"
+                    />
+                  )}
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="接口地址（Base URL）"
+                    value={llmBaseUrl}
+                    onChange={(event) => setLlmBaseUrl(String(event.target.value || ""))}
+                    placeholder={llmSelectedProvider?.api || "https://api.openai.com/v1"}
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="number"
+                    label="随机度（Temperature）"
+                    value={llmTemperature}
+                    onChange={(event) => {
+                      const value = Number(event.target.value);
+                      setLlmTemperature(Number.isFinite(value) ? value : 0.2);
+                    }}
+                    inputProps={{ min: 0, max: 2, step: 0.1 }}
+                  />
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="password"
+                    label="API Key（留空则沿用已保存 Key）"
+                    value={llmApiKey}
+                    onChange={(event) => setLlmApiKey(String(event.target.value || ""))}
+                    placeholder={llmHasApiKey ? "已保存（不显示）" : "sk-..."}
+                  />
+                  <Alert severity="info" sx={{ borderRadius: 1.2, py: 0.35 }}>
+                    当前使用 OpenAI-Compatible 接口。请确保 Base URL 与模型 ID 对应同一服务商。
+                  </Alert>
+                </>
+              ) : (
+                <Alert severity="info" sx={{ borderRadius: 1.2, py: 0.35 }}>
+                  已使用内置规则模式，可直接聊天；若需高质量模型回答，请切换到任意 API 提供商。
+                </Alert>
+              )}
+
+              <Typography variant="caption" color="text.secondary">
+                当前：{normalizeProviderId(llmProvider) || "rule_based"} • Key：{llmHasApiKey ? "已配置" : "未配置"}
+              </Typography>
+            </Stack>
+          )}
+        </Box>
+
+        <Box sx={{ px: 1.2, pb: 1.1, pt: 0.2, display: "flex", gap: 0.8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <Button size="small" variant="text" onClick={() => navigate("/settings")}>
+            完整设置
+          </Button>
+          <Button size="small" variant="outlined" onClick={() => void handleLlmTest()} disabled={llmLoading || llmSaving || llmTesting}>
+            {llmTesting ? "测试中..." : "测试连接"}
+          </Button>
+          <Button size="small" variant="contained" onClick={() => void handleLlmSave()} disabled={llmLoading || llmSaving}>
+            {llmSaving ? "保存中..." : "保存配置"}
+          </Button>
+        </Box>
+      </Dialog>
 
       <Dialog
         open={trackingDialogOpen}

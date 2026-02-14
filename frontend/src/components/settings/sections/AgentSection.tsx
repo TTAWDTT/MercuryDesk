@@ -17,6 +17,9 @@ type AgentSectionProps = {
   selectedModelProvider: ModelProviderInfo | null;
   agentConfig?: AgentConfig;
   agentProvider: string;
+  providerSelectValue: string;
+  customProviderId: string;
+  isCustomProvider: boolean;
   agentBaseUrl: string;
   agentModel: string;
   agentTemperature: number;
@@ -25,7 +28,8 @@ type AgentSectionProps = {
   savingAgent: boolean;
   testingAgent: boolean;
   onRefreshCatalog: () => void;
-  onProviderChange: (provider: string) => void;
+  onProviderSelectChange: (provider: string) => void;
+  onCustomProviderIdChange: (provider: string) => void;
   onModelChange: (model: string) => void;
   onBaseUrlChange: (baseUrl: string) => void;
   onTemperatureChange: (temperature: number) => void;
@@ -39,6 +43,9 @@ export function AgentSection({
   selectedModelProvider,
   agentConfig,
   agentProvider,
+  providerSelectValue,
+  customProviderId,
+  isCustomProvider,
   agentBaseUrl,
   agentModel,
   agentTemperature,
@@ -47,7 +54,8 @@ export function AgentSection({
   savingAgent,
   testingAgent,
   onRefreshCatalog,
-  onProviderChange,
+  onProviderSelectChange,
+  onCustomProviderIdChange,
   onModelChange,
   onBaseUrlChange,
   onTemperatureChange,
@@ -90,8 +98,8 @@ export function AgentSection({
               fullWidth
               size="small"
               label="服务商"
-              value={agentProvider}
-              onChange={(event) => onProviderChange(event.target.value)}
+              value={providerSelectValue}
+              onChange={(event) => onProviderSelectChange(event.target.value)}
               SelectProps={{ native: true }}
             >
               <option value="rule_based">内置规则（免费）</option>
@@ -100,8 +108,23 @@ export function AgentSection({
                   {provider.name} ({provider.id})
                 </option>
               ))}
+              <option value="__custom__">自定义提供商（手动填写）</option>
             </TextField>
           </Grid>
+
+          {isCustomProvider && (
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="自定义 Provider ID"
+                value={customProviderId}
+                onChange={(event) => onCustomProviderIdChange(event.target.value)}
+                placeholder="例如：deepseek / groq / my-private-llm"
+                helperText="仅用于标识服务商，可自定义。"
+              />
+            </Grid>
+          )}
 
           {agentProvider !== "rule_based" && (
             <>
@@ -167,16 +190,16 @@ export function AgentSection({
                   onChange={(event) => onApiKeyChange(event.target.value)}
                   placeholder={agentConfig?.has_api_key ? "已保存（不显示）" : "sk-..."}
                   helperText={
-                    selectedModelProvider?.env?.length
+                    !isCustomProvider && selectedModelProvider?.env?.length
                       ? `常用环境变量：${selectedModelProvider.env.join(", ")}`
-                      : "建议在后端设置 MERCURYDESK_FERNET_KEY 以加密保存。"
+                      : "自定义提供商请手动填写 Base URL / 模型 / Key；建议在后端设置 MERCURYDESK_FERNET_KEY 以加密保存。"
                   }
                 />
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <Alert severity="warning" sx={{ borderRadius: 0 }}>
                   当前通过 OpenAI-Compatible 接口调用模型。请确保 Base URL 与模型 ID 对应同一服务商。
-                  {selectedModelProvider?.doc && (
+                  {!isCustomProvider && selectedModelProvider?.doc && (
                     <>
                       {" "}
                       文档：

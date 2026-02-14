@@ -294,7 +294,11 @@ def update_agent_config(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
-    provider = payload.provider.lower().strip() if payload.provider is not None else None
+    provider = None
+    if payload.provider is not None:
+        provider = payload.provider.strip().lower()
+        if not provider:
+            raise HTTPException(status_code=400, detail="provider 不能为空")
     config = crud.upsert_agent_config(
         db,
         user_id=current_user.id,
