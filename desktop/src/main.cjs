@@ -26,6 +26,10 @@ function backendDir() {
   return app.isPackaged ? path.join(process.resourcesPath, "backend") : path.join(projectRoot(), "backend");
 }
 
+function backendRuntimeDir() {
+  return path.join(process.resourcesPath, "backend-runtime");
+}
+
 function frontendDir() {
   return path.join(projectRoot(), "frontend");
 }
@@ -120,11 +124,6 @@ function pipeTaggedLog(proc, tag) {
 }
 
 function startBackend() {
-  const root = backendDir();
-  if (!fs.existsSync(root)) {
-    throw new Error(`backend 目录不存在: ${root}`);
-  }
-
   const userData = app.getPath("userData");
   const mediaDir = path.join(userData, "media");
   fs.mkdirSync(mediaDir, { recursive: true });
@@ -143,6 +142,32 @@ function startBackend() {
       "http://localhost:5173",
     ].join(","),
   };
+
+  if (app.isPackaged) {
+    const runtimeRoot = backendRuntimeDir();
+    const exeName = process.platform === "win32" ? "aelin-backend.exe" : "aelin-backend";
+    const exePath = path.join(runtimeRoot, exeName);
+    if (!fs.existsSync(exePath)) {
+      throw new Error(`内置后端不可用: ${exePath}`);
+    }
+    backendProc = spawn(exePath, [], {
+      cwd: runtimeRoot,
+      env,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    pipeTaggedLog(backendProc, "backend");
+    backendProc.on("error", (err) => {
+      if (closing) return;
+      dialog.showErrorBox("后端启动失败", String(err?.message || err));
+    });
+    return;
+  }
+
+  const root = backendDir();
+  if (!fs.existsSync(root)) {
+    throw new Error(`backend 目录不存在: ${root}`);
+  }
 
   const requestedPython = String(process.env.MERCURYDESK_PYTHON || "").trim();
   const pythonCandidates = [];
@@ -202,8 +227,10 @@ function startFrontendServer() {
   }
 
   const web = express();
-  web.use("/api", createProxyMiddleware({ target: `http://127.0.0.1:${backendPort}`, changeOrigin: true }));
-  web.use("/media", createProxyMiddleware({ target: `http://127.0.0.1:${backendPort}`, changeOrigin: true }));
+  // Express strips the mount prefix (/api, /media) before handing to proxy.
+  // So target must include the same prefix to avoid forwarding /v1/... by mistake.
+  web.use("/api", createProxyMiddleware({ target: `http://127.0.0.1:${backendPort}/api`, changeOrigin: true }));
+  web.use("/media", createProxyMiddleware({ target: `http://127.0.0.1:${backendPort}/media`, changeOrigin: true }));
   web.use(express.static(dist));
   web.get("*", (_req, res) => {
     res.sendFile(path.join(dist, "index.html"));
@@ -248,7 +275,7 @@ async function boot() {
   startBackend();
   const backendReady = await waitForUrl(`http://127.0.0.1:${backendPort}/healthz`, 60000);
   if (!backendReady) {
-    throw new Error("后端服务启动超时，请检查 Python 环境与依赖。");
+    throw new Error(app.isPackaged ? "内置后端服务启动超时，请重装或反馈日志。" : "后端服务启动超时，请检查 Python 环境与依赖。");
   }
 
   if (isDev) {
