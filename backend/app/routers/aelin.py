@@ -147,6 +147,21 @@ _AELIN_EXPRESSION_ALIASES: dict[str, str] = {
     "躺平": "exp-11",
 }
 
+_AELIN_EMOJI_BY_EXPRESSION: dict[str, str] = {
+    "exp-01": "🥹",
+    "exp-02": "✨",
+    "exp-03": "🤍",
+    "exp-04": "🙂",
+    "exp-05": "⚠️",
+    "exp-06": "👀",
+    "exp-07": "🥲",
+    "exp-08": "😤",
+    "exp-09": "😂",
+    "exp-10": "💰",
+    "exp-11": "😮‍💨",
+}
+_EMOJI_CHAR_RE = re.compile(r"[\u2600-\u27BF\U0001F300-\U0001FAFF]")
+
 
 def _default_config() -> AgentConfigOut:
     return AgentConfigOut(
@@ -3052,6 +3067,46 @@ def _extract_expression_tag(answer: str) -> tuple[str, str | None]:
     return cleaned, expression
 
 
+def _contains_emoji(text: str) -> bool:
+    return bool(_EMOJI_CHAR_RE.search(str(text or "")))
+
+
+def _normalize_emoji_token(raw: str | None) -> str | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    snippet = text[:8]
+    if not _contains_emoji(snippet):
+        return None
+    return snippet
+
+
+def _extract_emoji_tag(answer: str) -> tuple[str, str | None]:
+    text = (answer or "").strip()
+    if not text:
+        return "", None
+    pattern = r"\[(?:emoji|emj|表情符号|emoji_tag)\s*[:：]\s*([^\]\n]{1,16})\]"
+    match = re.search(pattern, text, flags=re.I)
+    if not match:
+        return text, None
+    emoji = _normalize_emoji_token(match.group(1))
+    cleaned = re.sub(pattern, "", text, flags=re.I).strip()
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned, emoji
+
+
+def _apply_answer_emoji(answer: str, expression: str, *, explicit_emoji: str | None = None) -> str:
+    text = (answer or "").strip()
+    if not text:
+        return explicit_emoji or _AELIN_EMOJI_BY_EXPRESSION.get(expression, "🙂")
+    if _contains_emoji(text):
+        return text
+    emoji = _normalize_emoji_token(explicit_emoji) or _AELIN_EMOJI_BY_EXPRESSION.get(expression)
+    if not emoji:
+        return text
+    return f"{text} {emoji}"
+
+
 def _pick_expression(query: str, answer: str, *, generation_failed: bool = False) -> str:
     q = (query or "").lower()
     a = (answer or "").lower()
@@ -3608,10 +3663,12 @@ def _aelin_chat_impl(
             "If retrieval evidence is provided, use it directly and do not ask user to search manually.\n"
             "If evidence is weak, state uncertainty and avoid fabrication.\n"
             "Keep response concise and practical.\n"
+            "You may use 0-2 natural emoji in the answer body when it helps tone.\n"
             "Aelin has 11 expressions. Choose one according to semantics below:\n"
             + _expression_mapping_prompt()
             + "\n"
-            "You MUST append exactly one tag at the end: [expression:exp-XX]."
+            "You MUST append exactly one tag at the end: [expression:exp-XX].\n"
+            "Optional emoji control tag is allowed only before the final expression tag: [emoji:🙂]."
         )
         retrieval_note = (
             f"planner={planning_reason}; "
@@ -3729,7 +3786,9 @@ def _aelin_chat_impl(
     )
 
     answer, tagged_expression = _extract_expression_tag(answer)
+    answer, tagged_emoji = _extract_emoji_tag(answer)
     expression = tagged_expression or _pick_expression(payload.query, answer, generation_failed=llm_generation_failed)
+    answer = _apply_answer_emoji(answer, expression, explicit_emoji=tagged_emoji)
     add_trace("generation", status="completed", detail=generation_detail, count=len(citations))
 
     add_trace("grounding_judge", status="running", detail="checking grounding", count=len(citations))
@@ -4489,11 +4548,13 @@ def list_aelin_notifications(
             "Tracking/subscription suggestions are optional and must be placed after the direct answer.\n"
             "If evidence is insufficient, say uncertainty explicitly and avoid fabricating details.\n"
             "Keep answer concise, practical, and natural.\n"
+            "You may use 0-2 natural emoji in the answer body when it helps tone.\n"
             "Use daily brief and pending todos only when they help this specific user question.\n"
             "Aelin has 11 expressions. Choose one according to semantics below:\n"
             + _expression_mapping_prompt()
             + "\n"
             "You MUST append exactly one tag at the very end: [expression:exp-XX].\n"
+            "Optional emoji control tag is allowed only before the final expression tag: [emoji:🙂].\n"
             "Do not output any other expression format.\n"
         )
         retrieval_note = f"规划结果：{planning_reason}。"
@@ -4599,7 +4660,9 @@ def list_aelin_notifications(
             answer = _compose_web_first_answer(payload.query, web_results_for_answer)
 
     answer, tagged_expression = _extract_expression_tag(answer)
+    answer, tagged_emoji = _extract_emoji_tag(answer)
     expression = tagged_expression or _pick_expression(payload.query, answer, generation_failed=llm_generation_failed)
+    answer = _apply_answer_emoji(answer, expression, explicit_emoji=tagged_emoji)
 
     if payload.use_memory and answer:
         _memory.update_after_turn(
