@@ -85,7 +85,8 @@ async function main() {
   console.log(`[verify] install target: ${targetDir}`);
 
   // NSIS: /D must be the last argument and should be unquoted.
-  const installResult = await runAndWait(installer, ["/S", `/D=${targetDir}`]);
+  // For assisted NSIS (oneClick=false), explicitly force current-user mode in silent install.
+  const installResult = await runAndWait(installer, ["/S", "/currentuser", `/D=${targetDir}`]);
   if (installResult.code !== 0) {
     throw new Error(`静默安装失败 code=${installResult.code} signal=${installResult.signal || ""}`);
   }
