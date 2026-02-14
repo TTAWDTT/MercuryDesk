@@ -50,6 +50,7 @@
       }
     ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -60,6 +61,10 @@
       ]
     },
     "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
       "differentialPackage": false
     }
   }
