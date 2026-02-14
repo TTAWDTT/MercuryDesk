@@ -6,9 +6,16 @@
   "main": "src/main.cjs",
   "scripts": {
     "dev": "cross-env MERCURYDESK_DESKTOP_DEV=1 electron .",
+    "build:backend": "node ./scripts/build-backend.cjs",
     "build:frontend": "npm --prefix ../frontend run build",
-    "pack": "npm run build:frontend && electron-builder --dir",
-    "dist": "npm run build:frontend && electron-builder"
+    "prepare:pack": "node ./scripts/prepare-pack.cjs",
+    "pack": "npm run prepare:pack && electron-builder --dir --config.directories.output=release-fast",
+    "dist": "npm run prepare:pack && electron-builder --config.directories.output=release-dist",
+    "verify:dist": "node ./scripts/verify-installer.cjs",
+    "dist:checked": "npm run dist && npm run verify:dist",
+    "pack:full": "npm run build:backend && npm run build:frontend && npm run pack",
+    "dist:full": "npm run build:backend && npm run build:frontend && npm run dist",
+    "dist:full:checked": "npm run dist:full && npm run verify:dist"
   },
   "dependencies": {
     "express": "^4.21.2",
@@ -35,12 +42,10 @@
         "to": "frontend-dist"
       },
       {
-        "from": "../backend",
-        "to": "backend",
+        "from": "../backend/dist/aelin-backend",
+        "to": "backend-runtime",
         "filter": [
-          "app/**",
-          "requirements.txt",
-          ".env.example"
+          "**/*"
         ]
       }
     ],
@@ -53,6 +58,9 @@
           ]
         }
       ]
+    },
+    "nsis": {
+      "differentialPackage": false
     }
   }
 }
