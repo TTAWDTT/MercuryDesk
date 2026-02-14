@@ -158,6 +158,43 @@ export type AelinContextResponse = {
   pin_recommendations: AgentPinRecommendationItem[];
   daily_brief?: AgentDailyBrief | null;
   layout_cards: AgentCardLayoutItem[];
+  memory_layers: AelinMemoryLayers;
+  notifications: AelinNotificationItem[];
+  generated_at: string;
+};
+
+export type AelinMemoryLayerItem = {
+  id: string;
+  layer: string;
+  title: string;
+  detail?: string;
+  source?: string;
+  confidence?: number;
+  updated_at?: string;
+  meta?: Record<string, string>;
+};
+
+export type AelinMemoryLayers = {
+  facts: AelinMemoryLayerItem[];
+  preferences: AelinMemoryLayerItem[];
+  in_progress: AelinMemoryLayerItem[];
+  generated_at: string;
+};
+
+export type AelinNotificationItem = {
+  id: string;
+  level: "info" | "warning" | "success" | "error" | "default" | string;
+  title: string;
+  detail?: string;
+  source?: string;
+  ts?: string;
+  action_kind?: string | null;
+  action_payload?: Record<string, string>;
+};
+
+export type AelinNotificationResponse = {
+  total: number;
+  items: AelinNotificationItem[];
   generated_at: string;
 };
 
@@ -874,6 +911,11 @@ export async function aelinConfirmTrack(payload: {
 export async function getAelinTracking(limit = 80): Promise<AelinTrackingListResponse> {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(300, Math.floor(limit))) : 80;
   return await fetchJson<AelinTrackingListResponse>(`/api/v1/aelin/tracking?limit=${safeLimit}`);
+}
+
+export async function getAelinNotifications(limit = 24): Promise<AelinNotificationResponse> {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 24;
+  return await fetchJson<AelinNotificationResponse>(`/api/v1/aelin/notifications?limit=${safeLimit}`);
 }
 
 export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {

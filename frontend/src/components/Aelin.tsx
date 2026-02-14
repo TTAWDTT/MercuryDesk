@@ -23,6 +23,9 @@ import Tooltip from "@mui/material/Tooltip";
 import Alert from "@mui/material/Alert";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import Skeleton from "@mui/material/Skeleton";
+import Tabs from "@mui/material/Tabs";
+import Tab from "@mui/material/Tab";
 import AddIcon from "@mui/icons-material/Add";
 import SendIcon from "@mui/icons-material/Send";
 import SettingsIcon from "@mui/icons-material/Settings";
@@ -36,11 +39,18 @@ import RefreshIcon from "@mui/icons-material/Refresh";
 import TravelExploreIcon from "@mui/icons-material/TravelExplore";
 import InsightsIcon from "@mui/icons-material/Insights";
 import TrackChangesIcon from "@mui/icons-material/TrackChanges";
+import NotificationsNoneIcon from "@mui/icons-material/NotificationsNone";
+import LayersIcon from "@mui/icons-material/Layers";
+import FactCheckIcon from "@mui/icons-material/FactCheck";
+import TuneIcon from "@mui/icons-material/Tune";
+import PendingActionsIcon from "@mui/icons-material/PendingActions";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
   AelinAction,
   AelinCitation,
   AelinContextResponse,
+  AelinMemoryLayerItem,
+  AelinNotificationItem,
   AgentConfig,
   ModelCatalogResponse,
   ModelProviderInfo,
@@ -54,6 +64,7 @@ import {
   getAgentCatalog,
   getAgentConfig,
   getAelinTracking,
+  getAelinNotifications,
   getAelinContext,
   getMessage,
   testAgent,
@@ -72,6 +83,7 @@ type ChatMessage = {
   expression?: string;
   pending?: boolean;
   citations?: AelinCitation[];
+  citation_snippets?: Record<string, string>;
   actions?: AelinAction[];
   images?: AelinImageInput[];
   tool_trace?: AelinToolStep[];
@@ -408,6 +420,15 @@ function loadPersistedMessages(): ChatMessage[] {
             .map((step) => normalizeTraceStep(step as AelinToolStep))
             .slice(0, 8)
         : undefined;
+      const citationSnippets =
+        rawMessage.citation_snippets && typeof rawMessage.citation_snippets === "object"
+          ? Object.fromEntries(
+              Object.entries(rawMessage.citation_snippets as Record<string, unknown>)
+                .filter(([k, v]) => !!k && typeof v === "string")
+                .slice(0, 24)
+                .map(([k, v]) => [k, String(v).slice(0, 300)])
+            )
+          : undefined;
       restored.push({
         id: typeof rawMessage.id === "string" && rawMessage.id ? rawMessage.id : nextMessageId(),
         role: rawMessage.role,
@@ -415,6 +436,7 @@ function loadPersistedMessages(): ChatMessage[] {
         ts: rawMessage.ts,
         expression: normalizeExpressionId(typeof rawMessage.expression === "string" ? rawMessage.expression : ""),
         citations: Array.isArray(rawMessage.citations) ? rawMessage.citations : undefined,
+        citation_snippets: citationSnippets,
         actions: Array.isArray(rawMessage.actions) ? rawMessage.actions : undefined,
         images,
         tool_trace: toolTrace,
@@ -444,6 +466,7 @@ function toPersistedMessages(messages: ChatMessage[]): ChatMessage[] {
         ts: item.ts,
         expression: normalizeExpressionId(item.expression),
         citations: item.citations,
+        citation_snippets: item.citation_snippets,
         actions: item.actions,
         images,
         tool_trace: item.tool_trace,
@@ -502,6 +525,24 @@ function mergeCitations(existing: AelinCitation[], incoming: AelinCitation[], li
     seen.add(key);
     out.push(row);
     if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function citationKey(item: Pick<AelinCitation, "message_id" | "source" | "title">): string {
+  return `${item.message_id || 0}:${item.source || ""}:${item.title || ""}`.toLowerCase();
+}
+
+function mergeCitationSnippets(
+  existing: Record<string, string> | undefined,
+  incoming: Array<{ citation: AelinCitation; snippet?: string }>
+): Record<string, string> {
+  const out: Record<string, string> = { ...(existing || {}) };
+  for (const row of incoming) {
+    const key = citationKey(row.citation);
+    const snippet = String(row.snippet || "").trim();
+    if (!key || !snippet) continue;
+    out[key] = snippet.slice(0, 300);
   }
   return out;
 }
@@ -1245,6 +1286,15 @@ function normalizeAutoLinksForMarkdown(content: string): string {
   });
 }
 
+function extractFirstUrl(text: string): string {
+  const raw = String(text || "");
+  if (!raw) return "";
+  const labeled = raw.match(/(?:^|\n)\s*URL\s*[:：]\s*(https?:\/\/[^\s<>"')\]]+)/i);
+  if (labeled?.[1]) return labeled[1].trim();
+  const plain = raw.match(/https?:\/\/[^\s<>"')\]]+/i);
+  return plain?.[0]?.trim() || "";
+}
+
 const MessageRow = React.memo(function MessageRow(props: {
   message: ChatMessage;
   isGroupStart: boolean;
@@ -1252,8 +1302,9 @@ const MessageRow = React.memo(function MessageRow(props: {
   onCopy: (text: string) => void;
   onCitationOpen: (item: AelinCitation) => void;
   pulse?: boolean;
+  streamBusy?: boolean;
 }) {
-  const { message, isGroupStart, onActionClick, onCopy, onCitationOpen, pulse } = props;
+  const { message, isGroupStart, onActionClick, onCopy, onCitationOpen, pulse, streamBusy = false } = props;
   const theme = useTheme();
   const isUser = message.role === "user";
   const expressionId = !isUser && !message.pending ? normalizeExpressionId(message.expression) : undefined;
@@ -1387,11 +1438,26 @@ const MessageRow = React.memo(function MessageRow(props: {
           ) : null}
 
           {message.pending ? (
-            <Stack direction="row" spacing={0.9} alignItems="center">
-              <TypingDots />
-              <Typography variant="body1" color="text.secondary" sx={{ fontSize: "0.98rem" }}>
-                Aelin 正在思考...
-              </Typography>
+            <Stack spacing={0.8}>
+              <Stack direction="row" spacing={0.9} alignItems="center">
+                <TypingDots />
+                <Typography variant="body1" color="text.secondary" sx={{ fontSize: "0.98rem" }}>
+                  Aelin 正在思考...
+                </Typography>
+                {streamBusy ? (
+                  <Chip
+                    size="small"
+                    variant="outlined"
+                    label="流式更新中"
+                    sx={{ "& .MuiChip-label": { px: 0.75, fontSize: "0.66rem", fontWeight: 700 } }}
+                  />
+                ) : null}
+              </Stack>
+              <Box>
+                <Skeleton variant="text" width="85%" height={20} />
+                <Skeleton variant="text" width="92%" height={20} />
+                <Skeleton variant="text" width="70%" height={20} />
+              </Box>
             </Stack>
           ) : (
             <Box sx={{ wordBreak: "break-word", lineHeight: 1.72, fontSize: "1rem" }}>
@@ -1449,10 +1515,101 @@ const MessageRow = React.memo(function MessageRow(props: {
         </Paper>
 
         {!!message.citations?.length && (
-          <Stack direction="row" spacing={0.55} flexWrap="wrap" useFlexGap sx={{ mt: 0.7, px: 0.45 }}>
-            {message.citations.slice(0, 4).map((item) => (
-              <CitationPill key={`${message.id}-${item.message_id}-${item.source}`} item={item} onOpen={onCitationOpen} />
-            ))}
+          <Stack spacing={0.52} sx={{ mt: 0.68, px: 0.3, width: "100%", maxWidth: "100%", overflow: "hidden" }}>
+            {message.citations.slice(0, 4).map((item) => {
+              const platform = resolveCitationPlatform(item);
+              const meta = PLATFORM_META[platform] || PLATFORM_META.generic;
+              const snippet = message.citation_snippets?.[citationKey(item)] || "";
+              return (
+                <Paper
+                  key={`${message.id}-${item.message_id}-${item.source}`}
+                  variant="outlined"
+                  onClick={() => onCitationOpen(item)}
+                  sx={{
+                    px: 0.62,
+                    py: 0.52,
+                    borderRadius: 1.05,
+                    cursor: "pointer",
+                    borderColor: alpha(meta.color, 0.4),
+                    bgcolor: alpha(meta.color, 0.05),
+                    width: "100%",
+                    maxWidth: "100%",
+                    overflow: "hidden",
+                    transition: "transform 140ms ease, box-shadow 160ms ease",
+                    "&:hover": {
+                      transform: "translateY(-1px)",
+                      boxShadow: `0 6px 12px ${alpha(meta.color, 0.18)}`,
+                    },
+                  }}
+                >
+                  <Stack direction="row" spacing={0.62} alignItems="center" sx={{ minWidth: 0 }}>
+                    <PlatformGlyph platform={platform} size={13} />
+                    <AccountAvatar name={item.sender || item.source_label} src={item.sender_avatar_url} size={16} />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          display: "block",
+                          fontWeight: 700,
+                          color: meta.color,
+                          lineHeight: 1.2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {item.title}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          display: "block",
+                          lineHeight: 1.2,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {item.sender} · {item.source_label} · {item.received_at.slice(5)}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      size="small"
+                      label={item.score.toFixed(1)}
+                      sx={{
+                        height: 18,
+                        minWidth: 34,
+                        flexShrink: 0,
+                        border: "1px solid",
+                        borderColor: alpha(meta.color, 0.45),
+                        bgcolor: alpha(meta.color, 0.08),
+                        color: meta.color,
+                        "& .MuiChip-label": { px: 0.58, fontSize: "0.62rem", fontWeight: 800 },
+                      }}
+                    />
+                  </Stack>
+                  {snippet ? (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        mt: 0.38,
+                        pl: 2.95,
+                        display: "-webkit-box",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        WebkitLineClamp: 1,
+                        WebkitBoxOrient: "vertical",
+                        lineHeight: 1.28,
+                      }}
+                    >
+                      {snippet}
+                    </Typography>
+                  ) : null}
+                </Paper>
+              );
+            })}
           </Stack>
         )}
 
@@ -1514,6 +1671,15 @@ export default function Aelin({
   const [trackingItems, setTrackingItems] = React.useState<AelinTrackingItem[]>([]);
   const [trackingBusy, setTrackingBusy] = React.useState(false);
   const [trackingError, setTrackingError] = React.useState("");
+  const [trackingStatusFilter, setTrackingStatusFilter] = React.useState("all");
+  const [trackingSourceFilter, setTrackingSourceFilter] = React.useState("all");
+  const [trackingKeyword, setTrackingKeyword] = React.useState("");
+  const [memoryDialogOpen, setMemoryDialogOpen] = React.useState(false);
+  const [memoryLayerTab, setMemoryLayerTab] = React.useState<"facts" | "preferences" | "in_progress">("facts");
+  const [notificationDialogOpen, setNotificationDialogOpen] = React.useState(false);
+  const [notificationBusy, setNotificationBusy] = React.useState(false);
+  const [notificationItems, setNotificationItems] = React.useState<AelinNotificationItem[]>([]);
+  const [isProgressPending, startProgressTransition] = React.useTransition();
   const [llmDialogOpen, setLlmDialogOpen] = React.useState(false);
   const [llmLoading, setLlmLoading] = React.useState(false);
   const [llmRefreshing, setLlmRefreshing] = React.useState(false);
@@ -1540,8 +1706,17 @@ export default function Aelin({
     loading: boolean;
     error: string;
   }>({ open: false, citation: null, detail: null, loading: false, error: "" });
+  const [citationPreview, setCitationPreview] = React.useState<{
+    open: boolean;
+    citation: AelinCitation | null;
+    url: string;
+    loading: boolean;
+    error: string;
+  }>({ open: false, citation: null, url: "", loading: false, error: "" });
   const timelineRef = React.useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = React.useRef(true);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const citationUrlCacheRef = React.useRef<Record<number, string>>({});
   const handledDeskReturnRef = React.useRef<string>("");
   const handoffFXTimerRef = React.useRef<number | null>(null);
   const activeSession = React.useMemo(
@@ -1577,6 +1752,44 @@ export default function Aelin({
     }
     return null;
   }, [messages]);
+  const memoryLayers = React.useMemo(
+    () => contextSnapshot?.memory_layers || { facts: [], preferences: [], in_progress: [], generated_at: "" },
+    [contextSnapshot?.memory_layers]
+  );
+  const memoryLayerItems = React.useMemo<AelinMemoryLayerItem[]>(() => {
+    if (memoryLayerTab === "facts") return memoryLayers.facts || [];
+    if (memoryLayerTab === "preferences") return memoryLayers.preferences || [];
+    return memoryLayers.in_progress || [];
+  }, [memoryLayerTab, memoryLayers.facts, memoryLayers.in_progress, memoryLayers.preferences]);
+  const contextNotifications = React.useMemo(() => contextSnapshot?.notifications || [], [contextSnapshot?.notifications]);
+  const allNotifications = React.useMemo(() => {
+    const merged = [...notificationItems, ...contextNotifications];
+    const seen = new Set<string>();
+    const out: AelinNotificationItem[] = [];
+    for (const item of merged) {
+      const key = String(item.id || "");
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+      if (out.length >= 60) break;
+    }
+    out.sort((a, b) => Date.parse(b.ts || "") - Date.parse(a.ts || ""));
+    return out;
+  }, [contextNotifications, notificationItems]);
+  const unreadNotificationCount = React.useMemo(
+    () => Math.min(99, allNotifications.filter((it) => (it.level || "info") !== "default").length),
+    [allNotifications]
+  );
+  const filteredTrackingItems = React.useMemo(() => {
+    const kw = trackingKeyword.trim().toLowerCase();
+    return trackingItems.filter((item) => {
+      if (trackingStatusFilter !== "all" && String(item.status || "").toLowerCase() !== trackingStatusFilter) return false;
+      if (trackingSourceFilter !== "all" && String(item.source || "").toLowerCase() !== trackingSourceFilter) return false;
+      if (!kw) return true;
+      const blob = `${item.target} ${item.query} ${item.source} ${item.status}`.toLowerCase();
+      return blob.includes(kw);
+    });
+  }, [trackingItems, trackingStatusFilter, trackingSourceFilter, trackingKeyword]);
 
   const playHandoffFX = React.useCallback((title: string, detail: string, holdMs = 900) => {
     setHandoffFX({ title, detail });
@@ -1672,6 +1885,18 @@ export default function Aelin({
       setTrackingError(error instanceof Error ? error.message : "跟踪列表加载失败");
     } finally {
       setTrackingBusy(false);
+    }
+  }, []);
+
+  const refreshNotifications = React.useCallback(async () => {
+    setNotificationBusy(true);
+    try {
+      const ret = await getAelinNotifications(30);
+      setNotificationItems(ret.items || []);
+    } catch {
+      // ignore transient failures
+    } finally {
+      setNotificationBusy(false);
     }
   }, []);
 
@@ -1805,6 +2030,15 @@ export default function Aelin({
   }, [refreshTracking]);
 
   React.useEffect(() => {
+    if (!notificationDialogOpen) return;
+    void refreshNotifications();
+  }, [notificationDialogOpen, refreshNotifications]);
+
+  React.useEffect(() => {
+    void refreshNotifications();
+  }, [refreshNotifications]);
+
+  React.useEffect(() => {
     if (llmProvider === "rule_based" || llmIsCustomProvider || !llmSelectedProvider) return;
     if (
       llmSelectedProvider.models.length > 0 &&
@@ -1867,8 +2101,23 @@ export default function Aelin({
   React.useEffect(() => {
     const el = timelineRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    const delta = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (stickToBottomRef.current || delta < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  React.useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const delta = el.scrollHeight - el.scrollTop - el.clientHeight;
+      stickToBottomRef.current = delta < 96;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
 
   React.useEffect(() => {
     if (!latestSparkMessageId) return;
@@ -2076,49 +2325,53 @@ export default function Aelin({
 
         for await (const evt of stream) {
           if (evt.type === "start") {
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionIdAtSend
-                  ? {
-                      ...session,
-                      messages: session.messages.map((item) =>
-                        item.id === assistantId && item.pending
-                          ? {
-                              ...item,
-                              tool_trace: upsertTraceStep(item.tool_trace || [], {
-                                stage: "main_agent",
-                                status: "running",
-                                detail: "主控开始编排子任务",
-                                count: 1,
-                              }),
-                            }
-                          : item
-                      ),
-                    }
-                  : session
-              )
-            );
+            startProgressTransition(() => {
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionIdAtSend
+                    ? {
+                        ...session,
+                        messages: session.messages.map((item) =>
+                          item.id === assistantId && item.pending
+                            ? {
+                                ...item,
+                                tool_trace: upsertTraceStep(item.tool_trace || [], {
+                                  stage: "main_agent",
+                                  status: "running",
+                                  detail: "主控开始编排子任务",
+                                  count: 1,
+                                }),
+                              }
+                            : item
+                        ),
+                      }
+                    : session
+                )
+              );
+            });
             continue;
           }
 
           if (evt.type === "trace") {
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionIdAtSend
-                  ? {
-                      ...session,
-                      messages: session.messages.map((item) =>
-                        item.id === assistantId && item.pending
-                          ? {
-                              ...item,
-                              tool_trace: upsertTraceStep(item.tool_trace || [], evt.step),
-                            }
-                          : item
-                      ),
-                    }
-                  : session
-              )
-            );
+            startProgressTransition(() => {
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionIdAtSend
+                    ? {
+                        ...session,
+                        messages: session.messages.map((item) =>
+                          item.id === assistantId && item.pending
+                            ? {
+                                ...item,
+                                tool_trace: upsertTraceStep(item.tool_trace || [], evt.step),
+                              }
+                            : item
+                        ),
+                      }
+                    : session
+                )
+              );
+            });
             continue;
           }
 
@@ -2135,37 +2388,42 @@ export default function Aelin({
                 : "";
             const sourceText = sourceBits ? ` [${sourceBits}]` : "";
             const detail = `证据命中：${queryText}${progressText}${sourceText}`;
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionIdAtSend
-                  ? {
-                      ...session,
-                      messages: session.messages.map((item) =>
-                        item.id === assistantId && item.pending
-                          ? {
-                              ...item,
-                              citations: mergeCitations(item.citations || [], [citation], 12),
-                              tool_trace: upsertTraceStep(
-                                upsertTraceStep(item.tool_trace || [], {
-                                  stage: "web_search",
-                                  status: "running",
-                                  detail,
-                                  count: evidenceCount,
-                                }),
-                                {
-                                  stage: "message_hub",
-                                  status: "running",
-                                  detail: "证据汇聚中",
-                                  count: evidenceCount,
-                                }
-                              ),
-                            }
-                          : item
-                      ),
-                    }
-                  : session
-              )
-            );
+            startProgressTransition(() => {
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionIdAtSend
+                    ? {
+                        ...session,
+                        messages: session.messages.map((item) =>
+                          item.id === assistantId && item.pending
+                            ? {
+                                ...item,
+                                citations: mergeCitations(item.citations || [], [citation], 12),
+                                citation_snippets: mergeCitationSnippets(item.citation_snippets, [
+                                  { citation, snippet: evt.snippet || "" },
+                                ]),
+                                tool_trace: upsertTraceStep(
+                                  upsertTraceStep(item.tool_trace || [], {
+                                    stage: "web_search",
+                                    status: "running",
+                                    detail,
+                                    count: evidenceCount,
+                                  }),
+                                  {
+                                    stage: "message_hub",
+                                    status: "running",
+                                    detail: "证据汇聚中",
+                                    count: evidenceCount,
+                                  }
+                                ),
+                              }
+                            : item
+                        ),
+                      }
+                    : session
+                )
+              );
+            });
             continue;
           }
 
@@ -2175,28 +2433,30 @@ export default function Aelin({
             const detail = target
               ? `建议追踪：${target}${sourceCount > 0 ? `（来源 ${sourceCount}）` : ""}`
               : "识别到可追踪主题";
-            setSessions((prev) =>
-              prev.map((session) =>
-                session.id === sessionIdAtSend
-                  ? {
-                      ...session,
-                      messages: session.messages.map((item) =>
-                        item.id === assistantId && item.pending
-                          ? {
-                              ...item,
-                              tool_trace: upsertTraceStep(item.tool_trace || [], {
-                                stage: "trace_agent",
-                                status: "completed",
-                                detail,
-                                count: Number((evt.items || []).length || 0),
-                              }),
-                            }
-                          : item
-                      ),
-                    }
-                  : session
-              )
-            );
+            startProgressTransition(() => {
+              setSessions((prev) =>
+                prev.map((session) =>
+                  session.id === sessionIdAtSend
+                    ? {
+                        ...session,
+                        messages: session.messages.map((item) =>
+                          item.id === assistantId && item.pending
+                            ? {
+                                ...item,
+                                tool_trace: upsertTraceStep(item.tool_trace || [], {
+                                  stage: "trace_agent",
+                                  status: "completed",
+                                  detail,
+                                  count: Number((evt.items || []).length || 0),
+                                }),
+                              }
+                            : item
+                        ),
+                      }
+                    : session
+                )
+              );
+            });
             continue;
           }
 
@@ -2215,6 +2475,7 @@ export default function Aelin({
                               content: evt.result.answer || "当前未生成文本回答。",
                               expression: normalizeExpressionId(evt.result.expression),
                               citations: mergeCitations(item.citations || [], evt.result.citations || [], 12),
+                              citation_snippets: item.citation_snippets,
                               actions: evt.result.actions || [],
                               tool_trace: (evt.result.tool_trace || []).map(normalizeTraceStep),
                             }
@@ -2260,6 +2521,7 @@ export default function Aelin({
                             content: result.answer || "当前未生成文本回答。",
                             expression: normalizeExpressionId(result.expression),
                             citations: mergeCitations(item.citations || [], result.citations || [], 12),
+                            citation_snippets: item.citation_snippets,
                             actions: result.actions || [],
                             tool_trace: (result.tool_trace || []).map(normalizeTraceStep),
                           }
@@ -2328,7 +2590,7 @@ export default function Aelin({
         setBusy(false);
       }
     },
-    [activeSession?.messages, activeSessionId, busy, pendingImages, refreshContext, workspaceScope]
+    [activeSession?.messages, activeSessionId, busy, pendingImages, refreshContext, startProgressTransition, workspaceScope]
   );
 
   const onActionClick = React.useCallback(
@@ -2380,13 +2642,41 @@ export default function Aelin({
     [lastAssistantCitation?.source_label, navigate, openDeskWithContext, openLlmDialog, showToast]
   );
 
+  const resolveCitationUrl = React.useCallback(
+    async (item: AelinCitation): Promise<{ url: string; detail: MessageDetail | null }> => {
+      const id = Number(item.message_id || 0);
+      if (id > 0 && citationUrlCacheRef.current[id]) {
+        return { url: citationUrlCacheRef.current[id], detail: null };
+      }
+      const detail = await getMessage(item.message_id);
+      const url = extractFirstUrl(detail.body || "") || extractFirstUrl(detail.subject || "");
+      if (id > 0 && url) {
+        citationUrlCacheRef.current[id] = url;
+      }
+      return { url, detail };
+    },
+    []
+  );
+
   const handleCitationOpen = React.useCallback(
     async (item: AelinCitation) => {
-      setCitationDrawer({ open: true, citation: item, detail: null, loading: true, error: "" });
+      setCitationPreview({ open: true, citation: item, url: "", loading: true, error: "" });
       try {
-        const detail = await getMessage(item.message_id);
-        setCitationDrawer({ open: true, citation: item, detail, loading: false, error: "" });
+        const { url, detail } = await resolveCitationUrl(item);
+        if (url) {
+          setCitationPreview({ open: true, citation: item, url, loading: false, error: "" });
+          return;
+        }
+        setCitationPreview({ open: false, citation: null, url: "", loading: false, error: "" });
+        setCitationDrawer({
+          open: true,
+          citation: item,
+          detail,
+          loading: false,
+          error: "该证据暂无可跳转网页链接，已切换到详情视图。",
+        });
       } catch (error) {
+        setCitationPreview({ open: false, citation: null, url: "", loading: false, error: "" });
         setCitationDrawer({
           open: true,
           citation: item,
@@ -2396,7 +2686,7 @@ export default function Aelin({
         });
       }
     },
-    []
+    [resolveCitationUrl]
   );
 
   const handleTrackingChoice = React.useCallback(
@@ -2482,6 +2772,42 @@ export default function Aelin({
       setStoryBusy(false);
     }
   }, [contextSnapshot, showToast, updateActiveMessages, workspaceScope]);
+
+  const handleNotificationAction = React.useCallback(
+    (item: AelinNotificationItem) => {
+      const kind = String(item.action_kind || "").trim();
+      const payload = item.action_payload || {};
+      if (kind === "open_message" && payload.message_id) {
+        openDeskWithContext({
+          messageId: payload.message_id,
+          focusQuery: item.title || "",
+          highlightSource: item.source || "",
+          resumePrompt: `继续围绕这条通知深入分析：${item.title}`,
+        });
+        setNotificationDialogOpen(false);
+        return;
+      }
+      if (kind === "open_todo") {
+        openDeskWithContext({
+          focusQuery: item.title || "查看待办",
+          highlightSource: "todo",
+          resumePrompt: "继续处理我的待办并给我优先级建议。",
+        });
+        setNotificationDialogOpen(false);
+        return;
+      }
+      if (kind === "open_tracking") {
+        setNotificationDialogOpen(false);
+        setTrackingDialogOpen(true);
+        return;
+      }
+      if (kind === "open_brief") {
+        void runStoryMode();
+        setNotificationDialogOpen(false);
+      }
+    },
+    [openDeskWithContext, runStoryMode]
+  );
 
   return (
     <Box
@@ -2612,6 +2938,23 @@ export default function Aelin({
                 >
                   <TrackChangesIcon fontSize="small" />
                 </Badge>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="通知中心">
+              <IconButton onClick={() => setNotificationDialogOpen(true)}>
+                <Badge
+                  color="error"
+                  badgeContent={unreadNotificationCount}
+                  invisible={!unreadNotificationCount}
+                  overlap="circular"
+                >
+                  <NotificationsNoneIcon fontSize="small" />
+                </Badge>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="分层记忆">
+              <IconButton onClick={() => setMemoryDialogOpen(true)}>
+                <LayersIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title="打开观察台">
@@ -2769,6 +3112,7 @@ export default function Aelin({
               onCopy={copyText}
               onCitationOpen={handleCitationOpen}
               pulse={latestSparkMessageId === message.id}
+              streamBusy={isProgressPending}
             />
           ))}
         </Container>
@@ -3190,10 +3534,59 @@ export default function Aelin({
             <Chip size="small" label={`总数 ${trackingItems.length}`} />
             <Chip size="small" color="success" label={`进行中 ${trackingItems.filter((it) => it.status === "sync_started" || it.status === "active").length}`} />
             <Chip size="small" color="warning" label={`待配置 ${trackingItems.filter((it) => it.status === "needs_config").length}`} />
+            <Chip size="small" color="error" label={`失败 ${trackingItems.filter((it) => it.status === "failed").length}`} />
           </Stack>
         </Box>
 
         <Box sx={{ px: 1.2, py: 1.1, maxHeight: "68vh", overflowY: "auto" }}>
+          <Paper variant="outlined" sx={{ p: 0.8, borderRadius: 1.4, mb: 0.9 }}>
+            <Stack spacing={0.65}>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={0.65}>
+                <TextField
+                  size="small"
+                  placeholder="筛选目标/问题"
+                  value={trackingKeyword}
+                  onChange={(event) => setTrackingKeyword(event.target.value)}
+                  fullWidth
+                />
+                <TextField
+                  select
+                  size="small"
+                  label="状态"
+                  value={trackingStatusFilter}
+                  onChange={(event) => setTrackingStatusFilter(String(event.target.value || "all"))}
+                  sx={{ minWidth: 120 }}
+                  SelectProps={{ native: true }}
+                >
+                  <option value="all">全部</option>
+                  <option value="active">进行中</option>
+                  <option value="sync_started">同步中</option>
+                  <option value="needs_config">待配置</option>
+                  <option value="failed">失败</option>
+                </TextField>
+                <TextField
+                  select
+                  size="small"
+                  label="来源"
+                  value={trackingSourceFilter}
+                  onChange={(event) => setTrackingSourceFilter(String(event.target.value || "all"))}
+                  sx={{ minWidth: 120 }}
+                  SelectProps={{ native: true }}
+                >
+                  <option value="all">全部</option>
+                  {Object.entries(TRACKING_SOURCE_LABEL).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </TextField>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">
+                当前匹配 {filteredTrackingItems.length} 条。提示：可通过来源 + 状态快速定位异常项。
+              </Typography>
+            </Stack>
+          </Paper>
+
           {trackingBusy ? (
             <Stack direction="row" spacing={0.8} alignItems="center" sx={{ py: 2.6 }}>
               <CircularProgress size={18} />
@@ -3210,11 +3603,16 @@ export default function Aelin({
                 重试
               </Button>
             </Paper>
-          ) : trackingItems.length ? (
+          ) : filteredTrackingItems.length ? (
             <Stack spacing={0.8}>
-              {trackingItems.map((item) => {
+              {filteredTrackingItems.map((item) => {
                 const status = formatTrackingStatus(item.status);
                 const sourceLabel = TRACKING_SOURCE_LABEL[item.source] || item.source || "未知";
+                const statusTs = item.status_updated_at || item.updated_at;
+                const statusDate = statusTs ? Date.parse(statusTs) : Number.NaN;
+                const nextProbe = Number.isNaN(statusDate)
+                  ? "未知"
+                  : formatIsoTime(new Date(statusDate + 30 * 60 * 1000).toISOString());
                 return (
                   <Paper
                     key={`${item.note_id || "n"}-${item.message_id || "m"}-${item.source}-${item.target}`}
@@ -3259,6 +3657,9 @@ export default function Aelin({
                       <Typography variant="caption" color="text.secondary">
                         最近更新：{formatIsoTime(item.status_updated_at || item.updated_at)}
                       </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        预计下次探测：{nextProbe}
+                      </Typography>
                     </Stack>
                   </Paper>
                 );
@@ -3267,7 +3668,194 @@ export default function Aelin({
           ) : (
             <Paper variant="outlined" sx={{ p: 1.1, borderRadius: 1.4 }}>
               <Typography variant="body2" color="text.secondary">
-                暂无跟踪项。你在对话里同意“开启跟踪”后，这里会自动出现。
+                {trackingItems.length
+                  ? "当前筛选条件下没有匹配项，请调整筛选。"
+                  : "暂无跟踪项。你在对话里同意“开启跟踪”后，这里会自动出现。"}
+              </Typography>
+            </Paper>
+          )}
+        </Box>
+      </Dialog>
+
+      <Dialog
+        open={memoryDialogOpen}
+        onClose={() => setMemoryDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: "hidden",
+            bgcolor: alpha(theme.palette.background.paper, 0.98),
+            backdropFilter: "blur(10px)",
+          },
+        }}
+      >
+        <Box sx={{ px: 1.2, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <LayersIcon sx={{ fontSize: 18, color: "primary.main" }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                分层记忆视图
+              </Typography>
+            </Stack>
+            <IconButton size="small" onClick={() => setMemoryDialogOpen(false)}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+          <Tabs
+            value={memoryLayerTab}
+            onChange={(_event, value) => setMemoryLayerTab(value)}
+            variant="fullWidth"
+            sx={{ mt: 0.8, minHeight: 34, "& .MuiTab-root": { minHeight: 34, fontSize: "0.82rem", fontWeight: 700 } }}
+          >
+            <Tab icon={<FactCheckIcon sx={{ fontSize: 15 }} />} iconPosition="start" label={`事实层 ${memoryLayers.facts.length}`} value="facts" />
+            <Tab icon={<TuneIcon sx={{ fontSize: 15 }} />} iconPosition="start" label={`偏好层 ${memoryLayers.preferences.length}`} value="preferences" />
+            <Tab icon={<PendingActionsIcon sx={{ fontSize: 15 }} />} iconPosition="start" label={`进行中 ${memoryLayers.in_progress.length}`} value="in_progress" />
+          </Tabs>
+        </Box>
+
+        <Box sx={{ px: 1.2, py: 1.1, maxHeight: "68vh", overflowY: "auto" }}>
+          <Typography variant="caption" color="text.secondary">
+            生成时间：{formatIsoTime(memoryLayers.generated_at)}
+          </Typography>
+          <Stack spacing={0.8} sx={{ mt: 0.8 }}>
+            {memoryLayerItems.length ? (
+              memoryLayerItems.map((item) => (
+                <Paper key={item.id} variant="outlined" sx={{ p: 0.85, borderRadius: 1.4 }}>
+                  <Stack spacing={0.45}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.8}>
+                      <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.35 }}>
+                        {item.title}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        variant="outlined"
+                        label={`${Math.round((item.confidence || 0) * 100)}%`}
+                        sx={{ "& .MuiChip-label": { px: 0.7, fontSize: "0.68rem", fontWeight: 700 } }}
+                      />
+                    </Stack>
+                    {item.detail ? (
+                      <Box
+                        sx={{
+                          "& p": { m: 0, mb: 0.5, lineHeight: 1.55, fontSize: "0.82rem" },
+                          "& p:last-of-type": { mb: 0 },
+                          "& a": { color: "primary.main", textDecoration: "underline" },
+                          "& ul, & ol": { mt: 0.25, mb: 0.5, pl: 2.2 },
+                        }}
+                      >
+                        <ReactMarkdown>{item.detail}</ReactMarkdown>
+                      </Box>
+                    ) : null}
+                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                      <Chip size="small" label={item.source || item.layer} />
+                      <Chip size="small" variant="outlined" label={formatIsoTime(item.updated_at)} />
+                    </Stack>
+                  </Stack>
+                </Paper>
+              ))
+            ) : (
+              <Paper variant="outlined" sx={{ p: 1.1, borderRadius: 1.4 }}>
+                <Typography variant="body2" color="text.secondary">
+                  当前层暂无可展示记忆。
+                </Typography>
+              </Paper>
+            )}
+          </Stack>
+        </Box>
+      </Dialog>
+
+      <Dialog
+        open={notificationDialogOpen}
+        onClose={() => setNotificationDialogOpen(false)}
+        fullWidth
+        maxWidth="sm"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: "hidden",
+            bgcolor: alpha(theme.palette.background.paper, 0.98),
+            backdropFilter: "blur(10px)",
+          },
+        }}
+      >
+        <Box sx={{ px: 1.2, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <NotificationsNoneIcon sx={{ fontSize: 18, color: "primary.main" }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                通知中心
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.4}>
+              <Tooltip title="刷新">
+                <span>
+                  <IconButton size="small" onClick={() => void refreshNotifications()} disabled={notificationBusy}>
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <IconButton size="small" onClick={() => setNotificationDialogOpen(false)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          </Stack>
+        </Box>
+
+        <Box sx={{ px: 1.2, py: 1.1, maxHeight: "68vh", overflowY: "auto" }}>
+          {notificationBusy ? (
+            <Stack spacing={0.7}>
+              <Skeleton variant="rounded" height={64} />
+              <Skeleton variant="rounded" height={64} />
+              <Skeleton variant="rounded" height={64} />
+            </Stack>
+          ) : allNotifications.length ? (
+            <Stack spacing={0.72}>
+              {allNotifications.map((item) => (
+                <Paper key={item.id} variant="outlined" sx={{ p: 0.85, borderRadius: 1.4 }}>
+                  <Stack spacing={0.45}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.7}>
+                      <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.35 }}>
+                        {item.title}
+                      </Typography>
+                      <Chip
+                        size="small"
+                        color={
+                          item.level === "warning"
+                            ? "warning"
+                            : item.level === "success"
+                              ? "success"
+                              : item.level === "error"
+                                ? "error"
+                                : "info"
+                        }
+                        label={item.level || "info"}
+                        sx={{ "& .MuiChip-label": { px: 0.72, fontSize: "0.68rem", fontWeight: 700 } }}
+                      />
+                    </Stack>
+                    {item.detail ? (
+                      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
+                        {item.detail}
+                      </Typography>
+                    ) : null}
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.7}>
+                      <Typography variant="caption" color="text.secondary">
+                        {item.source || "system"} · {formatIsoTime(item.ts)}
+                      </Typography>
+                      {item.action_kind ? (
+                        <Button size="small" variant="outlined" onClick={() => handleNotificationAction(item)}>
+                          查看
+                        </Button>
+                      ) : null}
+                    </Stack>
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          ) : (
+            <Paper variant="outlined" sx={{ p: 1.1, borderRadius: 1.4 }}>
+              <Typography variant="body2" color="text.secondary">
+                暂无通知。新的简报、待办和跟踪进展会显示在这里。
               </Typography>
             </Paper>
           )}
@@ -3341,6 +3929,94 @@ export default function Aelin({
 
       <Drawer
         anchor="right"
+        open={citationPreview.open}
+        onClose={() => setCitationPreview((prev) => ({ ...prev, open: false }))}
+        PaperProps={{
+          sx: {
+            width: {
+              xs: "100vw",
+              sm: "min(100vw, 92vw)",
+              md: "min(100vw, 88vw)",
+              lg: "min(100vw, 1240px)",
+            },
+            maxWidth: "100vw",
+            p: 0,
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          },
+        }}
+      >
+        <Stack
+          direction="row"
+          alignItems="center"
+          justifyContent="space-between"
+          sx={{ px: 1.1, py: 0.9, borderBottom: "1px solid", borderColor: "divider", gap: 0.8 }}
+        >
+          <Box sx={{ minWidth: 0, flex: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 800, lineHeight: 1.2 }}>
+              网页预览
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: "block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {citationPreview.citation?.title || citationPreview.url || "来源链接"}
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={0.4} sx={{ flexShrink: 0 }}>
+            {citationPreview.url ? (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  window.open(citationPreview.url, "_blank", "noopener,noreferrer");
+                }}
+              >
+                外部打开
+              </Button>
+            ) : null}
+            <IconButton size="small" onClick={() => setCitationPreview((prev) => ({ ...prev, open: false }))}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+        </Stack>
+        <Box sx={{ p: 1.05, flex: 1, minHeight: 0 }}>
+          {citationPreview.loading ? (
+            <Stack spacing={0.9}>
+              <Skeleton variant="rounded" height={24} />
+              <Skeleton variant="rounded" height={24} />
+              <Skeleton variant="rounded" height={420} />
+            </Stack>
+          ) : citationPreview.error ? (
+            <Alert severity="warning" sx={{ borderRadius: 1.2 }}>
+              {citationPreview.error}
+            </Alert>
+          ) : citationPreview.url ? (
+            <Box
+              component="iframe"
+              src={citationPreview.url}
+              title={citationPreview.citation?.title || "citation-preview"}
+              sx={{
+                width: "100%",
+                height: "100%",
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 1.1,
+                bgcolor: "background.paper",
+              }}
+            />
+          ) : (
+            <Alert severity="info" sx={{ borderRadius: 1.2 }}>
+              未解析到可预览网页，请在证据详情中查看原文。
+            </Alert>
+          )}
+        </Box>
+      </Drawer>
+
+      <Drawer
+        anchor="right"
         open={citationDrawer.open}
         onClose={() => setCitationDrawer((prev) => ({ ...prev, open: false }))}
         PaperProps={{ sx: { width: { xs: "100%", sm: 420 }, p: 1.2 } }}
@@ -3381,6 +4057,16 @@ export default function Aelin({
         )}
         <Divider sx={{ my: 1 }} />
         <Stack direction="row" spacing={0.7}>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={() => {
+              if (!citationDrawer.citation) return;
+              void handleCitationOpen(citationDrawer.citation);
+            }}
+          >
+            打开网页
+          </Button>
           <Button
             size="small"
             variant="outlined"
