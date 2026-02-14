@@ -102,6 +102,35 @@ def _parse_json_or_none(raw: str) -> Any | None:
         return None
 
 
+def _iso_or_empty(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    try:
+        return value.isoformat()
+    except Exception:
+        return ""
+
+
+def _extract_tracking_field(text: str, label: str) -> str:
+    if not text:
+        return ""
+    match = re.search(rf"{re.escape(label)}\s*[:：]\s*(.+)", text, flags=re.I)
+    if not match:
+        return ""
+    return (match.group(1) or "").strip().splitlines()[0].strip()
+
+
+def _parse_tracking_payload(raw: str) -> dict[str, str]:
+    text = (raw or "").strip()
+    return {
+        "target": _extract_tracking_field(text, "跟踪目标"),
+        "source": _clean_text(_extract_tracking_field(text, "来源")).lower() or "auto",
+        "status": _extract_tracking_field(text, "状态") or "active",
+        "query": _extract_tracking_field(text, "触发问题"),
+        "time": _extract_tracking_field(text, "时间"),
+    }
+
+
 class AgentMemoryService:
     def get_summary(self, db: Session, user_id: int) -> str:
         row = db.get(AgentConversationMemory, user_id)
@@ -707,8 +736,302 @@ class AgentMemoryService:
             ],
         }
 
+    def build_memory_layers(
+        self,
+        db: Session,
+        user_id: int,
+        *,
+        workspace: str = "default",
+        query: str = "",
+    ) -> dict[str, list[dict[str, Any]]]:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        notes = self.list_notes(db, user_id, limit=120)
+        focus_items = self.build_focus_items(db, user_id, query=query, limit=10)
+        todos = self.list_todos(db, user_id, include_done=False, limit=20)
+        layout_cards = self.get_latest_layout_cards(db, user_id, workspace=workspace)
+
+        facts: list[dict[str, Any]] = []
+        preferences: list[dict[str, Any]] = []
+        in_progress: list[dict[str, Any]] = []
+
+        def _push(
+            bucket: list[dict[str, Any]],
+            *,
+            item_id: str,
+            layer: str,
+            title: str,
+            detail: str,
+            source: str,
+            confidence: float,
+            updated_at: str,
+            meta: dict[str, str] | None = None,
+            max_items: int = 12,
+        ) -> None:
+            clean_title = _truncate(_clean_text(title), 140)
+            if not clean_title:
+                return
+            clean_detail = _truncate(_clean_text(detail), 280)
+            if any((row.get("title") or "") == clean_title for row in bucket):
+                return
+            bucket.append(
+                {
+                    "id": item_id,
+                    "layer": layer,
+                    "title": clean_title,
+                    "detail": clean_detail,
+                    "source": _truncate(_clean_text(source), 64),
+                    "confidence": max(0.0, min(1.0, float(confidence))),
+                    "updated_at": updated_at or now_iso,
+                    "meta": meta or {},
+                }
+            )
+            if len(bucket) > max_items:
+                del bucket[max_items:]
+
+        summary = self.get_summary(db, user_id).strip()
+        if summary:
+            _push(
+                facts,
+                item_id="summary",
+                layer="fact",
+                title="近期对话摘要",
+                detail=summary,
+                source="chat_summary",
+                confidence=0.66,
+                updated_at=now_iso,
+                max_items=14,
+            )
+
+        if layout_cards:
+            pinned = [row for row in layout_cards if bool(row.get("pinned"))][:8]
+            pinned_names = [str(row.get("display_name") or row.get("contact_id")) for row in pinned if row]
+            front = sorted(layout_cards, key=lambda row: (float(row.get("y") or 0), float(row.get("x") or 0)))[:6]
+            front_names = [str(row.get("display_name") or row.get("contact_id")) for row in front]
+            if pinned_names or front_names:
+                _push(
+                    preferences,
+                    item_id="layout-priority",
+                    layer="preference",
+                    title="卡片关注顺序偏好",
+                    detail=(
+                        f"置顶: {', '.join(pinned_names) if pinned_names else '无'}；"
+                        f"前排: {', '.join(front_names) if front_names else '无'}"
+                    ),
+                    source="layout",
+                    confidence=0.9,
+                    updated_at=now_iso,
+                    max_items=12,
+                )
+
+        for item in focus_items[:8]:
+            _push(
+                facts,
+                item_id=f"focus-{item.message_id}",
+                layer="fact",
+                title=item.title,
+                detail=f"{_SOURCE_LABELS.get(item.source, item.source)} · {item.sender} · {item.received_at}",
+                source=item.source,
+                confidence=0.72,
+                updated_at=now_iso,
+                meta={"message_id": str(item.message_id)},
+                max_items=14,
+            )
+
+        for row in notes:
+            source = (row.source or "").strip().lower()
+            kind = (row.kind or "").strip().lower()
+            content = (row.content or "").strip()
+            if not content:
+                continue
+            if source == _TODO_SOURCE or source.startswith(_LAYOUT_SOURCE):
+                continue
+            updated_at = _iso_or_empty(row.updated_at) or now_iso
+
+            if kind == "tracking" or source.startswith("track:"):
+                parsed = _parse_tracking_payload(content)
+                target = _truncate(_clean_text(parsed.get("target") or content), 140)
+                status = _truncate(_clean_text(parsed.get("status") or "active"), 32)
+                query_text = _truncate(_clean_text(parsed.get("query") or ""), 180)
+                _push(
+                    in_progress,
+                    item_id=f"track-{row.id}",
+                    layer="in_progress",
+                    title=target,
+                    detail=f"状态: {status}" + (f"；触发: {query_text}" if query_text else ""),
+                    source=source or "tracking",
+                    confidence=0.82,
+                    updated_at=updated_at,
+                    meta={"note_id": str(row.id), "status": status},
+                    max_items=14,
+                )
+                continue
+
+            if kind == "preference" or ("喜欢" in content or "偏好" in content or "不喜欢" in content):
+                _push(
+                    preferences,
+                    item_id=f"pref-{row.id}",
+                    layer="preference",
+                    title=_truncate(content, 140),
+                    detail="来自用户显式输入",
+                    source=source or kind or "chat",
+                    confidence=0.86,
+                    updated_at=updated_at,
+                    meta={"note_id": str(row.id)},
+                    max_items=12,
+                )
+                continue
+
+            _push(
+                facts,
+                item_id=f"fact-{row.id}",
+                layer="fact",
+                title=_truncate(content, 140),
+                detail=f"记忆类型: {kind or 'note'}",
+                source=source or kind or "memory",
+                confidence=0.68,
+                updated_at=updated_at,
+                meta={"note_id": str(row.id)},
+                max_items=14,
+            )
+
+        for todo in todos[:10]:
+            _push(
+                in_progress,
+                item_id=f"todo-{todo['id']}",
+                layer="in_progress",
+                title=str(todo.get("title") or "待办事项"),
+                detail=_truncate(_clean_text(str(todo.get("detail") or "")), 220)
+                or f"优先级: {str(todo.get('priority') or 'normal')}",
+                source="todo",
+                confidence=0.88 if str(todo.get("priority") or "").lower() == "high" else 0.78,
+                updated_at=str(todo.get("updated_at") or now_iso),
+                meta={
+                    "todo_id": str(todo.get("id") or ""),
+                    "priority": str(todo.get("priority") or "normal"),
+                },
+                max_items=14,
+            )
+
+        return {
+            "facts": facts[:14],
+            "preferences": preferences[:12],
+            "in_progress": in_progress[:14],
+        }
+
+    def build_notifications(self, db: Session, user_id: int, *, limit: int = 20) -> list[dict[str, Any]]:
+        max_items = max(1, min(100, int(limit or 20)))
+        now = datetime.now(timezone.utc)
+        items: list[dict[str, Any]] = []
+
+        brief = self.build_daily_brief(db, user_id)
+        summary = _truncate(_clean_text(str(brief.get("summary") or "")), 220)
+        if summary:
+            items.append(
+                {
+                    "id": "brief-summary",
+                    "level": "info",
+                    "title": "每日简报已更新",
+                    "detail": summary,
+                    "source": "daily_brief",
+                    "ts": now.isoformat(),
+                    "action_kind": "open_brief",
+                    "action_payload": {"path": "/"},
+                }
+            )
+
+        for idx, item in enumerate((brief.get("top_updates") or [])[:4], start=1):
+            try:
+                message_id = int(item.get("message_id") or 0)
+            except Exception:
+                message_id = 0
+            title = _truncate(_clean_text(str(item.get("title") or "")), 120)
+            if not title:
+                continue
+            items.append(
+                {
+                    "id": f"brief-top-{idx}-{message_id or idx}",
+                    "level": "info",
+                    "title": f"高价值更新: {title}",
+                    "detail": f"{item.get('source_label') or item.get('source') or '来源'} · {item.get('sender') or 'unknown'}",
+                    "source": "focus",
+                    "ts": now.isoformat(),
+                    "action_kind": "open_message" if message_id > 0 else "open_brief",
+                    "action_payload": {"message_id": str(message_id)} if message_id > 0 else {"path": "/"},
+                }
+            )
+
+        todos = self.list_todos(db, user_id, include_done=False, limit=20)
+        for todo in todos[:8]:
+            todo_id = int(todo.get("id") or 0)
+            priority = str(todo.get("priority") or "normal").lower()
+            title = _truncate(_clean_text(str(todo.get("title") or "")), 120)
+            if not title:
+                continue
+            items.append(
+                {
+                    "id": f"todo-{todo_id}",
+                    "level": "warning" if priority == "high" else "info",
+                    "title": f"待跟进: {title}",
+                    "detail": _truncate(_clean_text(str(todo.get("detail") or "")), 180) or "你有一个待办事项待处理",
+                    "source": "todo",
+                    "ts": str(todo.get("updated_at") or now.isoformat()),
+                    "action_kind": "open_todo",
+                    "action_payload": {"todo_id": str(todo_id)},
+                }
+            )
+
+        tracking_notes = db.scalars(
+            select(AgentMemoryNote)
+            .where(
+                AgentMemoryNote.user_id == user_id,
+                AgentMemoryNote.kind == "tracking",
+            )
+            .order_by(desc(AgentMemoryNote.updated_at), desc(AgentMemoryNote.id))
+            .limit(16)
+        ).all()
+        seen_tracking: set[str] = set()
+        for row in tracking_notes:
+            parsed = _parse_tracking_payload(row.content or "")
+            target = _truncate(_clean_text(parsed.get("target") or ""), 120)
+            if not target:
+                continue
+            key = target.lower()
+            if key in seen_tracking:
+                continue
+            seen_tracking.add(key)
+            status = _truncate(_clean_text(parsed.get("status") or "active"), 40)
+            source = _truncate(_clean_text(parsed.get("source") or row.source or "tracking"), 40)
+            items.append(
+                {
+                    "id": f"track-{row.id}",
+                    "level": "success" if status in {"active", "sync_started", "tracking_enabled"} else "info",
+                    "title": f"跟踪中: {target}",
+                    "detail": f"{source} · 状态 {status}",
+                    "source": "tracking",
+                    "ts": _iso_or_empty(row.updated_at) or now.isoformat(),
+                    "action_kind": "open_tracking",
+                    "action_payload": {"target": target, "source": source},
+                }
+            )
+            if len(seen_tracking) >= 8:
+                break
+
+        items.sort(key=lambda x: str(x.get("ts") or ""), reverse=True)
+        dedup: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        for row in items:
+            row_id = str(row.get("id") or "")
+            if not row_id or row_id in seen_ids:
+                continue
+            seen_ids.add(row_id)
+            dedup.append(row)
+            if len(dedup) >= max_items:
+                break
+        return dedup
+
     def build_system_memory_prompt(self, db: Session, user_id: int, *, query: str = "") -> str:
         snap = self.snapshot(db, user_id, query=query)
+        layers = self.build_memory_layers(db, user_id, workspace="default", query=query)
         parts: list[str] = []
 
         layout_cards = self.get_latest_layout_cards(db, user_id, workspace="default")
@@ -741,6 +1064,19 @@ class AgentMemoryService:
             ]
             parts.append("最近关注信息与帖子（优先参考）:\n" + "\n".join(lines))
 
+        fact_rows = layers.get("facts", [])[:6]
+        pref_rows = layers.get("preferences", [])[:6]
+        progress_rows = layers.get("in_progress", [])[:6]
+        if fact_rows:
+            lines = [f"- {row.get('title')}（置信度 {float(row.get('confidence') or 0):.2f}）" for row in fact_rows]
+            parts.append("分层记忆 / 事实层:\n" + "\n".join(lines))
+        if pref_rows:
+            lines = [f"- {row.get('title')}（用户偏好）" for row in pref_rows]
+            parts.append("分层记忆 / 偏好层:\n" + "\n".join(lines))
+        if progress_rows:
+            lines = [f"- {row.get('title')}（进行中）" for row in progress_rows]
+            parts.append("分层记忆 / 进行中层:\n" + "\n".join(lines))
+
         return "\n\n".join(parts).strip()
 
     def update_after_turn(self, db: Session, user_id: int, messages: Iterable[dict[str, str]], assistant_reply: str) -> None:
@@ -767,6 +1103,26 @@ class AgentMemoryService:
                 break
 
         candidates = _note_candidates_from_user_text(last_user)
+        fact_candidates: list[str] = []
+        progress_candidates: list[str] = []
+
+        user_text = _clean_text(last_user)
+        if user_text:
+            fact_patterns = [
+                r"我叫([^\s，。,.!?？]{2,24})",
+                r"我是([^\s，。,.!?？]{2,24})",
+                r"我的职业是([^\s，。,.!?？]{2,30})",
+                r"我住在([^\s，。,.!?？]{2,30})",
+            ]
+            for pat in fact_patterns:
+                m = re.search(pat, user_text, flags=re.I)
+                if not m:
+                    continue
+                fact_candidates.append(_truncate(_clean_text(f"用户事实: {m.group(0)}"), 280))
+
+            if any(token in user_text for token in ["跟踪", "追踪", "持续关注", "订阅", "提醒我"]):
+                progress_candidates.append(_truncate(_clean_text(f"用户进行中关注: {user_text}"), 280))
+
         if assistant_reply:
             assistant_short = _truncate(_clean_text(assistant_reply), 180)
             if assistant_short and ("记住" in last_user or "remember" in last_user.lower()):
@@ -784,3 +1140,17 @@ class AgentMemoryService:
 
         for c in deduped:
             self.add_note(db, user_id, c, kind="preference", source="chat")
+
+        seen_fact: set[str] = set()
+        for c in fact_candidates[:3]:
+            if not c or c in seen_fact:
+                continue
+            seen_fact.add(c)
+            self.add_note(db, user_id, c, kind="fact", source="chat")
+
+        seen_progress: set[str] = set()
+        for c in progress_candidates[:2]:
+            if not c or c in seen_progress:
+                continue
+            seen_progress.add(c)
+            self.add_note(db, user_id, c, kind="in_progress", source="chat")

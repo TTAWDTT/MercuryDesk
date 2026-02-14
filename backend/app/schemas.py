@@ -257,6 +257,41 @@ class AelinLayoutCard(BaseModel):
     height: float = Field(default=316, ge=120, le=2400)
 
 
+class AelinMemoryLayerItem(BaseModel):
+    id: str
+    layer: str
+    title: str
+    detail: str = ""
+    source: str = ""
+    confidence: float = 0.5
+    updated_at: str = ""
+    meta: dict[str, str] = Field(default_factory=dict)
+
+
+class AelinMemoryLayers(BaseModel):
+    facts: list[AelinMemoryLayerItem] = Field(default_factory=list)
+    preferences: list[AelinMemoryLayerItem] = Field(default_factory=list)
+    in_progress: list[AelinMemoryLayerItem] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class AelinNotificationItem(BaseModel):
+    id: str
+    level: str = "info"
+    title: str
+    detail: str = ""
+    source: str = ""
+    ts: str = ""
+    action_kind: Optional[str] = None
+    action_payload: dict[str, str] = Field(default_factory=dict)
+
+
+class AelinNotificationResponse(BaseModel):
+    total: int = 0
+    items: list[AelinNotificationItem] = Field(default_factory=list)
+    generated_at: datetime
+
+
 class AgentMemorySnapshot(BaseModel):
     summary: str = ""
     notes: list[AgentMemoryNoteOut] = Field(default_factory=list)
@@ -273,6 +308,8 @@ class AelinContextResponse(BaseModel):
     pin_recommendations: list[AelinPinRecommendationItem] = Field(default_factory=list)
     daily_brief: Optional[AelinDailyBrief] = None
     layout_cards: list[AelinLayoutCard] = Field(default_factory=list)
+    memory_layers: AelinMemoryLayers
+    notifications: list[AelinNotificationItem] = Field(default_factory=list)
     generated_at: datetime
 
 

@@ -35,6 +35,10 @@ from app.schemas import (
     AelinDailyBrief,
     AelinDailyBriefAction,
     AelinLayoutCard,
+    AelinMemoryLayerItem,
+    AelinMemoryLayers,
+    AelinNotificationItem,
+    AelinNotificationResponse,
     AelinTrackingItem,
     AelinTrackingListResponse,
     AelinPinRecommendationItem,
@@ -255,6 +259,17 @@ def _build_context_bundle(db: Session, user_id: int, *, workspace: str, query: s
     )
 
     layout_cards = _to_layout_cards(_memory.get_latest_layout_cards(db, user_id, workspace=workspace_norm))
+    memory_layers_raw = _memory.build_memory_layers(db, user_id, workspace=workspace_norm, query=query)
+    memory_layers = AelinMemoryLayers(
+        facts=[AelinMemoryLayerItem(**item) for item in (memory_layers_raw.get("facts") or [])],
+        preferences=[AelinMemoryLayerItem(**item) for item in (memory_layers_raw.get("preferences") or [])],
+        in_progress=[AelinMemoryLayerItem(**item) for item in (memory_layers_raw.get("in_progress") or [])],
+        generated_at=datetime.now(timezone.utc),
+    )
+    notifications = [
+        AelinNotificationItem(**item)
+        for item in _memory.build_notifications(db, user_id, limit=24)
+    ]
 
     return {
         "workspace": workspace_norm,
@@ -267,6 +282,8 @@ def _build_context_bundle(db: Session, user_id: int, *, workspace: str, query: s
         "pin_recommendations": pin_recommendations,
         "daily_brief": daily_brief,
         "layout_cards": layout_cards,
+        "memory_layers": memory_layers,
+        "notifications": notifications,
     }
 
 
@@ -2833,13 +2850,70 @@ def _rule_based_chat_answer(query: str, *, memory_summary: str = "", brief_summa
         return "我在。你可以直接告诉我想聊什么，或让我帮你跟进某个来源的更新。"
     if any(token in q.lower() for token in ["你好", "hi", "hello"]):
         return "你好，我在这。你可以把我当作长期记忆型助手，聊想法或让我去跟进你的信息源都可以。"
-    base = "这是个好问题。"
+    if re.search(r"[?？吗么嘛]$", q) or "是不是" in q or "有没有" in q:
+        base = f"先给你直接结论：围绕“{q[:36]}”，我建议先以当前上下文做判断，再按需补证据。"
+    elif any(token in q for token in ["怎么看", "看法", "觉得", "为什么", "如何", "怎么"]):
+        base = f"我的直接看法是：关于“{q[:36]}”，要先抓住最近变化，再结合你长期关注点来判断。"
+    else:
+        base = f"直接回答：你提到的“{q[:36]}”可以先按当前已知信息处理。"
     if memory_summary:
         base += "\n\n我也会参考你已有的长期记忆来保持上下文连续。"
     if brief_summary:
         base += f"\n\n如果你需要，我也可以基于今日简报继续展开：{brief_summary}"
     base += "\n\n如果问题涉及外部事实，我会先自动检索，再直接给你结论。"
     return base
+
+
+def _looks_like_non_answer(answer: str) -> bool:
+    text = re.sub(r"\s+", " ", (answer or "").strip().lower())
+    if not text:
+        return True
+    bad_starts = (
+        "这是个好问题",
+        "我也会参考你已有的长期记忆",
+        "如果你需要",
+        "可以直接说",
+        "帮我检索相关更新",
+    )
+    if any(text.startswith(s) for s in bad_starts):
+        return True
+    if "帮你检索" in text and ("结论" not in text and "回答" not in text):
+        return True
+    if "你可以手动" in text:
+        return True
+    if len(text) < 24:
+        return True
+    return False
+
+
+def _enforce_answer_first(
+    *,
+    query: str,
+    answer: str,
+    citations: list[AelinCitation],
+    web_results: list[WebSearchResult],
+    memory_summary: str,
+    brief_summary: str,
+    todo_titles: list[str] | None = None,
+    image_count: int = 0,
+) -> str:
+    text = (answer or "").strip()
+    if text and not _looks_like_non_answer(text):
+        return text
+    if citations:
+        return _rule_based_answer(
+            query,
+            memory_summary,
+            citations,
+            brief_summary=brief_summary,
+            todo_titles=todo_titles or [],
+            image_count=image_count,
+        )
+    if web_results:
+        guarded = _compose_web_first_answer(query, web_results)
+        if guarded:
+            return guarded
+    return _rule_based_chat_answer(query, memory_summary=memory_summary, brief_summary=brief_summary)
 
 
 def _normalize_expression_id(raw: str | None) -> str | None:
@@ -3551,6 +3625,17 @@ def _aelin_chat_impl(
                 answer = guarded
             generation_detail = f"{generation_detail}; retrieval evidence guard applied"
 
+    answer = _enforce_answer_first(
+        query=payload.query,
+        answer=answer,
+        citations=citations,
+        web_results=web_results_for_answer,
+        memory_summary=memory_summary,
+        brief_summary=brief_summary,
+        todo_titles=todo_titles,
+        image_count=len(images),
+    )
+
     answer, tagged_expression = _extract_expression_tag(answer)
     expression = tagged_expression or _pick_expression(payload.query, answer, generation_failed=llm_generation_failed)
     add_trace("generation", status="completed", detail=generation_detail, count=len(citations))
@@ -3748,6 +3833,16 @@ def _aelin_chat_impl(
         status="completed" if (verified and grounded and coverage_ok) else "failed",
         detail=verifier_detail,
         count=len(citations),
+    )
+    answer = _enforce_answer_first(
+        query=payload.query,
+        answer=answer,
+        citations=citations,
+        web_results=web_results_for_answer,
+        memory_summary=memory_summary,
+        brief_summary=brief_summary,
+        todo_titles=todo_titles,
+        image_count=len(images),
     )
     answer, maybe_expression = _extract_expression_tag(answer)
     if maybe_expression:
@@ -3974,6 +4069,8 @@ def get_aelin_context(
         pin_recommendations=bundle["pin_recommendations"],
         daily_brief=bundle["daily_brief"],
         layout_cards=bundle["layout_cards"],
+        memory_layers=bundle["memory_layers"],
+        notifications=bundle["notifications"],
         generated_at=datetime.now(timezone.utc),
     )
 
@@ -3985,6 +4082,20 @@ def aelin_chat(
     current_user: User = Depends(get_current_user),
 ):
     return _aelin_chat_impl(payload, db, current_user)
+
+
+@router.get("/notifications", response_model=AelinNotificationResponse)
+def list_aelin_notifications(
+    limit: int = Query(default=24, ge=1, le=100),
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    items = [AelinNotificationItem(**item) for item in _memory.build_notifications(db, current_user.id, limit=limit)]
+    return AelinNotificationResponse(
+        total=len(items),
+        items=items,
+        generated_at=datetime.now(timezone.utc),
+    )
 
     # Legacy implementation kept below temporarily for reference.
     tool_trace: list[AelinToolStep] = []
