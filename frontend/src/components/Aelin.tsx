@@ -44,11 +44,18 @@ import LayersIcon from "@mui/icons-material/Layers";
 import FactCheckIcon from "@mui/icons-material/FactCheck";
 import TuneIcon from "@mui/icons-material/Tune";
 import PendingActionsIcon from "@mui/icons-material/PendingActions";
+import ComputerIcon from "@mui/icons-material/Computer";
+import MemoryIcon from "@mui/icons-material/Memory";
+import SpeedIcon from "@mui/icons-material/Speed";
+import PowerSettingsNewIcon from "@mui/icons-material/PowerSettingsNew";
 import { alpha, useTheme } from "@mui/material/styles";
 import {
   AelinAction,
   AelinCitation,
   AelinContextResponse,
+  AelinDeviceModeApplyResponse,
+  AelinDeviceOptimizeResponse,
+  AelinDeviceProcessItem,
   AelinMemoryLayerItem,
   AelinNotificationItem,
   AgentConfig,
@@ -61,13 +68,18 @@ import {
   aelinChat,
   aelinChatStream,
   aelinConfirmTrack,
+  applyAelinDeviceMode,
   getAgentCatalog,
   getAgentConfig,
   getAelinTracking,
+  getAelinDeviceMode,
+  getAelinDeviceProcesses,
   getAelinNotifications,
   getAelinProactivePoll,
   getAelinContext,
   getMessage,
+  optimizeAelinDeviceProcesses,
+  runAelinDeviceProcessAction,
   testAgent,
   updateAgentConfig,
 } from "../api";
@@ -264,6 +276,16 @@ const TRACKING_STATUS_META: Record<string, { label: string; color: "success" | "
   tracking_enabled: { label: "已启用", color: "success" },
   needs_config: { label: "需配置", color: "warning" },
   failed: { label: "失败", color: "error" },
+};
+
+type DeviceMode = "meeting" | "focus" | "sleep" | "normal";
+type DeviceSortBy = "cpu" | "memory";
+
+const DEVICE_MODE_META: Record<DeviceMode, { label: string; detail: string }> = {
+  meeting: { label: "开会模式", detail: "静音场景优先，限制通知横幅，降低打扰。"},
+  focus: { label: "专注模式", detail: "压制弹窗并弱化 WeChat 干扰。"},
+  sleep: { label: "睡眠模式", detail: "降低亮度并进入低打扰状态。"},
+  normal: { label: "恢复模式", detail: "恢复通知策略，回到日常状态。"},
 };
 
 function normalizePlatformName(raw: string): PlatformKey | null {
@@ -1681,6 +1703,15 @@ export default function Aelin({
   const [notificationDialogOpen, setNotificationDialogOpen] = React.useState(false);
   const [notificationBusy, setNotificationBusy] = React.useState(false);
   const [notificationItems, setNotificationItems] = React.useState<AelinNotificationItem[]>([]);
+  const [deviceDialogOpen, setDeviceDialogOpen] = React.useState(false);
+  const [deviceBusy, setDeviceBusy] = React.useState(false);
+  const [deviceSortBy, setDeviceSortBy] = React.useState<DeviceSortBy>("cpu");
+  const [deviceProcesses, setDeviceProcesses] = React.useState<AelinDeviceProcessItem[]>([]);
+  const [deviceModeState, setDeviceModeState] = React.useState<AelinDeviceModeApplyResponse | null>(null);
+  const [deviceActionBusyPid, setDeviceActionBusyPid] = React.useState<number | null>(null);
+  const [deviceModeApplying, setDeviceModeApplying] = React.useState<DeviceMode | null>(null);
+  const [deviceOptimizeBusy, setDeviceOptimizeBusy] = React.useState(false);
+  const [deviceOptimizeResult, setDeviceOptimizeResult] = React.useState<AelinDeviceOptimizeResponse | null>(null);
   const [isProgressPending, startProgressTransition] = React.useTransition();
   const [llmDialogOpen, setLlmDialogOpen] = React.useState(false);
   const [llmLoading, setLlmLoading] = React.useState(false);
@@ -1965,6 +1996,89 @@ export default function Aelin({
     }
   }, [pushSystemNotification, showToast, workspaceScope]);
 
+  const refreshDeviceMode = React.useCallback(async () => {
+    try {
+      const mode = await getAelinDeviceMode();
+      setDeviceModeState(mode);
+    } catch {
+      // ignore temporary failures
+    }
+  }, []);
+
+  const refreshDeviceProcesses = React.useCallback(async () => {
+    setDeviceBusy(true);
+    try {
+      const ret = await getAelinDeviceProcesses(deviceSortBy, 48);
+      setDeviceProcesses(ret.items || []);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "读取进程失败", "error");
+    } finally {
+      setDeviceBusy(false);
+    }
+  }, [deviceSortBy, showToast]);
+
+  const openDeviceDialog = React.useCallback(() => {
+    setDeviceDialogOpen(true);
+    void refreshDeviceMode();
+    void refreshDeviceProcesses();
+  }, [refreshDeviceMode, refreshDeviceProcesses]);
+
+  const applyDeviceModeAction = React.useCallback(
+    async (mode: DeviceMode) => {
+      setDeviceModeApplying(mode);
+      try {
+        const ret = await applyAelinDeviceMode(mode);
+        setDeviceModeState(ret);
+        const severity =
+          ret.status === "applied" ? "success" : ret.status === "partial" ? "warning" : "info";
+        showToast(ret.summary || `模式已切换: ${mode}`, severity);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "模式切换失败", "error");
+      } finally {
+        setDeviceModeApplying(null);
+      }
+    },
+    [showToast]
+  );
+
+  const handleDeviceProcessAction = React.useCallback(
+    async (pid: number, action: "terminate" | "set_low_priority" | "set_high_priority") => {
+      setDeviceActionBusyPid(pid);
+      try {
+        const ret = await runAelinDeviceProcessAction(pid, action);
+        showToast(
+          ret.ok ? `已执行：${ret.detail || action}` : `执行失败：${ret.detail || action}`,
+          ret.ok ? "success" : "error"
+        );
+        await refreshDeviceProcesses();
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "进程操作失败", "error");
+      } finally {
+        setDeviceActionBusyPid(null);
+      }
+    },
+    [refreshDeviceProcesses, showToast]
+  );
+
+  const runDeviceOptimize = React.useCallback(async () => {
+    setDeviceOptimizeBusy(true);
+    try {
+      const ret = await optimizeAelinDeviceProcesses();
+      setDeviceOptimizeResult(ret);
+      showToast(
+        ret.optimized_count > 0
+          ? `已优化 ${ret.optimized_count} 个高占用进程`
+          : "没有可优化的高占用进程",
+        ret.optimized_count > 0 ? "success" : "info"
+      );
+      await refreshDeviceProcesses();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "优化失败", "error");
+    } finally {
+      setDeviceOptimizeBusy(false);
+    }
+  }, [refreshDeviceProcesses, showToast]);
+
   const getDefaultLlmBaseUrl = React.useCallback(
     (providerId: string, catalog: ModelCatalogResponse | null = llmCatalog) => {
       const normalizedProviderId = normalizeProviderId(providerId) || "rule_based";
@@ -2128,6 +2242,16 @@ export default function Aelin({
     }, PROACTIVE_POLL_MS);
     return () => window.clearInterval(timer);
   }, [pollProactive]);
+
+  React.useEffect(() => {
+    if (!deviceDialogOpen) return;
+    void refreshDeviceProcesses();
+  }, [deviceDialogOpen, refreshDeviceProcesses]);
+
+  React.useEffect(() => {
+    if (!deviceDialogOpen) return;
+    void refreshDeviceMode();
+  }, [deviceDialogOpen, refreshDeviceMode]);
 
   React.useEffect(() => {
     if (llmProvider === "rule_based" || llmIsCustomProvider || !llmSelectedProvider) return;
@@ -2892,12 +3016,17 @@ export default function Aelin({
         setTrackingDialogOpen(true);
         return;
       }
+      if (kind === "open_device") {
+        setNotificationDialogOpen(false);
+        openDeviceDialog();
+        return;
+      }
       if (kind === "open_brief") {
         void runStoryMode();
         setNotificationDialogOpen(false);
       }
     },
-    [openDeskWithContext, runStoryMode]
+    [openDeskWithContext, openDeviceDialog, runStoryMode]
   );
 
   return (
@@ -3041,6 +3170,11 @@ export default function Aelin({
                 >
                   <NotificationsNoneIcon fontSize="small" />
                 </Badge>
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="设备中心">
+              <IconButton onClick={openDeviceDialog}>
+                <ComputerIcon fontSize="small" />
               </IconButton>
             </Tooltip>
             <Tooltip title="分层记忆">
@@ -3765,6 +3899,242 @@ export default function Aelin({
               </Typography>
             </Paper>
           )}
+        </Box>
+      </Dialog>
+
+      <Dialog
+        open={deviceDialogOpen}
+        onClose={() => setDeviceDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            overflow: "hidden",
+            bgcolor: alpha(theme.palette.background.paper, 0.98),
+            backdropFilter: "blur(10px)",
+          },
+        }}
+      >
+        <Box sx={{ px: 1.2, py: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between">
+            <Stack direction="row" spacing={0.7} alignItems="center">
+              <ComputerIcon sx={{ fontSize: 18, color: "primary.main" }} />
+              <Typography variant="subtitle1" sx={{ fontWeight: 800 }}>
+                设备中心
+              </Typography>
+            </Stack>
+            <Stack direction="row" spacing={0.4}>
+              <Tooltip title="刷新进程">
+                <span>
+                  <IconButton size="small" onClick={() => void refreshDeviceProcesses()} disabled={deviceBusy}>
+                    <RefreshIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <IconButton size="small" onClick={() => setDeviceDialogOpen(false)}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+          </Stack>
+        </Box>
+
+        <Box sx={{ px: 1.2, py: 1.05, maxHeight: "72vh", overflowY: "auto" }}>
+          <Typography variant="caption" color="text.secondary">
+            模式控制会尽力应用到系统；如果权限或设备不支持，会给出明确提示。
+          </Typography>
+
+          <Stack direction={{ xs: "column", md: "row" }} spacing={0.8} sx={{ mt: 0.8 }}>
+            {(Object.keys(DEVICE_MODE_META) as DeviceMode[]).map((mode) => {
+              const meta = DEVICE_MODE_META[mode];
+              const active = (deviceModeState?.mode || "normal") === mode;
+              return (
+                <Paper
+                  key={mode}
+                  variant="outlined"
+                  sx={{
+                    flex: 1,
+                    p: 0.8,
+                    borderRadius: 1.45,
+                    borderColor: active ? alpha(theme.palette.primary.main, 0.55) : alpha(theme.palette.divider, 0.9),
+                    bgcolor: active ? alpha(theme.palette.primary.main, 0.08) : alpha(theme.palette.background.default, 0.45),
+                  }}
+                >
+                  <Stack spacing={0.45}>
+                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                      {meta.label}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+                      {meta.detail}
+                    </Typography>
+                    <Button
+                      size="small"
+                      variant={active ? "contained" : "outlined"}
+                      startIcon={<PowerSettingsNewIcon sx={{ fontSize: 14 }} />}
+                      disabled={deviceModeApplying !== null}
+                      onClick={() => void applyDeviceModeAction(mode)}
+                    >
+                      {deviceModeApplying === mode ? "应用中..." : active ? "已启用" : "启用"}
+                    </Button>
+                  </Stack>
+                </Paper>
+              );
+            })}
+          </Stack>
+
+          <Paper variant="outlined" sx={{ mt: 0.9, p: 0.9, borderRadius: 1.45 }}>
+            <Stack spacing={0.5}>
+              <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                当前设备模式
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+                {deviceModeState?.summary || "尚未读取模式状态"}
+              </Typography>
+              {(deviceModeState?.steps || []).length ? (
+                <Stack spacing={0.35}>
+                  {(deviceModeState?.steps || []).slice(0, 4).map((step, idx) => (
+                    <Typography key={`mode-step-${idx}`} variant="caption" color="text.secondary">
+                      - {step}
+                    </Typography>
+                  ))}
+                </Stack>
+              ) : null}
+              {(deviceModeState?.warnings || []).length ? (
+                <Alert severity="warning" sx={{ borderRadius: 1.2 }}>
+                  {(deviceModeState?.warnings || []).slice(0, 2).join("；")}
+                </Alert>
+              ) : null}
+            </Stack>
+          </Paper>
+
+          <Stack direction="row" spacing={0.7} alignItems="center" sx={{ mt: 1 }}>
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <Select
+                value={deviceSortBy}
+                onChange={(event) => setDeviceSortBy(String(event.target.value || "cpu") as DeviceSortBy)}
+              >
+                <MenuItem value="cpu">按 CPU 排序</MenuItem>
+                <MenuItem value="memory">按内存排序</MenuItem>
+              </Select>
+            </FormControl>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<SpeedIcon sx={{ fontSize: 14 }} />}
+              onClick={() => void runDeviceOptimize()}
+              disabled={deviceOptimizeBusy}
+            >
+              {deviceOptimizeBusy ? "优化中..." : "一键降压"}
+            </Button>
+            <Typography variant="caption" color="text.secondary">
+              异常分越高越需要处理
+            </Typography>
+          </Stack>
+
+          {deviceOptimizeResult ? (
+            <Paper variant="outlined" sx={{ mt: 0.85, p: 0.75, borderRadius: 1.35 }}>
+              <Typography variant="caption" color="text.secondary">
+                最近优化：{deviceOptimizeResult.optimized_count} 个进程
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
+                {(deviceOptimizeResult.steps || []).slice(0, 2).join("；")}
+              </Typography>
+            </Paper>
+          ) : null}
+
+          <Stack spacing={0.7} sx={{ mt: 0.9 }}>
+            {deviceBusy ? (
+              <>
+                <Skeleton variant="rounded" height={72} />
+                <Skeleton variant="rounded" height={72} />
+                <Skeleton variant="rounded" height={72} />
+              </>
+            ) : deviceProcesses.length ? (
+              deviceProcesses.slice(0, 18).map((proc) => {
+                const isAnomaly = proc.anomaly_score >= 1.6;
+                return (
+                  <Paper
+                    key={`proc-${proc.pid}`}
+                    variant="outlined"
+                    sx={{
+                      p: 0.82,
+                      borderRadius: 1.4,
+                      borderColor: isAnomaly ? alpha(theme.palette.warning.main, 0.52) : alpha(theme.palette.divider, 0.88),
+                      bgcolor: isAnomaly ? alpha(theme.palette.warning.main, 0.07) : alpha(theme.palette.background.default, 0.5),
+                    }}
+                  >
+                    <Stack spacing={0.5}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={0.8}>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.35 }}>
+                            {proc.name}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            PID {proc.pid} · {proc.username || "unknown"} · {proc.status || "running"}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                          <Chip
+                            size="small"
+                            icon={<SpeedIcon sx={{ fontSize: 12 }} />}
+                            color={proc.cpu_percent >= 60 ? "warning" : "default"}
+                            label={`${proc.cpu_percent.toFixed(1)}% CPU`}
+                          />
+                          <Chip
+                            size="small"
+                            icon={<MemoryIcon sx={{ fontSize: 12 }} />}
+                            color={proc.memory_mb >= 800 ? "warning" : "default"}
+                            label={`${proc.memory_mb.toFixed(0)}MB`}
+                          />
+                          <Chip size="small" variant="outlined" label={`异常分 ${proc.anomaly_score.toFixed(1)}`} />
+                        </Stack>
+                      </Stack>
+                      {proc.anomaly_reasons.length ? (
+                        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+                          {proc.anomaly_reasons.join("；")}
+                        </Typography>
+                      ) : null}
+                      <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={deviceActionBusyPid === proc.pid}
+                          onClick={() => void handleDeviceProcessAction(proc.pid, "set_low_priority")}
+                        >
+                          降优先级
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          disabled={deviceActionBusyPid === proc.pid}
+                          onClick={() => void handleDeviceProcessAction(proc.pid, "set_high_priority")}
+                        >
+                          提升优先级
+                        </Button>
+                        {proc.safe_to_terminate ? (
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            disabled={deviceActionBusyPid === proc.pid}
+                            onClick={() => void handleDeviceProcessAction(proc.pid, "terminate")}
+                          >
+                            结束进程
+                          </Button>
+                        ) : null}
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                );
+              })
+            ) : (
+              <Paper variant="outlined" sx={{ p: 1.05, borderRadius: 1.4 }}>
+                <Typography variant="body2" color="text.secondary">
+                  当前未读取到进程数据。可能是系统权限限制或运行环境不支持。
+                </Typography>
+              </Paper>
+            )}
+          </Stack>
         </Box>
       </Dialog>
 

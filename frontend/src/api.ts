@@ -205,6 +205,51 @@ export type AelinProactivePollResponse = {
   generated_at: string;
 };
 
+export type AelinDeviceProcessItem = {
+  pid: number;
+  name: string;
+  cpu_percent: number;
+  memory_mb: number;
+  status: string;
+  username: string;
+  create_time?: string | null;
+  anomaly_score: number;
+  anomaly_reasons: string[];
+  safe_to_terminate: boolean;
+};
+
+export type AelinDeviceProcessResponse = {
+  sort_by: string;
+  total: number;
+  items: AelinDeviceProcessItem[];
+  generated_at: string;
+};
+
+export type AelinDeviceProcessActionResponse = {
+  pid: number;
+  action: string;
+  ok: boolean;
+  detail: string;
+  generated_at: string;
+};
+
+export type AelinDeviceModeApplyResponse = {
+  mode: string;
+  status: string;
+  summary: string;
+  steps: string[];
+  warnings: string[];
+  generated_at: string;
+};
+
+export type AelinDeviceOptimizeResponse = {
+  optimized_count: number;
+  affected_pids: number[];
+  steps: string[];
+  warnings: string[];
+  generated_at: string;
+};
+
 export type AelinChatResponse = {
   answer: string;
   expression: string;
@@ -931,6 +976,48 @@ export async function getAelinProactivePoll(workspace = "default", limit = 8): P
   if (workspace.trim()) qs.set("workspace", workspace.trim());
   qs.set("limit", String(safeLimit));
   return await fetchJson<AelinProactivePollResponse>(`/api/v1/aelin/proactive/poll?${qs.toString()}`);
+}
+
+export async function getAelinDeviceProcesses(
+  sortBy: "cpu" | "memory" = "cpu",
+  limit = 40
+): Promise<AelinDeviceProcessResponse> {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, Math.floor(limit))) : 40;
+  const sort = sortBy === "memory" ? "memory" : "cpu";
+  return await fetchJson<AelinDeviceProcessResponse>(
+    `/api/v1/aelin/device/processes?sort_by=${sort}&limit=${safeLimit}`
+  );
+}
+
+export async function runAelinDeviceProcessAction(
+  pid: number,
+  action: "terminate" | "set_low_priority" | "set_high_priority"
+): Promise<AelinDeviceProcessActionResponse> {
+  return await fetchJson<AelinDeviceProcessActionResponse>(`/api/v1/aelin/device/processes/${pid}/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+}
+
+export async function optimizeAelinDeviceProcesses(): Promise<AelinDeviceOptimizeResponse> {
+  return await fetchJson<AelinDeviceOptimizeResponse>("/api/v1/aelin/device/processes/optimize", {
+    method: "POST",
+  });
+}
+
+export async function getAelinDeviceMode(): Promise<AelinDeviceModeApplyResponse> {
+  return await fetchJson<AelinDeviceModeApplyResponse>("/api/v1/aelin/device/mode");
+}
+
+export async function applyAelinDeviceMode(
+  mode: "meeting" | "focus" | "sleep" | "normal"
+): Promise<AelinDeviceModeApplyResponse> {
+  return await fetchJson<AelinDeviceModeApplyResponse>("/api/v1/aelin/device/mode/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
 }
 
 export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {

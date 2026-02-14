@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
+import platform
 import queue
 import re
+import subprocess
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 from collections.abc import Callable
@@ -34,6 +38,13 @@ from app.schemas import (
     AelinContextResponse,
     AelinDailyBrief,
     AelinDailyBriefAction,
+    AelinDeviceModeApplyRequest,
+    AelinDeviceModeApplyResponse,
+    AelinDeviceOptimizeResponse,
+    AelinDeviceProcessActionRequest,
+    AelinDeviceProcessActionResponse,
+    AelinDeviceProcessItem,
+    AelinDeviceProcessResponse,
     AelinLayoutCard,
     AelinMemoryLayerItem,
     AelinMemoryLayers,
@@ -58,6 +69,11 @@ from app.services.summarizer import RuleBasedSummarizer
 from app.services.sync_jobs import enqueue_sync_job
 from app.services.web_search import WebSearchResult, WebSearchService
 
+try:
+    import psutil  # type: ignore
+except Exception:  # pragma: no cover - optional runtime dependency
+    psutil = None
+
 router = APIRouter(prefix="/aelin", tags=["aelin"])
 
 _memory = AgentMemoryService()
@@ -81,6 +97,8 @@ _MAX_LOCAL_SUBAGENTS = 5
 _MAX_CONTEXT_BOUNDARIES = 10
 _PROACTIVE_STATE_SOURCE_PREFIX = "proactive_state"
 _PROACTIVE_SEEN_LIMIT = 180
+_DEVICE_MODE_SOURCE = "device_mode_state"
+_DEVICE_ALLOWED_PROCESS_ACTIONS = {"terminate", "set_low_priority", "set_high_priority"}
 
 _AELIN_EXPRESSION_IDS = {
     "exp-01",
@@ -295,6 +313,271 @@ def _parse_iso_datetime(raw: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+def _device_is_windows() -> bool:
+    return platform.system().strip().lower().startswith("win")
+
+
+def _normalize_device_mode(raw: str) -> str:
+    mode = str(raw or "").strip().lower()
+    alias = {
+        "meeting": "meeting",
+        "focus": "focus",
+        "sleep": "sleep",
+        "normal": "normal",
+        "default": "normal",
+        "开会": "meeting",
+        "专注": "focus",
+        "睡眠": "sleep",
+        "恢复": "normal",
+    }
+    return alias.get(mode, "normal")
+
+
+def _run_powershell(script: str, *, timeout_s: int = 8) -> tuple[bool, str]:
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=max(1, int(timeout_s)),
+            encoding="utf-8",
+            errors="ignore",
+        )
+    except Exception as exc:
+        return False, str(exc)
+    output = (proc.stdout or proc.stderr or "").strip()
+    return proc.returncode == 0, output
+
+
+def _set_windows_toast_enabled(enabled: bool) -> tuple[bool, str]:
+    value = "1" if enabled else "0"
+    script = (
+        "New-Item -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications' "
+        "-Force | Out-Null; "
+        f"Set-ItemProperty -Path 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\PushNotifications' "
+        f"-Name ToastEnabled -Type DWord -Value {value}; "
+        "Write-Output 'ok'"
+    )
+    ok, detail = _run_powershell(script)
+    return ok, detail or ("ok" if ok else "failed")
+
+
+def _set_windows_brightness(percent: int) -> tuple[bool, str]:
+    safe = max(10, min(100, int(percent or 35)))
+    script = (
+        "$m = Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightnessMethods -ErrorAction SilentlyContinue; "
+        f"if ($m) {{ $null = $m.WmiSetBrightness(1,{safe}); Write-Output 'ok'; }} "
+        "else { Write-Output 'unsupported'; exit 1; }"
+    )
+    ok, detail = _run_powershell(script)
+    return ok, detail or ("ok" if ok else "brightness unsupported")
+
+
+def _set_process_priority(pid: int, level: str) -> tuple[bool, str]:
+    if psutil is None:
+        return False, "psutil unavailable"
+    try:
+        proc = psutil.Process(int(pid))
+    except Exception as exc:
+        return False, str(exc)
+    target = str(level or "").strip().lower()
+    try:
+        if _device_is_windows():
+            if target == "high":
+                proc.nice(psutil.HIGH_PRIORITY_CLASS)
+            else:
+                proc.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            proc.nice(-5 if target == "high" else 10)
+        return True, f"priority set to {target or 'low'}"
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _collect_device_process_items(*, sort_by: str, limit: int) -> list[AelinDeviceProcessItem]:
+    if psutil is None:
+        return []
+    max_items = max(1, min(200, int(limit or 40)))
+    sort_key = "memory" if str(sort_by or "").strip().lower() == "memory" else "cpu"
+    now = datetime.now(timezone.utc)
+    current_user = str(os.environ.get("USERNAME") or os.environ.get("USER") or "").strip().lower()
+    critical_names = {
+        "system",
+        "idle",
+        "registry",
+        "csrss.exe",
+        "wininit.exe",
+        "services.exe",
+        "lsass.exe",
+        "svchost.exe",
+        "explorer.exe",
+    }
+
+    procs: list[Any] = []
+    for proc in psutil.process_iter(attrs=["pid", "name", "username", "status", "memory_info", "create_time"]):
+        try:
+            proc.cpu_percent(None)
+            procs.append(proc)
+        except Exception:
+            continue
+    time.sleep(0.12)
+
+    rows: list[AelinDeviceProcessItem] = []
+    for proc in procs:
+        try:
+            with proc.oneshot():
+                pid = int(proc.pid)
+                name = str(proc.info.get("name") or proc.name() or f"pid-{pid}").strip()
+                username = str(proc.info.get("username") or "").strip()
+                status = str(proc.info.get("status") or proc.status() or "").strip().lower()
+                cpu = float(proc.cpu_percent(None) or 0.0)
+                mem = proc.info.get("memory_info") or proc.memory_info()
+                memory_mb = float(getattr(mem, "rss", 0) / (1024 * 1024))
+                created = proc.info.get("create_time") or proc.create_time()
+                created_iso = datetime.fromtimestamp(float(created), tz=timezone.utc).isoformat() if created else None
+        except Exception:
+            continue
+        reasons: list[str] = []
+        score = 0.0
+        if cpu >= 80:
+            reasons.append("CPU 持续高占用")
+            score += 2.8
+        elif cpu >= 55:
+            reasons.append("CPU 偏高")
+            score += 1.5
+        if memory_mb >= 1400:
+            reasons.append("内存占用过高")
+            score += 2.5
+        elif memory_mb >= 800:
+            reasons.append("内存占用偏高")
+            score += 1.2
+        if status in {"zombie", "stopped"}:
+            reasons.append(f"进程状态异常: {status}")
+            score += 1.8
+
+        name_lower = name.lower()
+        user_match = bool(current_user and current_user in username.lower())
+        safe_to_terminate = (name_lower not in critical_names) and user_match and (pid > 120)
+        rows.append(
+            AelinDeviceProcessItem(
+                pid=pid,
+                name=name,
+                cpu_percent=round(cpu, 2),
+                memory_mb=round(memory_mb, 1),
+                status=status,
+                username=username,
+                create_time=created_iso,
+                anomaly_score=round(score, 2),
+                anomaly_reasons=reasons[:3],
+                safe_to_terminate=safe_to_terminate,
+            )
+        )
+
+    if sort_key == "memory":
+        rows.sort(key=lambda x: (x.anomaly_score, x.memory_mb, x.cpu_percent), reverse=True)
+    else:
+        rows.sort(key=lambda x: (x.anomaly_score, x.cpu_percent, x.memory_mb), reverse=True)
+    return rows[:max_items]
+
+
+def _load_device_mode_state(db: Session, *, user_id: int) -> tuple[AgentMemoryNote | None, dict[str, Any]]:
+    row = db.scalar(
+        select(AgentMemoryNote)
+        .where(AgentMemoryNote.user_id == user_id, AgentMemoryNote.source == _DEVICE_MODE_SOURCE)
+        .order_by(AgentMemoryNote.updated_at.desc(), AgentMemoryNote.id.desc())
+        .limit(1)
+    )
+    if row is None:
+        return None, {}
+    parsed = _json_from_text(row.content or "{}")
+    return row, parsed
+
+
+def _save_device_mode_state(
+    db: Session,
+    *,
+    user_id: int,
+    existing: AgentMemoryNote | None,
+    payload: dict[str, Any],
+) -> None:
+    text = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    row = existing
+    if row is None:
+        row = AgentMemoryNote(
+            user_id=user_id,
+            kind="system",
+            source=_DEVICE_MODE_SOURCE,
+            content=text,
+        )
+        db.add(row)
+        return
+    row.kind = "system"
+    row.source = _DEVICE_MODE_SOURCE
+    row.content = text
+    db.add(row)
+
+
+def _apply_device_mode(mode: str) -> tuple[str, str, str, list[str], list[str]]:
+    mode_norm = _normalize_device_mode(mode)
+    steps: list[str] = []
+    warnings: list[str] = []
+
+    if not _device_is_windows():
+        warnings.append("当前仅在 Windows 提供系统级模式控制，其它系统将只记录模式状态。")
+        return mode_norm, "partial", f"模式已切换为 {mode_norm}（系统控制受限）", steps, warnings
+
+    if mode_norm in {"meeting", "focus", "sleep"}:
+        ok_toast, detail_toast = _set_windows_toast_enabled(False)
+        if ok_toast:
+            steps.append("已限制系统通知横幅（Toast）。")
+        else:
+            warnings.append(f"限制系统通知失败: {detail_toast}")
+    else:
+        ok_toast, detail_toast = _set_windows_toast_enabled(True)
+        if ok_toast:
+            steps.append("已恢复系统通知横幅。")
+        else:
+            warnings.append(f"恢复系统通知失败: {detail_toast}")
+
+    if mode_norm == "focus":
+        wechat_hits = 0
+        if psutil is not None:
+            for proc in psutil.process_iter(attrs=["pid", "name"]):
+                try:
+                    name = str(proc.info.get("name") or "").lower()
+                    if "wechat" not in name:
+                        continue
+                    ok, detail = _set_process_priority(int(proc.pid), "low")
+                    if ok:
+                        wechat_hits += 1
+                    else:
+                        warnings.append(f"WeChat 优先级调整失败: {detail}")
+                except Exception:
+                    continue
+        if wechat_hits > 0:
+            steps.append(f"已降低 {wechat_hits} 个 WeChat 进程优先级（减少打扰）。")
+        else:
+            warnings.append("未检测到 WeChat 进程，微信提示音需手动在系统混音器中关闭。")
+
+    if mode_norm == "sleep":
+        ok_brightness, detail_brightness = _set_windows_brightness(35)
+        if ok_brightness:
+            steps.append("已尝试降低屏幕亮度至 35%。")
+        else:
+            warnings.append(f"亮度调整失败或设备不支持: {detail_brightness}")
+
+    if mode_norm == "meeting":
+        warnings.append("系统静音开关在部分设备上需手动确认（已保留开会模式状态）。")
+
+    status = "applied" if not warnings else "partial"
+    summary = (
+        f"{mode_norm} 模式已应用。"
+        if status == "applied"
+        else f"{mode_norm} 模式已部分应用，请查看警告项。"
+    )
+    return mode_norm, status, summary, steps, warnings
 
 
 def _to_layout_cards(raw_cards: list[dict]) -> list[AelinLayoutCard]:
@@ -4342,6 +4625,35 @@ def poll_aelin_proactive_events(
         )
         state["last_unread_alert_at"] = now.isoformat()
 
+    process_alert_at = _parse_iso_datetime(str(state.get("last_process_alert_at") or ""))
+    process_alert_due = process_alert_at is None or (now - process_alert_at) >= timedelta(minutes=40)
+    process_alert_pid = int(state.get("last_process_alert_pid") or 0)
+    process_rows = _collect_device_process_items(sort_by="cpu", limit=6)
+    top_process = process_rows[0] if process_rows else None
+    if (
+        top_process
+        and top_process.anomaly_score >= 2.2
+        and len(events) < max_items
+        and (process_alert_due or int(top_process.pid) != process_alert_pid)
+    ):
+        reason = "；".join(top_process.anomaly_reasons[:2]) or "资源占用偏高"
+        events.append(
+            {
+                "id": f"proactive-proc-{int(top_process.pid)}-{now.strftime('%Y%m%d%H%M')}",
+                "level": "warning",
+                "title": f"设备负载提醒: {top_process.name}",
+                "detail": (
+                    f"CPU {top_process.cpu_percent:.1f}% · 内存 {top_process.memory_mb:.0f}MB；{reason}"
+                ),
+                "source": "device",
+                "ts": now.isoformat(),
+                "action_kind": "open_device",
+                "action_payload": {"pid": str(int(top_process.pid)), "view": "processes"},
+            }
+        )
+        state["last_process_alert_at"] = now.isoformat()
+        state["last_process_alert_pid"] = int(top_process.pid)
+
     if not initialized and not events and top_updates:
         row = top_updates[0] if isinstance(top_updates[0], dict) else {}
         title = str(row.get("title") or "").strip()
@@ -4372,6 +4684,8 @@ def poll_aelin_proactive_events(
         "tracking_status": tracking_status_next,
         "last_unread_count": unread_count,
         "last_unread_alert_at": str(state.get("last_unread_alert_at") or ""),
+        "last_process_alert_at": str(state.get("last_process_alert_at") or ""),
+        "last_process_alert_pid": int(state.get("last_process_alert_pid") or 0),
         "last_poll_at": now.isoformat(),
     }
     _save_proactive_state(
@@ -4389,6 +4703,186 @@ def poll_aelin_proactive_events(
         total=len(items),
         items=items,
         generated_at=now,
+    )
+
+
+@router.get("/device/processes", response_model=AelinDeviceProcessResponse)
+def list_device_processes(
+    sort_by: str = Query(default="cpu", min_length=1, max_length=16),
+    limit: int = Query(default=40, ge=1, le=200),
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user  # Auth guard for local device APIs.
+    sort_key = "memory" if str(sort_by or "").strip().lower() == "memory" else "cpu"
+    items = _collect_device_process_items(sort_by=sort_key, limit=limit)
+    return AelinDeviceProcessResponse(
+        sort_by=sort_key,
+        total=len(items),
+        items=items,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post("/device/processes/{pid}/action", response_model=AelinDeviceProcessActionResponse)
+def run_device_process_action(
+    pid: int,
+    payload: AelinDeviceProcessActionRequest,
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user  # Auth guard for local device APIs.
+    action = str(payload.action or "").strip().lower()
+    if action not in _DEVICE_ALLOWED_PROCESS_ACTIONS:
+        return AelinDeviceProcessActionResponse(
+            pid=int(pid),
+            action=action,
+            ok=False,
+            detail=f"unsupported action: {action}",
+            generated_at=datetime.now(timezone.utc),
+        )
+    if psutil is None:
+        return AelinDeviceProcessActionResponse(
+            pid=int(pid),
+            action=action,
+            ok=False,
+            detail="psutil unavailable",
+            generated_at=datetime.now(timezone.utc),
+        )
+
+    try:
+        proc = psutil.Process(int(pid))
+        proc_name = str(proc.name() or "").strip().lower()
+    except Exception as exc:
+        return AelinDeviceProcessActionResponse(
+            pid=int(pid),
+            action=action,
+            ok=False,
+            detail=str(exc),
+            generated_at=datetime.now(timezone.utc),
+        )
+
+    critical_names = {"system", "idle", "csrss.exe", "wininit.exe", "services.exe", "lsass.exe", "svchost.exe"}
+    if action == "terminate" and proc_name in critical_names:
+        return AelinDeviceProcessActionResponse(
+            pid=int(pid),
+            action=action,
+            ok=False,
+            detail=f"blocked critical process: {proc_name}",
+            generated_at=datetime.now(timezone.utc),
+        )
+
+    if action == "terminate":
+        try:
+            proc.terminate()
+            try:
+                proc.wait(timeout=2.5)
+            except Exception:
+                proc.kill()
+            return AelinDeviceProcessActionResponse(
+                pid=int(pid),
+                action=action,
+                ok=True,
+                detail="process terminated",
+                generated_at=datetime.now(timezone.utc),
+            )
+        except Exception as exc:
+            return AelinDeviceProcessActionResponse(
+                pid=int(pid),
+                action=action,
+                ok=False,
+                detail=str(exc),
+                generated_at=datetime.now(timezone.utc),
+            )
+
+    target = "high" if action == "set_high_priority" else "low"
+    ok, detail = _set_process_priority(int(pid), target)
+    return AelinDeviceProcessActionResponse(
+        pid=int(pid),
+        action=action,
+        ok=ok,
+        detail=detail,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post("/device/processes/optimize", response_model=AelinDeviceOptimizeResponse)
+def optimize_device_processes(
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user  # Auth guard for local device APIs.
+    candidates = _collect_device_process_items(sort_by="cpu", limit=40)
+    steps: list[str] = []
+    warnings: list[str] = []
+    affected: list[int] = []
+    for row in candidates:
+        if row.anomaly_score < 1.6:
+            continue
+        if not row.safe_to_terminate:
+            continue
+        ok, detail = _set_process_priority(int(row.pid), "low")
+        if ok:
+            affected.append(int(row.pid))
+            steps.append(f"{row.name} (PID {row.pid}) -> low priority")
+        else:
+            warnings.append(f"{row.name} (PID {row.pid}) 调整失败: {detail}")
+        if len(affected) >= 4:
+            break
+    if not steps:
+        steps.append("没有可优化的高占用用户进程。")
+    return AelinDeviceOptimizeResponse(
+        optimized_count=len(affected),
+        affected_pids=affected,
+        steps=steps[:12],
+        warnings=warnings[:12],
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@router.get("/device/mode", response_model=AelinDeviceModeApplyResponse)
+def get_device_mode_state(
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    _, state = _load_device_mode_state(db, user_id=current_user.id)
+    mode = _normalize_device_mode(str(state.get("mode") or "normal"))
+    status = str(state.get("status") or "applied").strip().lower() or "applied"
+    summary = str(state.get("summary") or f"当前模式: {mode}").strip()
+    steps = state.get("steps") if isinstance(state.get("steps"), list) else []
+    warnings = state.get("warnings") if isinstance(state.get("warnings"), list) else []
+    return AelinDeviceModeApplyResponse(
+        mode=mode,
+        status=status,
+        summary=summary,
+        steps=[str(x) for x in steps][:12],
+        warnings=[str(x) for x in warnings][:12],
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post("/device/mode/apply", response_model=AelinDeviceModeApplyResponse)
+def apply_device_mode(
+    payload: AelinDeviceModeApplyRequest,
+    db: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    mode, status, summary, steps, warnings = _apply_device_mode(payload.mode)
+    existing, _ = _load_device_mode_state(db, user_id=current_user.id)
+    state = {
+        "mode": mode,
+        "status": status,
+        "summary": summary,
+        "steps": steps[:12],
+        "warnings": warnings[:12],
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _save_device_mode_state(db, user_id=current_user.id, existing=existing, payload=state)
+    db.commit()
+    return AelinDeviceModeApplyResponse(
+        mode=mode,
+        status=status,
+        summary=summary,
+        steps=steps[:12],
+        warnings=warnings[:12],
+        generated_at=datetime.now(timezone.utc),
     )
 
 
