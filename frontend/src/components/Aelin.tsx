@@ -65,6 +65,7 @@ import {
   getAgentConfig,
   getAelinTracking,
   getAelinNotifications,
+  getAelinProactivePoll,
   getAelinContext,
   getMessage,
   testAgent,
@@ -144,6 +145,7 @@ const QUICK_PROMPTS = [
   "我现在最该优先关注什么？",
   "给我一个20分钟的信息阅读计划。",
 ];
+const PROACTIVE_POLL_MS = 45_000;
 
 const AELIN_CHAT_STORAGE_KEY = "aelin:chat:v1";
 const AELIN_SESSIONS_STORAGE_KEY = "aelin:sessions:v1";
@@ -1699,6 +1701,7 @@ export default function Aelin({
   const [handoffFX, setHandoffFX] = React.useState<HandoffFXState | null>(null);
   const [latestSparkMessageId, setLatestSparkMessageId] = React.useState<string>("");
   const dismissedTrackTargetsRef = React.useRef<Record<string, true>>({});
+  const proactiveSeenRef = React.useRef<Record<string, true>>({});
   const [citationDrawer, setCitationDrawer] = React.useState<{
     open: boolean;
     citation: AelinCitation | null;
@@ -1900,6 +1903,68 @@ export default function Aelin({
     }
   }, []);
 
+  const pushSystemNotification = React.useCallback((item: AelinNotificationItem) => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    try {
+      const title = (item.title || "Aelin 提醒").trim() || "Aelin 提醒";
+      const detail = (item.detail || "").trim();
+      const note = new Notification(title, {
+        body: detail ? detail.slice(0, 180) : "你有新的动态值得查看",
+        icon: AELIN_LOGO_SRC,
+        tag: String(item.id || ""),
+      });
+      window.setTimeout(() => note.close(), 5600);
+    } catch {
+      // ignore notification errors
+    }
+  }, []);
+
+  const pollProactive = React.useCallback(async () => {
+    try {
+      const ret = await getAelinProactivePoll(workspaceScope, 8);
+      const incoming = Array.isArray(ret.items) ? ret.items.filter(Boolean) : [];
+      if (!incoming.length) return;
+      setNotificationItems((prev) => {
+        const seen = new Set<string>();
+        const merged: AelinNotificationItem[] = [];
+        for (const row of [...incoming, ...prev]) {
+          const key = String(row.id || "");
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          merged.push(row);
+          if (merged.length >= 80) break;
+        }
+        return merged;
+      });
+
+      const justIn: AelinNotificationItem[] = [];
+      for (const item of incoming) {
+        const key = String(item.id || "");
+        if (!key || proactiveSeenRef.current[key]) continue;
+        proactiveSeenRef.current[key] = true;
+        justIn.push(item);
+      }
+      if (!justIn.length) return;
+
+      for (const item of justIn) {
+        const detail = (item.detail || "").trim();
+        const toastText = detail ? `${item.title} · ${detail}` : item.title;
+        const level = String(item.level || "info").toLowerCase();
+        showToast(
+          toastText.slice(0, 220),
+          level === "error" ? "error" : level === "warning" ? "warning" : level === "success" ? "success" : "info"
+        );
+        if (document.hidden) {
+          pushSystemNotification(item);
+        }
+      }
+    } catch {
+      // ignore transient proactive polling failures
+    }
+  }, [pushSystemNotification, showToast, workspaceScope]);
+
   const getDefaultLlmBaseUrl = React.useCallback(
     (providerId: string, catalog: ModelCatalogResponse | null = llmCatalog) => {
       const normalizedProviderId = normalizeProviderId(providerId) || "rule_based";
@@ -2037,6 +2102,32 @@ export default function Aelin({
   React.useEffect(() => {
     void refreshNotifications();
   }, [refreshNotifications]);
+
+  React.useEffect(() => {
+    for (const item of notificationItems) {
+      const key = String(item.id || "");
+      if (!key) continue;
+      proactiveSeenRef.current[key] = true;
+    }
+  }, [notificationItems]);
+
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "default") return;
+    const timer = window.setTimeout(() => {
+      void Notification.requestPermission().catch(() => "default");
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  React.useEffect(() => {
+    void pollProactive();
+    const timer = window.setInterval(() => {
+      void pollProactive();
+    }, PROACTIVE_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [pollProactive]);
 
   React.useEffect(() => {
     if (llmProvider === "rule_based" || llmIsCustomProvider || !llmSelectedProvider) return;

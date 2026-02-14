@@ -292,6 +292,13 @@ class AelinNotificationResponse(BaseModel):
     generated_at: datetime
 
 
+class AelinProactivePollResponse(BaseModel):
+    workspace: str = "default"
+    total: int = 0
+    items: list[AelinNotificationItem] = Field(default_factory=list)
+    generated_at: datetime
+
+
 class AgentMemorySnapshot(BaseModel):
     summary: str = ""
     notes: list[AgentMemoryNoteOut] = Field(default_factory=list)

@@ -198,6 +198,13 @@ export type AelinNotificationResponse = {
   generated_at: string;
 };
 
+export type AelinProactivePollResponse = {
+  workspace: string;
+  total: number;
+  items: AelinNotificationItem[];
+  generated_at: string;
+};
+
 export type AelinChatResponse = {
   answer: string;
   expression: string;
@@ -916,6 +923,14 @@ export async function getAelinTracking(limit = 80): Promise<AelinTrackingListRes
 export async function getAelinNotifications(limit = 24): Promise<AelinNotificationResponse> {
   const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 24;
   return await fetchJson<AelinNotificationResponse>(`/api/v1/aelin/notifications?limit=${safeLimit}`);
+}
+
+export async function getAelinProactivePoll(workspace = "default", limit = 8): Promise<AelinProactivePollResponse> {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(24, Math.floor(limit))) : 8;
+  const qs = new URLSearchParams();
+  if (workspace.trim()) qs.set("workspace", workspace.trim());
+  qs.set("limit", String(safeLimit));
+  return await fetchJson<AelinProactivePollResponse>(`/api/v1/aelin/proactive/poll?${qs.toString()}`);
 }
 
 export async function getAgentMemory(query = ""): Promise<AgentMemorySnapshot> {
