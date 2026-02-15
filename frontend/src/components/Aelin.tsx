@@ -53,6 +53,7 @@ import {
   AelinAction,
   AelinCitation,
   AelinContextResponse,
+  AelinDeviceCapabilitiesResponse,
   AelinDeviceModeApplyResponse,
   AelinDeviceOptimizeResponse,
   AelinDeviceProcessItem,
@@ -72,6 +73,7 @@ import {
   getAgentCatalog,
   getAgentConfig,
   getAelinTracking,
+  getAelinDeviceCapabilities,
   getAelinDeviceMode,
   getAelinDeviceProcesses,
   getAelinNotifications,
@@ -87,6 +89,48 @@ import { useConfirmDialog } from "../hooks/useConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
 import { isNativeMobileShell } from "../mobile/runtime";
 import Dashboard from "./Dashboard";
+import {
+  AELIN_CHAT_STORAGE_KEY,
+  AELIN_EXPRESSION_IDS,
+  type AelinExpressionId,
+  AELIN_EXPRESSION_META,
+  AELIN_EXPRESSION_SRC,
+  AELIN_LAST_DESK_BRIDGE_KEY,
+  AELIN_LAST_SESSION_KEY,
+  AELIN_LOGO_SRC,
+  AELIN_SESSIONS_STORAGE_KEY,
+  CUSTOM_PROVIDER_OPTION,
+  DEVICE_MODE_META,
+  type DeviceMode,
+  type DeviceSortBy,
+  type PlatformKey,
+  MAX_PERSISTED_IMAGE_DATA_URL,
+  MAX_PERSISTED_MESSAGES,
+  MAX_PERSISTED_SESSIONS,
+  PLATFORM_META,
+  PROACTIVE_POLL_MS,
+  QUICK_PROMPTS,
+  TRACKING_SOURCE_LABEL,
+} from "./aelin/constants";
+import {
+  extractFirstUrl,
+  formatIsoTime,
+  formatTime,
+  formatTrackingStatus,
+  hashString,
+  initialsFromName,
+  looksLikeMarkdown,
+  nextMessageId,
+  normalizeAutoLinksForMarkdown,
+  normalizeAccountKey,
+  normalizeExpressionId,
+  normalizePlatformName,
+  normalizeProviderId,
+  resolveCitationPlatform,
+  toolStepLabel,
+  traceParallelLabel,
+  traceParallelLane,
+} from "./aelin/helpers";
 
 type ChatMessage = {
   id: string;
@@ -150,240 +194,6 @@ type ResultCard = {
   accent: string;
   icon: React.ReactNode;
 };
-
-const QUICK_PROMPTS = [
-  "今天最值得我看的5条更新是什么？",
-  "帮我梳理最近7天这个话题的变化。",
-  "我现在最该优先关注什么？",
-  "给我一个20分钟的信息阅读计划。",
-];
-const PROACTIVE_POLL_MS = 45_000;
-
-const AELIN_CHAT_STORAGE_KEY = "aelin:chat:v1";
-const AELIN_SESSIONS_STORAGE_KEY = "aelin:sessions:v1";
-const AELIN_LAST_SESSION_KEY = "aelin:last-session-id:v1";
-const AELIN_LAST_DESK_BRIDGE_KEY = "aelin:last-desk-bridge:v1";
-const MAX_PERSISTED_MESSAGES = 180;
-const MAX_PERSISTED_IMAGE_DATA_URL = 320_000;
-const MAX_PERSISTED_SESSIONS = 20;
-const AELIN_LOGO_SRC = "/logo.png";
-const AELIN_EXPRESSION_IDS = [
-  "exp-01",
-  "exp-02",
-  "exp-03",
-  "exp-04",
-  "exp-05",
-  "exp-06",
-  "exp-07",
-  "exp-08",
-  "exp-09",
-  "exp-10",
-  "exp-11",
-] as const;
-type AelinExpressionId = (typeof AELIN_EXPRESSION_IDS)[number];
-const AELIN_EXPRESSION_SRC: Record<AelinExpressionId, string> = AELIN_EXPRESSION_IDS.reduce(
-  (acc, id) => {
-    acc[id] = `/expressions/${id}.png`;
-    return acc;
-  },
-  {} as Record<AelinExpressionId, string>
-);
-const AELIN_EXPRESSION_META: Record<AelinExpressionId, { label: string; usage: string }> = {
-  "exp-01": { label: "捂嘴惊喜", usage: "害羞、惊喜、被夸时的可爱反馈" },
-  "exp-02": { label: "热情出击", usage: "开场打招呼、推进执行、强积极反馈" },
-  "exp-03": { label: "温柔赞同", usage: "支持、认可、安抚、温和鼓励" },
-  "exp-04": { label: "托腮思考", usage: "解释、分析、答疑、默认交流" },
-  "exp-05": { label: "轻声提醒", usage: "注意事项、风险提示、保守建议" },
-  "exp-06": { label: "偷看观察", usage: "围观进展、持续关注、等待更多线索" },
-  "exp-07": { label: "低落求助", usage: "失败、遗憾、道歉、需要帮助" },
-  "exp-08": { label: "不满委屈", usage: "吐槽、不爽、抗议、情绪性反馈" },
-  "exp-09": { label: "指着大笑", usage: "玩梗、幽默、轻松调侃" },
-  "exp-10": { label: "发财得意", usage: "成果突出、搞定任务、高价值收获" },
-  "exp-11": { label: "趴桌躺平", usage: "困倦、过载、精力不足、需要休息" },
-};
-const CUSTOM_PROVIDER_OPTION = "__custom__";
-
-function normalizeProviderId(value: string): string {
-  return value.trim().toLowerCase();
-}
-
-type PlatformKey =
-  | "bilibili"
-  | "douyin"
-  | "xiaohongshu"
-  | "weibo"
-  | "x"
-  | "github"
-  | "rss"
-  | "web"
-  | "email"
-  | "generic";
-
-const PLATFORM_META: Record<PlatformKey, { label: string; color: string; bg: string; border: string }> = {
-  bilibili: { label: "Bilibili", color: "#00A1D6", bg: "rgba(0,161,214,0.14)", border: "rgba(0,161,214,0.38)" },
-  douyin: { label: "抖音", color: "#12D6CC", bg: "rgba(18,214,204,0.14)", border: "rgba(18,214,204,0.36)" },
-  xiaohongshu: { label: "小红书", color: "#FF2442", bg: "rgba(255,36,66,0.12)", border: "rgba(255,36,66,0.36)" },
-  weibo: { label: "微博", color: "#E6162D", bg: "rgba(230,22,45,0.11)", border: "rgba(230,22,45,0.32)" },
-  x: { label: "X", color: "#121212", bg: "rgba(18,18,18,0.10)", border: "rgba(18,18,18,0.28)" },
-  github: { label: "GitHub", color: "#24292E", bg: "rgba(36,41,46,0.10)", border: "rgba(36,41,46,0.28)" },
-  rss: { label: "RSS", color: "#F26522", bg: "rgba(242,101,34,0.11)", border: "rgba(242,101,34,0.33)" },
-  web: { label: "Web", color: "#2563EB", bg: "rgba(37,99,235,0.11)", border: "rgba(37,99,235,0.34)" },
-  email: { label: "Email", color: "#6A9BCC", bg: "rgba(106,155,204,0.13)", border: "rgba(106,155,204,0.35)" },
-  generic: { label: "Source", color: "#7A786F", bg: "rgba(122,120,111,0.11)", border: "rgba(122,120,111,0.26)" },
-};
-
-const PLATFORM_ALIASES: Record<string, PlatformKey> = {
-  bilibili: "bilibili",
-  b站: "bilibili",
-  bili: "bilibili",
-  douyin: "douyin",
-  抖音: "douyin",
-  xiaohongshu: "xiaohongshu",
-  小红书: "xiaohongshu",
-  xhs: "xiaohongshu",
-  weibo: "weibo",
-  微博: "weibo",
-  x: "x",
-  twitter: "x",
-  推特: "x",
-  web: "web",
-  搜索: "web",
-  github: "github",
-  rss: "rss",
-  imap: "email",
-  email: "email",
-  邮箱: "email",
-  邮件: "email",
-};
-
-const TRACKING_SOURCE_LABEL: Record<string, string> = {
-  auto: "自动",
-  web: "Web",
-  rss: "RSS",
-  x: "X",
-  douyin: "抖音",
-  xiaohongshu: "小红书",
-  weibo: "微博",
-  bilibili: "Bilibili",
-  email: "邮箱",
-};
-
-const TRACKING_STATUS_META: Record<string, { label: string; color: "success" | "info" | "warning" | "error" | "default" }> = {
-  active: { label: "进行中", color: "success" },
-  created: { label: "已创建", color: "info" },
-  seeded: { label: "已预热", color: "info" },
-  sync_started: { label: "同步中", color: "success" },
-  tracking_enabled: { label: "已启用", color: "success" },
-  needs_config: { label: "需配置", color: "warning" },
-  failed: { label: "失败", color: "error" },
-};
-
-type DeviceMode = "meeting" | "focus" | "sleep" | "normal";
-type DeviceSortBy = "cpu" | "memory";
-
-const DEVICE_MODE_META: Record<DeviceMode, { label: string; detail: string }> = {
-  meeting: { label: "开会模式", detail: "静音场景优先，限制通知横幅，降低打扰。"},
-  focus: { label: "专注模式", detail: "压制弹窗并弱化 WeChat 干扰。"},
-  sleep: { label: "睡眠模式", detail: "降低亮度并进入低打扰状态。"},
-  normal: { label: "恢复模式", detail: "恢复通知策略，回到日常状态。"},
-};
-
-function normalizePlatformName(raw: string): PlatformKey | null {
-  const key = raw.trim().toLowerCase().replace(/[\s_]+/g, "");
-  if (!key) return null;
-  return PLATFORM_ALIASES[key] || null;
-}
-
-function formatTrackingStatus(raw: string): { label: string; color: "success" | "info" | "warning" | "error" | "default" } {
-  const key = (raw || "").trim().toLowerCase();
-  return TRACKING_STATUS_META[key] || { label: raw || "未知", color: "default" };
-}
-
-function normalizeAccountKey(raw: string): string {
-  return raw.replace(/^@+/, "").trim().toLowerCase();
-}
-
-function hashString(input: string): number {
-  let hash = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
-function initialsFromName(name: string): string {
-  const normalized = name.replace(/^@+/, "").trim();
-  if (!normalized) return "?";
-  const words = normalized.split(/\s+/).filter(Boolean);
-  if (words.length >= 2) return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
-  return (normalized[0] || "?").toUpperCase();
-}
-
-function resolveCitationPlatform(item: AelinCitation): PlatformKey {
-  const bySource = normalizePlatformName(item.source || "");
-  if (bySource) return bySource;
-  const byLabel = normalizePlatformName(item.source_label || "");
-  if (byLabel) return byLabel;
-  return "generic";
-}
-
-function nextMessageId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-}
-
-function formatTime(ts: number) {
-  try {
-    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "--:--";
-  }
-}
-
-function formatIsoTime(raw: string | null | undefined) {
-  if (!raw) return "未知时间";
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return raw;
-  return date.toLocaleString([], {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function traceParallelLane(stage: string): string | null {
-  const normalized = (stage || "").toLowerCase().trim();
-  if (normalized.startsWith("web_search_subagent_")) return "reply_web";
-  if (normalized.startsWith("local_search_subagent_")) return "reply_local";
-  if (normalized.startsWith("trace_web_subagent_")) return "trace_web";
-  if (normalized.startsWith("trace_local_subagent_")) return "trace_local";
-  return null;
-}
-
-function traceParallelLabel(lane: string): string {
-  const map: Record<string, string> = {
-    reply_web: "Reply/Web",
-    reply_local: "Reply/Local",
-    trace_web: "Trace/Web",
-    trace_local: "Trace/Local",
-  };
-  return map[lane] || lane;
-}
-
-function normalizeExpressionId(raw: string | null | undefined): AelinExpressionId | undefined {
-  const text = String(raw || "").trim().toLowerCase();
-  if (!text) return undefined;
-  if (AELIN_EXPRESSION_IDS.includes(text as AelinExpressionId)) return text as AelinExpressionId;
-  if (/^exp[-_]\d{1,2}$/.test(text)) {
-    const n = Number(text.replace("exp", "").replace("-", "").replace("_", ""));
-    if (Number.isFinite(n) && n >= 1 && n <= 11) return `exp-${String(n).padStart(2, "0")}` as AelinExpressionId;
-  }
-  if (/^\d{1,2}$/.test(text)) {
-    const n = Number(text);
-    if (n >= 1 && n <= 11) return `exp-${String(n).padStart(2, "0")}` as AelinExpressionId;
-  }
-  return undefined;
-}
 
 function initialMessages(): ChatMessage[] {
   return [
@@ -571,53 +381,10 @@ function mergeCitationSnippets(
   return out;
 }
 
-function toolStepLabel(stage: string): string {
-  const normalized = (stage || "").toLowerCase().trim();
-  if (normalized.startsWith("web_search_subagent_")) {
-    const idx = Number(normalized.split("web_search_subagent_")[1] || "");
-    return Number.isFinite(idx) && idx > 0 ? `Reply Web Subagent ${idx}` : "Reply Web Subagent";
-  }
-  if (normalized.startsWith("local_search_subagent_")) {
-    const idx = Number(normalized.split("local_search_subagent_")[1] || "");
-    return Number.isFinite(idx) && idx > 0 ? `Reply Local Subagent ${idx}` : "Reply Local Subagent";
-  }
-  if (normalized.startsWith("trace_agent_prefetch_")) {
-    const idx = Number(normalized.split("trace_agent_prefetch_")[1] || "");
-    return Number.isFinite(idx) && idx > 0 ? `Trace Prefetch ${idx}` : "Trace Prefetch";
-  }
-  if (normalized.startsWith("trace_web_subagent_")) {
-    const idx = Number(normalized.split("trace_web_subagent_")[1] || "");
-    return Number.isFinite(idx) && idx > 0 ? `Trace Web Subagent ${idx}` : "Trace Web Subagent";
-  }
-  if (normalized.startsWith("trace_local_subagent_")) {
-    const idx = Number(normalized.split("trace_local_subagent_")[1] || "");
-    return Number.isFinite(idx) && idx > 0 ? `Trace Local Subagent ${idx}` : "Trace Local Subagent";
-  }
-  const map: Record<string, string> = {
-    planner: "Planner",
-    intent_lens: "Intent Lens",
-    main_agent: "Main Agent",
-    plan_critic: "Plan Critic",
-    query_decomposer: "Query Decomposer",
-    reply_agent: "Reply Agent",
-    reply_dispatch: "Reply Dispatch",
-    local_search: "Local Search",
-    web_search: "Web Search",
-    message_hub: "Message Hub",
-    generation: "Generation",
-    grounding_judge: "Grounding Judge",
-    coverage_verifier: "Coverage Verifier",
-    reply_verifier: "Reply Verifier",
-    trace_agent: "Trace Agent",
-    trace_dispatch: "Trace Dispatch",
-  };
-  return map[normalized] || stage;
-}
-
 function parseScoreCards(text: string): ResultCard[] {
   const rows: ResultCard[] = [];
   const seen = new Set<string>();
-  const regex = /([A-Za-z\u4e00-\u9fff·]{1,24})?\s*(\d{2,3})\s*[-:：]\s*(\d{2,3})\s*([A-Za-z\u4e00-\u9fff·]{1,24})?/g;
+  const regex = /([A-Za-z\u4e00-\u9fff]{1,24})?\s*(\d{2,3})\s*[-:：]\s*(\d{2,3})\s*([A-Za-z\u4e00-\u9fff]{1,24})?/g;
   let m: RegExpExecArray | null = null;
   while ((m = regex.exec(text)) !== null) {
     const left = (m[1] || "队伍A").trim();
@@ -650,7 +417,7 @@ function cardsFromMessage(message: ChatMessage): ResultCard[] {
       id: `cite-${message.id}-${c.message_id}-${c.source}`,
       title: c.source_label || c.source,
       value: c.title || "证据",
-      subtitle: `${c.sender || "unknown"} · ${c.received_at.slice(5)}`,
+      subtitle: `${c.sender || "unknown"} 路 ${c.received_at.slice(5)}`,
       accent: "#4d6fff",
       icon: <TravelExploreIcon sx={{ fontSize: 16 }} />,
     });
@@ -1226,7 +993,7 @@ function renderRichMessageContent(content: string, resolveAvatarSrc?: (account: 
   const lines = content.split("\n");
   return lines.map((line, lineIdx) => {
     const bulletMatch = line.match(
-      /^(\s*[-*]\s*)?\[([^[\]\n]{1,24})\]\s*(.+?)（([^，()]{1,40})，([^）]{1,32})）(.*)$/
+      /^(\s*[-*]\s*)?\[([^[\]\n]{1,24})\]\s*([^（\n]+?)(?:（([^）\n]{1,40})）)?(?:（([^）\n]{1,32})）)?(.*)$/
     );
     if (bulletMatch) {
       const prefix = bulletMatch[1] || "";
@@ -1286,37 +1053,6 @@ function renderRichMessageContent(content: string, resolveAvatarSrc?: (account: 
       </React.Fragment>
     );
   });
-}
-
-function looksLikeMarkdown(content: string): boolean {
-  const text = (content || "").trim();
-  if (!text) return false;
-  if (text.includes("```")) return true;
-  if (/^\s{0,3}#{1,6}\s+/m.test(text)) return true;
-  if (/^\s{0,3}(\*|-|\+)\s+/m.test(text)) return true;
-  if (/^\s{0,3}\d+\.\s+/m.test(text)) return true;
-  if (/\[[^\]\n]{1,120}\]\((https?:\/\/[^\s)]+)\)/.test(text)) return true;
-  if (/^\s*>\s+/m.test(text)) return true;
-  if (/\|.*\|/.test(text) && /\n/.test(text)) return true;
-  return false;
-}
-
-function normalizeAutoLinksForMarkdown(content: string): string {
-  const text = content || "";
-  return text.replace(/(^|[\s(])((https?:\/\/[^\s<>"')\]]+))/g, (_m, p1: string, p2: string) => {
-    // Avoid breaking existing markdown links.
-    if (p1.endsWith("](")) return `${p1}${p2}`;
-    return `${p1}<${p2}>`;
-  });
-}
-
-function extractFirstUrl(text: string): string {
-  const raw = String(text || "");
-  if (!raw) return "";
-  const labeled = raw.match(/(?:^|\n)\s*URL\s*[:：]\s*(https?:\/\/[^\s<>"')\]]+)/i);
-  if (labeled?.[1]) return labeled[1].trim();
-  const plain = raw.match(/https?:\/\/[^\s<>"')\]]+/i);
-  return plain?.[0]?.trim() || "";
 }
 
 const MessageRow = React.memo(function MessageRow(props: {
@@ -1417,7 +1153,7 @@ const MessageRow = React.memo(function MessageRow(props: {
           {!isUser ? <ResultDeck cards={cards} pulse={pulse} /> : null}
           {!isUser && expressionId ? (
             <Box sx={{ display: "flex", justifyContent: "flex-start", mb: message.content ? 0.72 : 0 }}>
-              <Tooltip title={`${AELIN_EXPRESSION_META[expressionId].label} · ${AELIN_EXPRESSION_META[expressionId].usage}`}>
+              <Tooltip title={`${AELIN_EXPRESSION_META[expressionId].label} 路 ${AELIN_EXPRESSION_META[expressionId].usage}`}>
                 <Box
                   component="img"
                   src={AELIN_EXPRESSION_SRC[expressionId]}
@@ -1595,7 +1331,7 @@ const MessageRow = React.memo(function MessageRow(props: {
                           whiteSpace: "nowrap",
                         }}
                       >
-                        {item.sender} · {item.source_label} · {item.received_at.slice(5)}
+                        {item.sender} 路 {item.source_label} 路 {item.received_at.slice(5)}
                       </Typography>
                     </Box>
                     <Chip
@@ -1707,6 +1443,12 @@ export default function Aelin({
   const [deviceBusy, setDeviceBusy] = React.useState(false);
   const [deviceSortBy, setDeviceSortBy] = React.useState<DeviceSortBy>("cpu");
   const [deviceProcesses, setDeviceProcesses] = React.useState<AelinDeviceProcessItem[]>([]);
+  const [deviceProcessMeta, setDeviceProcessMeta] = React.useState<{ emptyReason: string; platform: string; filterContext: Record<string, string> }>({
+    emptyReason: "",
+    platform: "unknown",
+    filterContext: {},
+  });
+  const [deviceCapabilities, setDeviceCapabilities] = React.useState<AelinDeviceCapabilitiesResponse | null>(null);
   const [deviceModeState, setDeviceModeState] = React.useState<AelinDeviceModeApplyResponse | null>(null);
   const [deviceActionBusyPid, setDeviceActionBusyPid] = React.useState<number | null>(null);
   const [deviceModeApplying, setDeviceModeApplying] = React.useState<DeviceMode | null>(null);
@@ -1981,12 +1723,12 @@ export default function Aelin({
 
       for (const item of justIn) {
         const detail = (item.detail || "").trim();
-        const toastText = detail ? `${item.title} · ${detail}` : item.title;
+        const toastText = detail ? `${item.title} 路 ${detail}` : item.title;
         const level = String(item.level || "info").toLowerCase();
-        showToast(
-          toastText.slice(0, 220),
-          level === "error" ? "error" : level === "warning" ? "warning" : level === "success" ? "success" : "info"
-        );
+          showToast(
+            toastText.slice(0, 220),
+            level === "error" ? "error" : level === "warning" ? "warning" : level === "success" ? "success" : "info"
+          );
         if (document.hidden) {
           pushSystemNotification(item);
         }
@@ -2005,11 +1747,25 @@ export default function Aelin({
     }
   }, []);
 
+  const refreshDeviceCapabilities = React.useCallback(async () => {
+    try {
+      const caps = await getAelinDeviceCapabilities();
+      setDeviceCapabilities(caps);
+    } catch {
+      // ignore temporary failures
+    }
+  }, []);
+
   const refreshDeviceProcesses = React.useCallback(async () => {
     setDeviceBusy(true);
     try {
       const ret = await getAelinDeviceProcesses(deviceSortBy, 48);
       setDeviceProcesses(ret.items || []);
+      setDeviceProcessMeta({
+        emptyReason: ret.empty_reason || "",
+        platform: ret.platform || "unknown",
+        filterContext: ret.filter_context || {},
+      });
     } catch (error) {
       showToast(error instanceof Error ? error.message : "读取进程失败", "error");
     } finally {
@@ -2020,8 +1776,9 @@ export default function Aelin({
   const openDeviceDialog = React.useCallback(() => {
     setDeviceDialogOpen(true);
     void refreshDeviceMode();
+    void refreshDeviceCapabilities();
     void refreshDeviceProcesses();
-  }, [refreshDeviceMode, refreshDeviceProcesses]);
+  }, [refreshDeviceCapabilities, refreshDeviceMode, refreshDeviceProcesses]);
 
   const applyDeviceModeAction = React.useCallback(
     async (mode: DeviceMode) => {
@@ -2030,8 +1787,16 @@ export default function Aelin({
         const ret = await applyAelinDeviceMode(mode);
         setDeviceModeState(ret);
         const severity =
-          ret.status === "applied" ? "success" : ret.status === "partial" ? "warning" : "info";
-        showToast(ret.summary || `模式已切换: ${mode}`, severity);
+          ret.status === "applied"
+            ? "success"
+            : ret.status === "partial" || ret.status === "degraded"
+              ? "warning"
+              : "info";
+        const warningText = (ret.warnings || []).slice(0, 1).join(";");
+        showToast(
+          warningText ? `${ret.summary || `模式已切换 ${mode}`} · ${warningText}` : ret.summary || `模式已切换 ${mode}`,
+          severity
+        );
       } catch (error) {
         showToast(error instanceof Error ? error.message : "模式切换失败", "error");
       } finally {
@@ -2151,11 +1916,11 @@ export default function Aelin({
     }
     if (provider !== "rule_based") {
       if (!llmBaseUrl.trim()) {
-        showToast("请填写 Base URL", "error");
+          showToast("请填写 Base URL", "error");
         return;
       }
       if (!llmModel.trim()) {
-        showToast("请填写模型 ID", "error");
+          showToast("请填写模型 ID", "error");
         return;
       }
     }
@@ -2405,7 +2170,7 @@ export default function Aelin({
         "info"
       );
     } else {
-      playHandoffFX("Desk -> Aelin", "已返回聊天，可继续追问");
+      playHandoffFX("Desk -> Aelin", "已返回聊天，可继续追问。");
       showToast("已从 Desk 返回，可继续追问。", "info");
     }
     navigate("/", { replace: true });
@@ -2452,7 +2217,7 @@ export default function Aelin({
       }
       const oversized = candidates.find((file) => file.size > 4 * 1024 * 1024);
       if (oversized) {
-        showToast(`图片过大：${oversized.name}（限制 4MB）`, "error");
+        showToast(`图片过大：${oversized.name}（限 4MB）`, "error");
         return;
       }
       try {
@@ -2646,8 +2411,8 @@ export default function Aelin({
             const target = (evt.items || [])[0] || "";
             const sourceCount = Number(evt.source_count || 0);
             const detail = target
-              ? `建议追踪：${target}${sourceCount > 0 ? `（来源 ${sourceCount}）` : ""}`
-              : "识别到可追踪主题";
+              ? `建议追踪 ${target}${sourceCount > 0 ? `（来源 ${sourceCount}）` : ""}`
+              : "识别到可跟踪主题";
             startProgressTransition(() => {
               setSessions((prev) =>
                 prev.map((session) =>
@@ -2783,7 +2548,7 @@ export default function Aelin({
                             upsertTraceStep(item.tool_trace || [], {
                               stage: "main_agent",
                               status: "completed",
-                              detail: "请求已发出",
+                              detail: "请求已发送",
                               count: 1,
                             }),
                             {
@@ -2915,12 +2680,12 @@ export default function Aelin({
       if (mode === "dismiss") {
         dismissedTrackTargetsRef.current[target.toLowerCase()] = true;
         setTrackingSheet(null);
-        showToast("已关闭该主题的跟踪提醒", "info");
+        showToast("已关闭该主题的跟踪提醒。", "info");
         return;
       }
       if (mode === "once") {
         setTrackingSheet(null);
-        showToast("本次仅回答，不开启持续跟踪", "info");
+        showToast("本次仅回答，不开启持续跟踪。", "info");
         return;
       }
       try {
@@ -2946,7 +2711,7 @@ export default function Aelin({
         if (ret.status === "needs_config") {
           const goSettings = await confirm({
             title: "需要先配置数据源",
-            message: `当前缺少 ${ret.provider || "对应"} 配置，是否现在配置模型？`,
+            message: `当前缺少 ${ret.provider || "对应"} 配置，是否现在去配置模型？`,
             confirmLabel: "立即配置",
             cancelLabel: "稍后",
           });
@@ -3148,7 +2913,7 @@ export default function Aelin({
                 </IconButton>
               </span>
             </Tooltip>
-            <Tooltip title="跟踪清单">
+            <Tooltip title="跟踪列表">
               <IconButton onClick={() => setTrackingDialogOpen(true)}>
                 <Badge
                   color="primary"
@@ -3313,7 +3078,7 @@ export default function Aelin({
                       {item.title}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">
-                      {item.sender} · {item.received_at}
+                      {item.sender} 路 {item.received_at}
                     </Typography>
                   </Paper>
                 ))}
@@ -3700,7 +3465,7 @@ export default function Aelin({
               )}
 
               <Typography variant="caption" color="text.secondary">
-                当前：{normalizeProviderId(llmProvider) || "rule_based"} • Key：{llmHasApiKey ? "已配置" : "未配置"}
+                当前：{normalizeProviderId(llmProvider) || "rule_based"} · Key：{llmHasApiKey ? "已配置" : "未配置"}
               </Typography>
             </Stack>
           )}
@@ -3816,7 +3581,7 @@ export default function Aelin({
             <Stack direction="row" spacing={0.8} alignItems="center" sx={{ py: 2.6 }}>
               <CircularProgress size={18} />
               <Typography variant="body2" color="text.secondary">
-                正在加载跟踪清单...
+                正在加载跟踪列表...
               </Typography>
             </Stack>
           ) : trackingError ? (
@@ -3941,8 +3706,30 @@ export default function Aelin({
 
         <Box sx={{ px: 1.2, py: 1.05, maxHeight: "72vh", overflowY: "auto" }}>
           <Typography variant="caption" color="text.secondary">
-            模式控制会尽力应用到系统；如果权限或设备不支持，会给出明确提示。
-          </Typography>
+            模式控制会尽力应用到系统；如果权限或设备不支持，会给出明确提示。          </Typography>
+
+          {deviceCapabilities ? (
+            <Paper variant="outlined" sx={{ mt: 0.8, p: 0.85, borderRadius: 1.4 }}>
+              <Stack spacing={0.45}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  平台能力
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  平台：{deviceCapabilities.platform}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.45 }}>
+                  {Object.entries(deviceCapabilities.capabilities || {})
+                    .map(([k, v]) => `${k}:${v ? "✅" : "❌"}`)
+                    .join(" · ")}
+                </Typography>
+                {(deviceCapabilities.notes || []).length ? (
+                  <Alert severity="info" sx={{ borderRadius: 1.1 }}>
+                    {(deviceCapabilities.notes || []).slice(0, 2).join("；")}
+                  </Alert>
+                ) : null}
+              </Stack>
+            </Paper>
+          ) : null}
 
           <Stack direction={{ xs: "column", md: "row" }} spacing={0.8} sx={{ mt: 0.8 }}>
             {(Object.keys(DEVICE_MODE_META) as DeviceMode[]).map((mode) => {
@@ -4024,18 +3811,16 @@ export default function Aelin({
               onClick={() => void runDeviceOptimize()}
               disabled={deviceOptimizeBusy}
             >
-              {deviceOptimizeBusy ? "优化中..." : "一键降压"}
+              {deviceOptimizeBusy ? "优化中..." : "一键降载"}
             </Button>
             <Typography variant="caption" color="text.secondary">
-              异常分越高越需要处理
-            </Typography>
+              异常分越高越需要处理            </Typography>
           </Stack>
 
           {deviceOptimizeResult ? (
             <Paper variant="outlined" sx={{ mt: 0.85, p: 0.75, borderRadius: 1.35 }}>
               <Typography variant="caption" color="text.secondary">
-                最近优化：{deviceOptimizeResult.optimized_count} 个进程
-              </Typography>
+                最近优化：{deviceOptimizeResult.optimized_count} 个进程              </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.25 }}>
                 {(deviceOptimizeResult.steps || []).slice(0, 2).join("；")}
               </Typography>
@@ -4070,7 +3855,7 @@ export default function Aelin({
                             {proc.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            PID {proc.pid} · {proc.username || "unknown"} · {proc.status || "running"}
+                            PID {proc.pid} 路 {proc.username || "unknown"} 路 {proc.status || "running"}
                           </Typography>
                         </Box>
                         <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
@@ -4301,7 +4086,7 @@ export default function Aelin({
                     ) : null}
                     <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={0.7}>
                       <Typography variant="caption" color="text.secondary">
-                        {item.source || "system"} · {formatIsoTime(item.ts)}
+                        {item.source || "system"} 路 {formatIsoTime(item.ts)}
                       </Typography>
                       {item.action_kind ? (
                         <Button size="small" variant="outlined" onClick={() => handleNotificationAction(item)}>
@@ -4493,7 +4278,7 @@ export default function Aelin({
         {citationDrawer.citation ? (
           <Paper variant="outlined" sx={{ p: 0.9, borderRadius: 1.4, mb: 0.95 }}>
             <Typography variant="caption" color="text.secondary">
-              {citationDrawer.citation.source_label} · {citationDrawer.citation.sender} · {citationDrawer.citation.received_at}
+              {citationDrawer.citation.source_label} 路 {citationDrawer.citation.sender} 路 {citationDrawer.citation.received_at}
             </Typography>
             <Typography variant="body2" sx={{ mt: 0.35, fontWeight: 700, lineHeight: 1.4 }}>
               {citationDrawer.citation.title}
@@ -4560,3 +4345,6 @@ export default function Aelin({
     </Box>
   );
 }
+
+
+

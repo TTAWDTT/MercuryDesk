@@ -222,6 +222,16 @@ export type AelinDeviceProcessResponse = {
   sort_by: string;
   total: number;
   items: AelinDeviceProcessItem[];
+  platform: string;
+  filter_context: Record<string, string>;
+  empty_reason: string;
+  generated_at: string;
+};
+
+export type AelinDeviceCapabilitiesResponse = {
+  platform: string;
+  capabilities: Record<string, boolean>;
+  notes: string[];
   generated_at: string;
 };
 
@@ -1004,6 +1014,10 @@ export async function optimizeAelinDeviceProcesses(): Promise<AelinDeviceOptimiz
   return await fetchJson<AelinDeviceOptimizeResponse>("/api/v1/aelin/device/processes/optimize", {
     method: "POST",
   });
+}
+
+export async function getAelinDeviceCapabilities(): Promise<AelinDeviceCapabilitiesResponse> {
+  return await fetchJson<AelinDeviceCapabilitiesResponse>("/api/v1/aelin/device/capabilities");
 }
 
 export async function getAelinDeviceMode(): Promise<AelinDeviceModeApplyResponse> {
