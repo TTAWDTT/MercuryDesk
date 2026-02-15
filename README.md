@@ -1,14 +1,16 @@
-# MercuryDesk
+# Aelin
 
-面向个人工作流的统一收件箱：按发信人聚合消息，前端为杂志式卡片布局，支持邮箱与多种订阅源。
+Aelin 是一个面向个人场景的长期记忆型 AI 助手：以 Chat 为主入口，融合多源信息抓取、跟踪订阅与本地持久化记忆。
 
 ## 已实现能力
 
-- 消息聚合：按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转。
-- Aelin（Chat-first 入口）：
+- Chat-first 主入口（Aelin）：
   - 默认首页 `/` 为 Aelin 聊天入口
+  - 支持流式响应、证据卡片、跟踪建议与记忆注入
   - Desk 观察台已内嵌进 Aelin（`/desk` 会重定向并打开内嵌观察台）
-  - 新增上下文接口 `/api/v1/aelin/context` 与聊天接口 `/api/v1/aelin/chat`
+- 消息聚合：
+  - 按发信人卡片汇总，支持未读统计、会话抽屉、链接可点击跳转
+  - 支持布局记忆、置顶、工作区隔离与 Agent 记忆联动
 - 数据来源：
   - 邮箱 IMAP（真实邮箱）
   - GitHub 通知（支持 OAuth 一键授权 / Token 直连）
@@ -16,7 +18,7 @@
   - Bilibili 指定 UP 主动态（基于 B 站公开页面抓取，失败时回退订阅源）
   - X 指定用户更新（基于 X 公共网页接口抓取）
   - Mock 演示数据
-- 主题：浅色浅蓝、深色纯黑（深蓝强调色），整体保持杂志化排版风格。
+- 主题：轻量化浅色 + 深色模式，统一简洁风格。
 - Agent 配置：
   - 支持内置规则模式
   - 支持 OpenAI-Compatible 调用链路
@@ -80,7 +82,7 @@ npm run dist
 
 产物输出在：`desktop/release/`
 
-提示：当前桌面壳会调用本机 Python 启动后端。如果你的 Python 不在 PATH，可设置：
+提示：当前桌面壳会调用本机 Python 启动后端。如果你的 Python 不在 PATH，可设置（当前仍兼容历史变量名）：
 
 ```powershell
 $env:MERCURYDESK_PYTHON="C:\\path\\to\\python.exe"
@@ -184,6 +186,27 @@ python -m uvicorn app.main:app --reload --port 8000
 - `MERCURYDESK_GMAIL_CLIENT_ID` / `MERCURYDESK_GMAIL_CLIENT_SECRET`
 - `MERCURYDESK_OUTLOOK_CLIENT_ID` / `MERCURYDESK_OUTLOOK_CLIENT_SECRET`
 - `MERCURYDESK_GITHUB_CLIENT_ID` / `MERCURYDESK_GITHUB_CLIENT_SECRET`
+
+> 说明：当前后端环境变量仍使用 `MERCURYDESK_` 前缀（历史兼容），不影响仓库与产品名切换为 Aelin。
+
+## 仓库改名（Git）
+
+目标：将 GitHub 仓库从 `MercuryDesk` 改名为 `Aelin`。
+
+1. 在 GitHub 仓库页面执行 Rename：`MercuryDesk` -> `Aelin`
+2. 本地更新远程地址：
+
+```powershell
+git remote set-url origin https://github.com/TTAWDTT/Aelin.git
+git remote -v
+```
+
+3. 验证推送：
+
+```powershell
+git fetch origin
+git push origin main
+```
 
 ## 邮件转发接入（只填邮箱）
 
