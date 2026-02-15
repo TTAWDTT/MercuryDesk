@@ -378,6 +378,9 @@ class AelinDeviceProcessResponse(BaseModel):
     sort_by: str = "cpu"
     total: int = 0
     items: list[AelinDeviceProcessItem] = Field(default_factory=list)
+    platform: str = "unknown"
+    filter_context: dict[str, str] = Field(default_factory=dict)
+    empty_reason: str = ""
     generated_at: datetime
 
 
@@ -411,6 +414,13 @@ class AelinDeviceOptimizeResponse(BaseModel):
     affected_pids: list[int] = Field(default_factory=list)
     steps: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    generated_at: datetime
+
+
+class AelinDeviceCapabilitiesResponse(BaseModel):
+    platform: str = "unknown"
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
     generated_at: datetime
 
 

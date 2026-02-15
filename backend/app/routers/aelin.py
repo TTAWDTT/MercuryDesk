@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, select
@@ -41,6 +41,7 @@ from app.schemas import (
     AelinDeviceModeApplyRequest,
     AelinDeviceModeApplyResponse,
     AelinDeviceOptimizeResponse,
+    AelinDeviceCapabilitiesResponse,
     AelinDeviceProcessActionRequest,
     AelinDeviceProcessActionResponse,
     AelinDeviceProcessItem,
@@ -317,6 +318,27 @@ def _parse_iso_datetime(raw: str | None) -> datetime | None:
 
 def _device_is_windows() -> bool:
     return platform.system().strip().lower().startswith("win")
+
+
+def _device_capabilities() -> tuple[str, dict[str, bool], list[str]]:
+    platform_name = platform.system().strip().lower() or "unknown"
+    is_windows = _device_is_windows()
+    has_psutil = psutil is not None
+    capabilities = {
+        "process_list": bool(has_psutil),
+        "process_terminate": bool(has_psutil),
+        "process_priority": bool(has_psutil),
+        "mode_focus": bool(is_windows),
+        "mode_silent": bool(is_windows),
+        "mode_normal": True,
+        "optimize_processes": bool(has_psutil),
+    }
+    notes: list[str] = []
+    if not has_psutil:
+        notes.append("psutil unavailable; process controls disabled")
+    if not is_windows:
+        notes.append("non-windows runtime: mode actions may degrade to state-only updates")
+    return platform_name, capabilities, notes
 
 
 def _normalize_device_mode(raw: str) -> str:
@@ -4713,10 +4735,29 @@ def list_device_processes(
     _ = current_user  # Auth guard for local device APIs.
     sort_key = "memory" if str(sort_by or "").strip().lower() == "memory" else "cpu"
     items = _collect_device_process_items(sort_by=sort_key, limit=limit)
+    platform_name, _, notes = _device_capabilities()
+    filter_context = {
+        "sort_by": sort_key,
+        "requested_limit": str(int(limit or 40)),
+        "runtime": platform_name,
+        "psutil": "available" if psutil is not None else "missing",
+    }
+    empty_reason = ""
+    if not items:
+        empty_reason = (
+            "no-process-data: psutil unavailable"
+            if psutil is None
+            else "no-process-data: no matching user/anomaly processes found"
+        )
+        if notes:
+            filter_context["notes"] = "; ".join(notes[:2])
     return AelinDeviceProcessResponse(
         sort_by=sort_key,
         total=len(items),
         items=items,
+        platform=platform_name,
+        filter_context=filter_context,
+        empty_reason=empty_reason,
         generated_at=datetime.now(timezone.utc),
     )
 
@@ -4730,12 +4771,13 @@ def run_device_process_action(
     _ = current_user  # Auth guard for local device APIs.
     action = str(payload.action or "").strip().lower()
     if action not in _DEVICE_ALLOWED_PROCESS_ACTIONS:
-        return AelinDeviceProcessActionResponse(
-            pid=int(pid),
-            action=action,
-            ok=False,
-            detail=f"unsupported action: {action}",
-            generated_at=datetime.now(timezone.utc),
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "UNSUPPORTED_ACTION",
+                "message": f"unsupported action: {action}",
+                "allowed_actions": sorted(_DEVICE_ALLOWED_PROCESS_ACTIONS),
+            },
         )
     if psutil is None:
         return AelinDeviceProcessActionResponse(
@@ -4835,6 +4877,20 @@ def optimize_device_processes(
     )
 
 
+@router.get("/device/capabilities", response_model=AelinDeviceCapabilitiesResponse)
+def get_device_capabilities(
+    current_user: User = Depends(get_current_user),
+):
+    _ = current_user  # Auth guard for local device APIs.
+    platform_name, capabilities, notes = _device_capabilities()
+    return AelinDeviceCapabilitiesResponse(
+        platform=platform_name,
+        capabilities=capabilities,
+        notes=notes,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
 @router.get("/device/mode", response_model=AelinDeviceModeApplyResponse)
 def get_device_mode_state(
     db: Session = Depends(get_session),
@@ -4862,7 +4918,14 @@ def apply_device_mode(
     db: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    requested_mode = str(payload.mode or "").strip().lower()
     mode, status, summary, steps, warnings = _apply_device_mode(payload.mode)
+    allowed_requested_modes = {"meeting", "focus", "sleep", "normal", "default"}
+    if requested_mode and requested_mode not in allowed_requested_modes:
+        status = "degraded"
+        warnings = [*warnings, f"requested mode '{requested_mode}' is not supported on this runtime; fallback to '{mode}'"]
+        summary = f"{mode} mode applied as fallback from '{requested_mode}'"
+
     existing, _ = _load_device_mode_state(db, user_id=current_user.id)
     state = {
         "mode": mode,

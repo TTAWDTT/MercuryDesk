@@ -1055,3 +1055,54 @@ def test_aelin_chat_fallback_route_is_not_force_overridden(monkeypatch):
     )
     assert isinstance(web_step, dict)
     assert web_step.get("status") == "skipped"
+
+def test_device_process_action_unsupported_returns_400():
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    resp = client.post(
+        "/api/v1/aelin/device/processes/123/action",
+        json={"action": "boom"},
+        headers=headers,
+    )
+    assert resp.status_code == 400, resp.text
+    data = resp.json().get("detail") or {}
+    assert data.get("code") == "UNSUPPORTED_ACTION"
+    assert "allowed_actions" in data
+
+
+def test_device_capabilities_endpoint_contract():
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    resp = client.get("/api/v1/aelin/device/capabilities", headers=headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert isinstance(data.get("platform"), str)
+    caps = data.get("capabilities") or {}
+    for key in [
+        "process_list",
+        "process_terminate",
+        "process_priority",
+        "mode_focus",
+        "mode_silent",
+        "mode_normal",
+        "optimize_processes",
+    ]:
+        assert key in caps
+
+
+def test_device_mode_apply_degraded_is_explicit():
+    client = _create_test_client()
+    headers = _auth_headers(client)
+
+    resp = client.post(
+        "/api/v1/aelin/device/mode/apply",
+        json={"mode": "silent"},
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data.get("status") in {"degraded", "partial"}
+    assert isinstance(data.get("warnings"), list)
+    assert data.get("warnings")
