@@ -18,6 +18,6 @@ This map is used by both frontend rendering and backend prompt routing.
 
 ## Asset Source
 
-- Source sheet: `expressions1.png`
+- Source sheet: 已归档（当前运行不依赖仓库内整图源文件）
 - Output directory: `frontend/public/expressions/`
 - Exported assets: `exp-01.png` to `exp-11.png`

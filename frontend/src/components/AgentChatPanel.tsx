@@ -239,7 +239,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
         >
           {isOpen ? <CloseIcon /> : (
               <Avatar
-                src="/avatar.png"
+                src="/logo.png"
                 sx={{
                     width: '100%',
                     height: '100%',
@@ -289,7 +289,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
           >
             <Box display="flex" alignItems="center" gap={1.5}>
               <Avatar
-                src="/avatar.png"
+                src="/logo.png"
                 sx={{
                     width: 32,
                     height: 32,
@@ -417,7 +417,7 @@ export const AgentChatPanel: React.FC<AgentChatPanelProps> = ({ currentContact }
                 >
                   <Stack direction={isUser ? 'row-reverse' : 'row'} spacing={1} alignItems="flex-end">
                     <Avatar
-                      src={isAssistant ? '/avatar.png' : undefined}
+                      src={isAssistant ? '/logo.png' : undefined}
                       sx={{
                         width: 26,
                         height: 26,
